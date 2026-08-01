@@ -3,23 +3,23 @@
 Orientation file for resumed sessions. Authoritative scope: DEFINITION.md.
 Execution mechanics: PROMPT.md. Integration spec: CONTRACTS.md.
 
-## Status: in progress — started 2026-08-01
+## Status: POC complete on main (2026-08-01) — deploy blocked only on repo visibility (see Notes)
 
 ## Milestones
 
 - [x] Definition + prompt committed
 - [x] CONTRACTS.md written (schemas, interfaces, file ownership)
 - [x] Local-LLM experiment: placeholder content drafts (reviewed + cleaned; geography and collision-risky names fixed by orchestrator)
-- [ ] Agent A: content pipeline (build.mjs, fixtures, validation + tests) — dispatched, running
-- [ ] Agent B: UI views — dispatched, running
+- [x] Agent A: content pipeline (build.mjs, fixtures, validation + tests) — audited, merged
+- [x] Agent B: UI views — audited, merged
 - [x] Agent C: map generation (OSM→SVG), geo.js affine module + tests — audited (tests re-run, SVG rendered + eyeballed, scope clean), merged to main
 - [x] Orchestrator: PWA shell (manifest, icons), service worker + build-sw.mjs, serve.mjs
 - [x] Orchestrator: Playwright offline test (needs integrated site to run)
-- [ ] Integration: merge agent branches, `npm run build` + `npm test` green
-- [ ] CI: deploy.yml + rebuild.yml, GitHub Pages enabled, live URL verified
+- [x] Integration: merged, `npm run build` + `npm test` green locally AND in CI (run 30721533589: 15 unit + 3 Playwright pass)
+- [x] CI: deploy.yml + rebuild.yml committed; test job green; deploy job fails at configure-pages until repo is public
 - [x] README rewrite (write-doc skill, editorial subagent pass applied)
-- [ ] Verification: offline test output, validation failure output, deploy check, Lighthouse installability
-- [ ] Final report
+- [x] Verification: offline test (Playwright + dead-server harness), validation failure (bad-date fixture, readable message, exit 1), installability (CDP getInstallabilityErrors = [], manifest parse errors 0). Live-URL check pending repo visibility.
+- [x] Final report delivered in session
 
 ## Agent branches (worktrees)
 

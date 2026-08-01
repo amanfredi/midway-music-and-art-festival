@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Midway Circuit Map</title>
+<meta name="description" content="Offline-friendly map and schedule for the Midway Music &amp; Arts Festival.">
+
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#7a2e8d">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+
+<link rel="stylesheet" href="css/app.css">
+<script src="js/sw-register.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<noscript>
+  <p class="noscript-fallback">The Midway Circuit Map needs JavaScript to show the live map and schedule. Please enable JavaScript in your browser settings, then reload this page.</p>
+</noscript>
+
+<div id="banner-region"></div>
+
+<header class="app-header">
+  <h1 id="festival-name" class="app-header__title">Midway Circuit Map</h1>
+</header>
+
+<main id="view" tabindex="-1">
+  <p class="splash">Loading festival info&hellip;</p>
+</main>
+
+<nav class="tab-bar" aria-label="Primary">
+  <a href="#/now" data-route="now">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
+      <line x1="12" y1="12" x2="12" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <line x1="12" y1="12" x2="16" y2="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <span class="tab-label">Now</span>
+  </a>
+  <a href="#/schedule" data-route="schedule">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4" y="5" width="16" height="2.4" rx="1.2" fill="currentColor"/>
+      <rect x="4" y="11" width="16" height="2.4" rx="1.2" fill="currentColor"/>
+      <rect x="4" y="17" width="10" height="2.4" rx="1.2" fill="currentColor"/>
+    </svg>
+    <span class="tab-label">Schedule</span>
+  </a>
+  <a href="#/map" data-route="map">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 6l5-2 6 2 5-2v14l-5 2-6-2-5 2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      <line x1="9" y1="4.3" x2="9" y2="18.3" stroke="currentColor" stroke-width="1.4"/>
+      <line x1="15" y1="6.3" x2="15" y2="20.3" stroke="currentColor" stroke-width="1.4"/>
+    </svg>
+    <span class="tab-label">Map</span>
+  </a>
+  <a href="#/starred" data-route="starred">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 2.5l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.7 7.1-.6z" fill="currentColor"/>
+    </svg>
+    <span class="tab-label">Starred</span>
+  </a>
+  <a href="#/sponsors" data-route="sponsors">
+    <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 20s-7-4.35-9.5-8.5C1 8.5 2.5 5 6 5c2 0 3.5 1.2 4 2.2C10.5 6.2 12 5 14 5c3.5 0 5 3.5 3.5 6.5C19 15.65 12 20 12 20z" fill="currentColor"/>
+    </svg>
+    <span class="tab-label">Sponsors</span>
+  </a>
+</nav>
+
+<div id="sheet-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+</body>
+</html>

@@ -159,6 +159,16 @@ cache name from the content hash, cache-first serving, stale-while-revalidate
 for `data/content.json`, navigations answered with cached `index.html`.
 UI code never needs to know about it beyond `js/sw-register.js`.
 
+## Test hooks (UI must provide, offline test depends on them)
+
+- `[data-testid="now-view"]` on the on-now/up-next landing view container
+- `[data-testid="schedule-list"]` on the schedule list; each event row `[data-testid="event-row"]`
+- `[data-testid="star-toggle"]` on the star button in event detail (attribute `aria-pressed` reflects state)
+- `[data-testid="starred-list"]` on the starred-events view container
+- `[data-testid="sponsor-list"]` on the sponsors view container
+- `[data-testid="notice-banner"]` and `[data-testid="banner-dismiss"]`
+- inlined map SVG keeps `id="circuit-map"`; venue pins `[data-testid="venue-pin"]`
+
 ## Conventions
 
 - Plain ES modules, no framework, no runtime deps. `package.json` is owned by

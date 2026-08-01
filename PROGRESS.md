@@ -9,12 +9,12 @@ Execution mechanics: PROMPT.md. Integration spec: CONTRACTS.md.
 
 - [x] Definition + prompt committed
 - [x] CONTRACTS.md written (schemas, interfaces, file ownership)
-- [ ] Local-LLM experiment: placeholder content drafts (input to content agent)
-- [ ] Agent A: content pipeline (build.mjs, fixtures, validation + tests)
-- [ ] Agent B: UI views (app shell, now/next, schedule, detail+star, map view, sponsors, banner, starred)
-- [ ] Agent C: map generation (OSM→SVG), geo.js affine module + tests
-- [ ] Orchestrator: PWA shell (manifest, icons), service worker + build-sw.mjs, serve.mjs
-- [ ] Orchestrator: Playwright offline test
+- [x] Local-LLM experiment: placeholder content drafts (reviewed + cleaned; geography and collision-risky names fixed by orchestrator)
+- [ ] Agent A: content pipeline (build.mjs, fixtures, validation + tests) — dispatched, running
+- [ ] Agent B: UI views — dispatched, running
+- [ ] Agent C: map generation (OSM→SVG), geo.js affine module + tests — dispatched, running
+- [x] Orchestrator: PWA shell (manifest, icons), service worker + build-sw.mjs, serve.mjs
+- [x] Orchestrator: Playwright offline test (needs integrated site to run)
 - [ ] Integration: merge agent branches, `npm run build` + `npm test` green
 - [ ] CI: deploy.yml + rebuild.yml, GitHub Pages enabled, live URL verified
 - [ ] README rewrite (write-doc skill)
@@ -32,3 +32,10 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   additionally gets per-request stale-while-revalidate. See CONTRACTS.md.
 - Demo clock override `?t=2026-10-03T15:00` so "on now" demos before October.
 - gh authed as amanfredi; push to origin main verified working.
+- BLOCKED (needs Anthony): repo is PRIVATE; free-plan GitHub Pages requires a
+  public repo. `gh repo edit --visibility public` was denied by the session's
+  permission classifier. Manual step: make repo public (repo Settings →
+  General → Danger Zone) or run
+  `gh repo edit amanfredi/midway-music-and-art-festival --visibility public --accept-visibility-change-consequences`,
+  then `gh api -X POST repos/amanfredi/midway-music-and-art-festival/pages -f build_type=workflow`
+  and re-run the Deploy workflow. Everything else verifies locally meanwhile.

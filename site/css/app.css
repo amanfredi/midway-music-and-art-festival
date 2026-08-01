@@ -326,6 +326,15 @@ img {
   align-self: center;
 }
 
+.event-row__day {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a05f00; /* darker than --color-accent-dark: small text needs 4.5:1 on the white card */
+}
+
 .event-row__main {
   grid-column: 2;
   grid-row: 1 / 3;

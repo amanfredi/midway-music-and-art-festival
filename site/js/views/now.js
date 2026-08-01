@@ -19,11 +19,11 @@ function groupByVenue(events, venuesById) {
     .sort((a, b) => (a.venue?.name ?? '').localeCompare(b.venue?.name ?? ''));
 }
 
-function venueGroupHtml(group) {
+function venueGroupHtml(group, relativeTo) {
   return `
     <div class="venue-group">
       <h3 class="venue-group__title">${esc(group.venue?.name ?? 'Venue')}</h3>
-      <div class="event-list">${group.events.map((e) => eventRowHtml(e, { venue: group.venue, showVenue: false })).join('')}</div>
+      <div class="event-list">${group.events.map((e) => eventRowHtml(e, { venue: group.venue, showVenue: false, relativeTo })).join('')}</div>
     </div>`;
 }
 
@@ -79,9 +79,9 @@ export function renderNow(container, content) {
     container.innerHTML = `
       <section data-testid="now-view" class="view now-view">
         <h1 class="view-title">On now</h1>
-        ${onNowGroups.length ? onNowGroups.map(venueGroupHtml).join('') : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
+        ${onNowGroups.length ? onNowGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
         <h2 class="view-subtitle">Up next</h2>
-        ${upNextGroups.length ? upNextGroups.map(venueGroupHtml).join('') : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
+        ${upNextGroups.length ? upNextGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
       </section>`;
   }
 

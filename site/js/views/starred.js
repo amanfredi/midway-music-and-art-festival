@@ -1,5 +1,6 @@
 import { esc } from '../util.js';
 import { getStarred, toggleStar } from '../store.js';
+import { now as clockNow } from '../time.js';
 import { eventRowHtml } from './event-row.js';
 
 export function renderStarred(container, content) {
@@ -29,7 +30,7 @@ export function renderStarred(container, content) {
             .map(
               (e) => `
             <div class="event-row-wrap">
-              ${eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })}
+              ${eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true, relativeTo: clockNow() })}
               <button type="button" class="unstar-btn" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.title)} from starred">&times;</button>
             </div>`
             )

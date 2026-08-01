@@ -43,6 +43,10 @@ export function formatDayLabel(date) {
   return `${DAY_NAMES[date.getDay()]}, ${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
 }
 
+export function shortDayName(date) {
+  return DAY_NAMES_SHORT[date.getDay()];
+}
+
 export function shortDayLabel(date) {
   return `${DAY_NAMES_SHORT[date.getDay()]} ${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`;
 }

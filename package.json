@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/build.mjs && node scripts/build-sw.mjs",
     "serve": "node scripts/serve.mjs",
-    "test:unit": "node --test tests/",
+    "test:unit": "node --test tests/*.test.mjs",
     "test:offline": "playwright test",
     "test": "npm run build && npm run test:unit && npm run test:offline"
   },

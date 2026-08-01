@@ -12,12 +12,12 @@ Execution mechanics: PROMPT.md. Integration spec: CONTRACTS.md.
 - [x] Local-LLM experiment: placeholder content drafts (reviewed + cleaned; geography and collision-risky names fixed by orchestrator)
 - [ ] Agent A: content pipeline (build.mjs, fixtures, validation + tests) — dispatched, running
 - [ ] Agent B: UI views — dispatched, running
-- [ ] Agent C: map generation (OSM→SVG), geo.js affine module + tests — dispatched, running
+- [x] Agent C: map generation (OSM→SVG), geo.js affine module + tests — audited (tests re-run, SVG rendered + eyeballed, scope clean), merged to main
 - [x] Orchestrator: PWA shell (manifest, icons), service worker + build-sw.mjs, serve.mjs
 - [x] Orchestrator: Playwright offline test (needs integrated site to run)
 - [ ] Integration: merge agent branches, `npm run build` + `npm test` green
 - [ ] CI: deploy.yml + rebuild.yml, GitHub Pages enabled, live URL verified
-- [ ] README rewrite (write-doc skill)
+- [x] README rewrite (write-doc skill, editorial subagent pass applied)
 - [ ] Verification: offline test output, validation failure output, deploy check, Lighthouse installability
 - [ ] Final report
 

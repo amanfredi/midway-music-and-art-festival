@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" role="img" aria-label="Midway Spur Brewing Co. (placeholder logo)">
+  <rect width="240" height="120" rx="10" fill="#8a6238"/>
+  <polygon points="34,38 54,60 34,82 14,60" fill="#b08a5c"/>
+  <text x="145" y="56" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#faf3e8">Midway Spur</text>
+  <text x="145" y="76" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#faf3e8">Brewing Co.</text>
+  <text x="145" y="100" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" letter-spacing="1" fill="#faf3e8" opacity="0.65">PLACEHOLDER LOGO</text>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" role="img" aria-label="North Side Family Clinic (placeholder logo)">
+  <rect width="240" height="120" rx="10" fill="#3f7a72"/>
+  <rect x="26" y="42" width="16" height="36" fill="#6fa79f"/><rect x="14" y="54" width="40" height="12" fill="#6fa79f"/>
+  <text x="145" y="56" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f0f8f6">North Side</text>
+  <text x="145" y="76" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f0f8f6">Family Clinic</text>
+  <text x="145" y="100" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" letter-spacing="1" fill="#f0f8f6" opacity="0.65">PLACEHOLDER LOGO</text>
+</svg>

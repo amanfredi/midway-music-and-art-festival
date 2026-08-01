@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" role="img" aria-label="Twin Cities Harvest Co-op (placeholder logo)">
+  <rect width="240" height="120" rx="10" fill="#5b7553"/>
+  <circle cx="34" cy="56" r="15" fill="#869c7e"/><rect x="31" y="70" width="6" height="14" fill="#869c7e"/>
+  <text x="145" y="56" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f4f7f2">Twin Cities</text>
+  <text x="145" y="76" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#f4f7f2">Harvest Co-op</text>
+  <text x="145" y="100" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" letter-spacing="1" fill="#f4f7f2" opacity="0.65">PLACEHOLDER LOGO</text>
+</svg>

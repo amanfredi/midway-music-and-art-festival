@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" role="img" aria-label="SafeHarbor Insurance Group (placeholder logo)">
+  <rect width="240" height="120" rx="10" fill="#3c4f66"/>
+  <path d="M34 38 L52 46 L52 62 Q52 78 34 84 Q16 78 16 62 L16 46 Z" fill="#647691"/>
+  <text x="145" y="56" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eef2f6">SafeHarbor</text>
+  <text x="145" y="76" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#eef2f6">Insurance Group</text>
+  <text x="145" y="100" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" letter-spacing="1" fill="#eef2f6" opacity="0.65">PLACEHOLDER LOGO</text>
+</svg>

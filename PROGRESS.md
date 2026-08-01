@@ -3,7 +3,13 @@
 Orientation file for resumed sessions. Authoritative scope: DEFINITION.md.
 Execution mechanics: PROMPT.md. Integration spec: CONTRACTS.md.
 
-## Status: POC complete on main (2026-08-01) — deploy blocked only on repo visibility (see Notes)
+## Status: POC complete and LIVE (2026-08-01)
+
+Live URL verified: https://amanfredi.github.io/midway-music-and-art-festival/
+(HTTP 200; SW active over HTTPS with correct scope; CDP installability errors
+empty; offline reload on the live site rendered schedule + map + pins.)
+Remaining items are Anthony's: real-iPhone airplane-mode test (README steps),
+Google Sheet creation when real content exists, Aug 8–9 organizer demo.
 
 ## Milestones
 
@@ -32,10 +38,5 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   additionally gets per-request stale-while-revalidate. See CONTRACTS.md.
 - Demo clock override `?t=2026-10-03T15:00` so "on now" demos before October.
 - gh authed as amanfredi; push to origin main verified working.
-- BLOCKED (needs Anthony): repo is PRIVATE; free-plan GitHub Pages requires a
-  public repo. `gh repo edit --visibility public` was denied by the session's
-  permission classifier. Manual step: make repo public (repo Settings →
-  General → Danger Zone) or run
-  `gh repo edit amanfredi/midway-music-and-art-festival --visibility public --accept-visibility-change-consequences`,
-  then `gh api -X POST repos/amanfredi/midway-music-and-art-festival/pages -f build_type=workflow`
-  and re-run the Deploy workflow. Everything else verifies locally meanwhile.
+- RESOLVED 2026-08-01: Anthony made the repo public and enabled Pages; Deploy
+  workflow succeeded and the live URL was verified (see Status).

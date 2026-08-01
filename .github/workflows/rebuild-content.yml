@@ -1,0 +1,19 @@
+# Rebuilds the site from the content source without a code change, so a
+# coordinator edit to the (future) Google Sheet reaches production on its own.
+# Manual: Actions tab -> "Rebuild content" -> Run workflow.
+# Scheduled: every 6 hours; tighten the cron during festival weekend.
+name: Rebuild content
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  rebuild:
+    uses: ./.github/workflows/deploy.yml

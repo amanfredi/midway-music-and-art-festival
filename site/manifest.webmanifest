@@ -1,0 +1,16 @@
+{
+  "name": "Midway Music & Arts Festival — Circuit Map",
+  "short_name": "Circuit Map",
+  "description": "Offline-capable map and schedule for the Midway Music & Arts Festival in St. Paul.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf3e7",
+  "theme_color": "#7a2e8d",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

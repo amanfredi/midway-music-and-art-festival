@@ -1,0 +1,7 @@
+node_modules/
+site/data/content.json
+site/sw.js
+site/assets/sponsors/
+test-results/
+playwright-report/
+.DS_Store

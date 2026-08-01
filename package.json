@@ -1,0 +1,17 @@
+{
+  "name": "midway-circuit-map",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Offline-capable map & schedule PWA for the Midway Music & Arts Festival",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs && node scripts/build-sw.mjs",
+    "serve": "node scripts/serve.mjs",
+    "test:unit": "node --test tests/",
+    "test:offline": "playwright test",
+    "test": "npm run build && npm run test:unit && npm run test:offline"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

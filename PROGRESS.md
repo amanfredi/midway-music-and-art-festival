@@ -49,8 +49,10 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   remapped onto the 9 real venues. Map regenerated with wider bbox (Jimmy
   Lee Rec Center + Sundin). MMAF branding applied: header logo, brand
   palette, emblem app icons. Maps links default to walking directions.
-- WATCHING: custom domain go.midwaymusicandart.org configured (by Anthony);
-  TLS cert still provisioning as of 13:20 — until it lands, HTTPS (and thus
-  the service worker/offline) does not work on the custom domain. When the
-  cert appears: `gh api -X PUT repos/amanfredi/midway-music-and-art-festival/pages --input - <<< '{"https_enforced":true}'`
-  then re-verify offline on https://go.midwaymusicandart.org/.
+- RESOLVED 2026-08-02: custom domain https://go.midwaymusicandart.org/ is the
+  live URL (github.io 301s to it). Initial cert provisioning was stuck
+  (GitHub health check showed eligible-but-unissued for ~4h); Anthony's
+  remove/re-add of the domain retriggered it. Enforce HTTPS is ON. Offline +
+  installability re-verified on the custom domain. A transient CDN 503
+  during cutover exposed the first-visit module-graph fragility — fixed with
+  the boot guard in index.html (auto-reload with backoff, Playwright-tested).

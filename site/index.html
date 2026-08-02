@@ -15,7 +15,35 @@
 
 <link rel="stylesheet" href="css/app.css">
 <script src="js/sw-register.js" defer></script>
-<script type="module" src="js/app.js"></script>
+<script type="module">
+// Boot guard. On a first, uncached visit the app loads as a static module
+// graph, and one failed fetch (e.g. a transient CDN 503 on a congested
+// network) kills the whole graph. Failed module fetches are cached for the
+// page's lifetime, so the only reliable retry is a reload — auto, capped,
+// with backoff, then a manual button. Once the service worker is installed
+// this path can no longer fail: every module is served cache-first.
+(async () => {
+  const KEY = 'mfc:boot-attempts';
+  try {
+    await import('./js/app.js');
+    sessionStorage.removeItem(KEY);
+  } catch (err) {
+    console.error('app failed to load', err);
+    const view = document.getElementById('view');
+    const show = (html) => { if (view) view.innerHTML = html; };
+    const attempt = Number(sessionStorage.getItem(KEY) || '0');
+    if (attempt < 3) {
+      sessionStorage.setItem(KEY, String(attempt + 1));
+      show('<p class="splash">Having trouble loading &mdash; retrying&hellip;</p>');
+      setTimeout(() => location.reload(), [1000, 3000, 8000][attempt]);
+    } else {
+      sessionStorage.removeItem(KEY);
+      show('<p class="splash">Couldn&rsquo;t load the app &mdash; check your connection.</p>' +
+        '<p style="text-align:center"><button class="btn btn--primary" onclick="location.reload()">Try again</button></p>');
+    }
+  }
+})();
+</script>
 </head>
 <body>
 <noscript>

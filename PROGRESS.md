@@ -42,6 +42,15 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   workflow succeeded and the live URL was verified (see Status).
 - 2026-08-02: venues/vendors CSV schema changed — single `location` column
   (decimal pair or Google Maps plus code) replaces `lat`/`lng`; see
-  CONTRACTS.md and scripts/{olc,location}.mjs. Sheet being set up by
-  Anthony/organizers should use the new column. MMAF brand assets committed
-  at repo root, not yet wired into the site.
+  CONTRACTS.md and scripts/{olc,location}.mjs.
+- 2026-08-02 (later): venues tab is LIVE from the organizers' Google Sheet
+  (URL in content/config.json); fixture venues.csv is a committed snapshot;
+  tests use hermetic tests/fixtures-good/config.json. Placeholder events
+  remapped onto the 9 real venues. Map regenerated with wider bbox (Jimmy
+  Lee Rec Center + Sundin). MMAF branding applied: header logo, brand
+  palette, emblem app icons. Maps links default to walking directions.
+- WATCHING: custom domain go.midwaymusicandart.org configured (by Anthony);
+  TLS cert still provisioning as of 13:20 — until it lands, HTTPS (and thus
+  the service worker/offline) does not work on the custom domain. When the
+  cert appears: `gh api -X PUT repos/amanfredi/midway-music-and-art-festival/pages --input - <<< '{"https_enforced":true}'`
+  then re-verify offline on https://go.midwaymusicandart.org/.

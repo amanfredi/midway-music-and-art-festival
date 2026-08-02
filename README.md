@@ -74,7 +74,11 @@ later a Google Sheet tab published to the web. The build treats both
 identically, so the swap is config-only:
 
 1. Create a Google Sheet with five tabs whose header rows match the fixture
-   CSVs (column reference: CONTRACTS.md).
+   CSVs (column reference: CONTRACTS.md). Venue and vendor positions go in a
+   single `location` column that takes either decimal coordinates
+   (`44.9557, -93.1668`) or the plus code shown on a Google Maps place card
+   (`XR4H+C2 St. Paul, Minnesota`) — on a phone, copying the plus code is the
+   easy path.
 2. File → Share → Publish to web → select each tab → CSV format → copy each
    tab's URL.
 3. Replace the five paths in `content/config.json` with those URLs; commit.

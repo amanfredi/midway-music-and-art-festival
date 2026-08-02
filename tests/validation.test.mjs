@@ -147,6 +147,10 @@ describe("bad fixtures", () => {
       mustInclude: ["venues.csv", "row 2", "swapped"],
     },
     {
+      dir: "bad-location-text",
+      mustInclude: ["venues.csv", "row 2", "by the big tree", "plus code"],
+    },
+    {
       dir: "bad-kind",
       mustInclude: ["events.csv", "row 2", "dance", "unknown kind"],
     },

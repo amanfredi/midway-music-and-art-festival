@@ -8,6 +8,7 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { parseLocation } from "./location.mjs";
 
 const CWD = process.cwd();
 const LOGOS_DIR = path.join(CWD, "content/fixtures/logos");
@@ -200,39 +201,37 @@ function validateIdFormat(fileLabel, records, identifierField, idField = "id") {
   return errors;
 }
 
-function validateLatLng(fileLabel, records, identifierField) {
+// Parses each record's `location` (decimal pair or plus code) and stashes the
+// result on the record as rec.coords for the clean-mapping step.
+function validateLocation(fileLabel, records, identifierField) {
   const errors = [];
   for (const rec of records) {
-    for (const field of ["lat", "lng"]) {
-      const raw = rec.fields[field];
-      if (raw === undefined || String(raw).trim() === "") continue; // reported by required-field check
-      const num = Number(raw);
-      const ident = identifierFor(rec, identifierField);
-      if (Number.isNaN(num)) {
-        errors.push(errorMsg(fileLabel, rec.rowNum, ident, `${field} "${raw}" is not a number.`));
-        continue;
-      }
-      if (field === "lat" && (num < BBOX.latMin || num > BBOX.latMax)) {
-        errors.push(
-          errorMsg(
-            fileLabel,
-            rec.rowNum,
-            ident,
-            `lat ${num} is outside the festival area [${BBOX.latMin}..${BBOX.latMax}] (check for swapped lat/lng).`
-          )
-        );
-      }
-      if (field === "lng" && (num < BBOX.lngMin || num > BBOX.lngMax)) {
-        errors.push(
-          errorMsg(
-            fileLabel,
-            rec.rowNum,
-            ident,
-            `lng ${num} is outside the festival area [${BBOX.lngMin}..${BBOX.lngMax}] (check for swapped lat/lng).`
-          )
-        );
-      }
+    const raw = rec.fields.location;
+    if (raw === undefined || String(raw).trim() === "") continue; // reported by required-field check
+    const ident = identifierFor(rec, identifierField);
+    const parsed = parseLocation(raw);
+    if (parsed.error) {
+      errors.push(errorMsg(fileLabel, rec.rowNum, ident, parsed.error));
+      continue;
     }
+    if (
+      parsed.lat < BBOX.latMin ||
+      parsed.lat > BBOX.latMax ||
+      parsed.lng < BBOX.lngMin ||
+      parsed.lng > BBOX.lngMax
+    ) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `location "${raw}" resolves to ${parsed.lat.toFixed(5)}, ${parsed.lng.toFixed(5)} — outside the festival area ` +
+            `(lat ${BBOX.latMin}..${BBOX.latMax}, lng ${BBOX.lngMin}..${BBOX.lngMax}; if you pasted coordinates, check for a swapped lat/lng).`
+        )
+      );
+      continue;
+    }
+    rec.coords = parsed;
   }
   return errors;
 }
@@ -269,17 +268,17 @@ function parseWallDateTime(value) {
 function validateVenues(records) {
   const fileLabel = "venues.csv";
   const errors = [
-    ...validateRequiredFields(fileLabel, records, ["id", "name", "address", "lat", "lng", "description"], "name"),
+    ...validateRequiredFields(fileLabel, records, ["id", "name", "address", "location", "description"], "name"),
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
-    ...validateLatLng(fileLabel, records, "name"),
+    ...validateLocation(fileLabel, records, "name"),
   ];
   const clean = records.map((rec) => ({
     id: rec.fields.id ?? "",
     name: rec.fields.name ?? "",
     address: rec.fields.address ?? "",
-    lat: Number(rec.fields.lat),
-    lng: Number(rec.fields.lng),
+    lat: rec.coords?.lat ?? 0, // unreachable in emitted output: location errors abort the build
+    lng: rec.coords?.lng ?? 0,
     description: rec.fields.description ?? "",
     url: rec.fields.url ?? "",
   }));
@@ -289,10 +288,10 @@ function validateVenues(records) {
 function validateVendors(records) {
   const fileLabel = "vendors.csv";
   const errors = [
-    ...validateRequiredFields(fileLabel, records, ["id", "name", "type", "lat", "lng"], "name"),
+    ...validateRequiredFields(fileLabel, records, ["id", "name", "type", "location"], "name"),
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
-    ...validateLatLng(fileLabel, records, "name"),
+    ...validateLocation(fileLabel, records, "name"),
   ];
   for (const rec of records) {
     const type = rec.fields.type;
@@ -312,8 +311,8 @@ function validateVendors(records) {
     name: rec.fields.name ?? "",
     type: rec.fields.type ?? "",
     description: rec.fields.description ?? "",
-    lat: Number(rec.fields.lat),
-    lng: Number(rec.fields.lng),
+    lat: rec.coords?.lat ?? 0,
+    lng: rec.coords?.lng ?? 0,
   }));
   return { errors, clean };
 }

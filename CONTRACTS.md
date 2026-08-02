@@ -62,15 +62,22 @@ Header row required, exact snake_case column names. Extra columns are ignored
 (coordinators may keep notes columns). All CSV parsing is RFC 4180 (quoted
 fields, embedded commas/newlines/quotes).
 
-**venues.csv** — `id, name, address, lat, lng, description, url`
+**venues.csv** — `id, name, address, location, description, url`
 - `id`: unique slug `[a-z0-9-]+`; `url` optional, others required.
+- `location`: either decimal `lat, lng` (`44.9557, -93.1668`) **or** a Google
+  Maps plus code — full (`86P8XR4H+C2`) or short as copied from a place card
+  (`XR4H+C2 St. Paul, Minnesota`; locality text is ignored). Short codes
+  resolve against the festival center (`scripts/location.mjs`) at build time;
+  the emitted content.json always carries plain `lat`/`lng` numbers, so the
+  site itself never sees plus codes.
 
 **events.csv** — `id, title, venue_id, start, end, kind, description`
 - `start`/`end`: `YYYY-MM-DD HH:MM` 24h, festival-local wall time (America/Chicago). No timezone math anywhere — devices at the festival are in that timezone.
 - `venue_id` must exist in venues. `end` > `start`. `kind`: one of `music|art|family|community` (optional, default `music`). `description` optional.
 
-**vendors.csv** — `id, name, type, description, lat, lng`
+**vendors.csv** — `id, name, type, description, location`
 - `type`: one of `food|art|retail`. All required except `description`.
+  `location` format as in venues.csv.
 
 **sponsors.csv** — `id, name, tier, tier_order, blurb, logo, url`
 - `tier`: free-text tier name; `tier_order`: integer, lower = more prominent; groups render sorted by `tier_order`. `logo`: filename in `content/fixtures/logos/` **or** an `https://` URL fetched at build time; either way it is bundled into `site/assets/sponsors/` and the JSON gets the local path. `url`, `blurb` optional.
@@ -84,8 +91,9 @@ Any violation **fails the build (exit 1)** with messages a non-programmer can
 act on. Format: `events.csv row 14 ("Sunset Set"): venue_id "blue-moon" doesn't
 match any venue in the venues tab.` Row numbers are spreadsheet rows (header =
 row 1). Check: required fields, duplicate ids, unknown venue_id references,
-date format, end>start, lat/lng numeric and inside bbox [44.94..44.98,
--93.20..-93.13] (catches swapped lat/lng), unknown `kind`/`type` values,
+date format, end>start, `location` parseable (decimal pair or plus code) and
+resolving inside bbox [44.94..44.98, -93.20..-93.13] (catches swapped
+lat/lng), unknown `kind`/`type` values,
 missing logo files. Collect ALL errors, then print all and exit — never stop at
 the first.
 

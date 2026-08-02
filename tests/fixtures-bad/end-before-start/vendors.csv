@@ -1,16 +1,16 @@
-id,name,type,description,lat,lng
-sour-dough-seltzer,Sour Dough & Seltzer,food,We serve rye bread sandwiches with pickled vegetables and house-made sparkling water that cuts through the grease.,44.957,-93.16722
-cornhole-cart,The Cornhole Cart,food,"We sell hot dogs topped with relish and mustard, served on buns that actually hold together.",44.9558,-93.1655
-bakery-on-bikes,Bakery on Bikes,food,We deliver fresh cinnamon rolls and coffee from a trailer parked near the stage.,44.956,-93.17108
-lake-superior-smoked-fish,Lake Superior Smoked Fish,food,We offer cold-smoked whitefish salad on crackers for people who want something light.,44.9595,-93.16682
-pretzel-stand,The Pretzel Stand,food,We make soft pretzels with spicy mustard and cheese sauce that tastes like comfort.,44.95716,-93.1671
-wandering-wok,The Wandering Wok,food,We serve local lager in plastic cups alongside fried dough sticks.,44.95596,-93.16538
-mudpuppy-pottery,Mudpuppy Pottery,art,I throw simple mugs and bowls on a wheel and sell them for reasonable prices.,44.95616,-93.17132
-thread-count,Thread Count,art,I hand-dye fabric using natural pigments and sew it into tote bags that don’t rip.,44.95966,-93.1667
-wood-grain-works,Wood Grain Works,art,I carve wooden spoons and cutting boards from reclaimed oak found in local barns.,44.95732,-93.16698
-ink-paper,Ink & Paper,art,I print linocut posters of local landscapes and sell them in stacks of ten.,44.95612,-93.16562
-glass-heat,Glass & Heat,art,I blow small glass birds and hang them from trees or sell them in boxes.,44.95632,-93.1712
-knit-witted,Knit Witted,art,I knit thick wool hats and scarves that actually keep the wind out.,44.95982,-93.16658
-midway-vintage,Midway Vintage,retail,We sell used books and vinyl records that we’ve cleaned and sorted by genre.,44.95748,-93.16722
-odd-drawer,The Odd Drawer,retail,We offer quirky housewares like mismatched ceramic plates and copper pots.,44.95628,-93.1655
-craft-corner,Craft Corner,retail,We stock simple candles and soap bars made in small batches with local scents.,44.95648,-93.17108
+id,name,type,description,location
+sour-dough-seltzer,Sour Dough & Seltzer,food,We serve rye bread sandwiches with pickled vegetables and house-made sparkling water that cuts through the grease.,"44.957, -93.16722"
+cornhole-cart,The Cornhole Cart,food,"We sell hot dogs topped with relish and mustard, served on buns that actually hold together.","XR4M+8R St. Paul, Minnesota"
+bakery-on-bikes,Bakery on Bikes,food,We deliver fresh cinnamon rolls and coffee from a trailer parked near the stage.,86P8XR4H+CH
+lake-superior-smoked-fish,Lake Superior Smoked Fish,food,We offer cold-smoked whitefish salad on crackers for people who want something light.,XR5M+R7
+pretzel-stand,The Pretzel Stand,food,We make soft pretzels with spicy mustard and cheese sauce that tastes like comfort.,"44.95716, -93.1671"
+wandering-wok,The Wandering Wok,food,We serve local lager in plastic cups alongside fried dough sticks.,"XR4M+9R St. Paul, Minnesota"
+mudpuppy-pottery,Mudpuppy Pottery,art,I throw simple mugs and bowls on a wheel and sell them for reasonable prices.,86P8XR4H+FF
+thread-count,Thread Count,art,I hand-dye fabric using natural pigments and sew it into tote bags that don’t rip.,XR5M+V8
+wood-grain-works,Wood Grain Works,art,I carve wooden spoons and cutting boards from reclaimed oak found in local barns.,"44.95732, -93.16698"
+ink-paper,Ink & Paper,art,I print linocut posters of local landscapes and sell them in stacks of ten.,"XR4M+CQ St. Paul, Minnesota"
+glass-heat,Glass & Heat,art,I blow small glass birds and hang them from trees or sell them in boxes.,86P8XR4H+GG
+knit-witted,Knit Witted,art,I knit thick wool hats and scarves that actually keep the wind out.,XR5M+W9
+midway-vintage,Midway Vintage,retail,We sell used books and vinyl records that we’ve cleaned and sorted by genre.,"44.95748, -93.16722"
+odd-drawer,The Odd Drawer,retail,We offer quirky housewares like mismatched ceramic plates and copper pots.,"XR4M+GR St. Paul, Minnesota"
+craft-corner,Craft Corner,retail,We stock simple candles and soap bars made in small batches with local scents.,86P8XR4H+HH

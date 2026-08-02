@@ -27,9 +27,13 @@ function runBuild(configPath) {
   });
 }
 
+// Hermetic all-local config: the default content/config.json points the venues
+// tab at the live Google Sheet, which tests must not depend on.
+const GOOD_CONFIG = "tests/fixtures-good/config.json";
+
 describe("good fixtures", () => {
   test("build succeeds and emits a schema-shaped content.json", () => {
-    const result = runBuild();
+    const result = runBuild(GOOD_CONFIG);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     assert.match(result.stdout, /Built site\/data\/content\.json/);
 
@@ -45,18 +49,17 @@ describe("good fixtures", () => {
     assert.match(content.version, /^[0-9a-f]{12}$/, "version should be lowercase hex");
     assert.match(content.built_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
-    assert.equal(content.venues.length, 8);
+    assert.equal(content.venues.length, 9);
     assert.equal(content.events.length, 60);
     assert.equal(content.vendors.length, 15);
     assert.equal(content.sponsors.length, 8);
 
-    // spot-check a venue
-    const venue = content.venues.find((v) => v.id === "iron-kettle-taproom");
-    assert.ok(venue, "expected venue iron-kettle-taproom");
-    assert.equal(venue.name, "The Iron Kettle Taproom");
+    // spot-check a venue (fixture is a committed snapshot of the real sheet)
+    const venue = content.venues.find((v) => v.id === "midwaysaloon");
+    assert.ok(venue, "expected venue midwaysaloon");
+    assert.equal(venue.name, "Midway Saloon");
     assert.equal(typeof venue.lat, "number");
     assert.equal(typeof venue.lng, "number");
-    assert.equal(venue.url, "", "optional missing url should be empty string, not absent/null");
 
     // spot-check a vendor
     const vendor = content.vendors.find((v) => v.id === "sour-dough-seltzer");
@@ -84,7 +87,7 @@ describe("good fixtures", () => {
     // each venue hosts 6-9 events
     const byVenue = {};
     for (const e of content.events) byVenue[e.venue_id] = (byVenue[e.venue_id] ?? 0) + 1;
-    assert.equal(Object.keys(byVenue).length, 8);
+    assert.equal(Object.keys(byVenue).length, 9);
     for (const [venueId, count] of Object.entries(byVenue)) {
       assert.ok(count >= 6 && count <= 9, `venue ${venueId} hosts ${count} events, expected 6-9`);
     }
@@ -109,10 +112,10 @@ describe("good fixtures", () => {
   });
 
   test("version is stable across rebuilds of the same content", () => {
-    const first = runBuild();
+    const first = runBuild(GOOD_CONFIG);
     const contentPath = path.join(REPO_ROOT, "site/data/content.json");
     const v1 = JSON.parse(readFileSync(contentPath, "utf8")).version;
-    const second = runBuild();
+    const second = runBuild(GOOD_CONFIG);
     const v2 = JSON.parse(readFileSync(contentPath, "utf8")).version;
     assert.equal(first.status, 0);
     assert.equal(second.status, 0);

@@ -119,8 +119,9 @@ bytes. Events sorted by `start` then `title`; sponsors by `tier_order` then
 
 - `site/assets/map.svg`: stylized-but-true-scale street map. `viewBox="0 0 W H"`
   where 1 SVG unit = 1 meter, plain local equirectangular projection
-  (x ∝ lng·cos(lat₀), y ∝ −lat), bbox lng [-93.181, -93.151], lat
-  [44.950, 44.966]. Streets drawn from real OSM centerlines with names labeled;
+  (x ∝ lng·cos(lat₀), y ∝ −lat), bbox lng [-93.180, -93.140], lat
+  [44.945, 44.971] (sized to the real venue list, including Jimmy Lee Rec
+  Center and Sundin Music Hall). Streets drawn from real OSM centerlines with names labeled;
   Green Line stations marked. No venue/vendor pins baked in — the UI overlays
   pins at runtime. Root `<svg>` must have `id="circuit-map"`.
 - `site/assets/map-calibration.json`:
@@ -155,7 +156,7 @@ No external requests of any kind: system font stack, no CDNs, no analytics.
   link — allowed as user-initiated navigation, not a page resource).
 - `index.html` head must include exactly these integration points (owner: orchestrator):
   `<link rel="manifest" href="manifest.webmanifest">`,
-  `<meta name="theme-color" content="#7a2e8d">`,
+  `<meta name="theme-color" content="#10577b">`,
   `<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">`,
   `<script src="js/sw-register.js" defer></script>`.
 

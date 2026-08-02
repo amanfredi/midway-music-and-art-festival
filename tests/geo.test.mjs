@@ -40,7 +40,7 @@ test('Snelling & University intersection projects inside the viewBox and matches
   // Independently recompute via the raw equirectangular formula the
   // calibration's bbox-corner control points were themselves derived from,
   // so this checks the fitted transform against ground truth, not itself.
-  const BBOX = { south: 44.95, west: -93.181, north: 44.966, east: -93.151 };
+  const BBOX = { south: 44.945, west: -93.180, north: 44.971, east: -93.140 };
   const lat0 = (BBOX.south + BBOX.north) / 2;
   const mPerDegLat = 111320;
   const mPerDegLng = mPerDegLat * Math.cos((lat0 * Math.PI) / 180);

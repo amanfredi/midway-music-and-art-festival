@@ -26,7 +26,7 @@ for (const t of targets) {
   await page.setViewportSize({ width: t.size, height: t.size });
   await page.setContent(`<!doctype html><style>
     * { margin: 0 }
-    body { width:${t.size}px; height:${t.size}px; background:${t.bleed ? '#7a2e8d' : 'transparent'} }
+    body { width:${t.size}px; height:${t.size}px; background:${t.bleed ? '#fdf8ee' : 'transparent'} }
     img { width:${inner}px; height:${inner}px; margin:${pad}px; display:block }
   </style><img src="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}">`);
   await page.screenshot({

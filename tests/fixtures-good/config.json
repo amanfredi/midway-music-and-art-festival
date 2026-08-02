@@ -1,6 +1,6 @@
 {
   "sources": {
-    "venues": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1306919477&single=true&output=csv",
+    "venues": "content/fixtures/venues.csv",
     "events": "content/fixtures/events.csv",
     "vendors": "content/fixtures/vendors.csv",
     "sponsors": "content/fixtures/sponsors.csv",

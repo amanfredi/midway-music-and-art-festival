@@ -41,10 +41,12 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
   expect(await page.locator('[data-testid="event-row"]').count()).toBeGreaterThan(10);
 
-  // map renders offline with venue pins
+  // map renders offline with one pin per venue in the built content
   await page.goto('/' + T + '#/map');
   await expect(page.locator('#circuit-map')).toBeVisible();
-  expect(await page.locator('[data-testid="venue-pin"]').count()).toBe(8);
+  const venueCount = await page.evaluate(async () => (await (await fetch('data/content.json')).json()).venues.length);
+  expect(venueCount).toBeGreaterThan(0);
+  expect(await page.locator('[data-testid="venue-pin"]').count()).toBe(venueCount);
 
   // sponsors render offline with bundled logos
   await page.goto('/' + T + '#/sponsors');

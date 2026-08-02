@@ -31,7 +31,10 @@ const CALIBRATION_OUT = path.join(ROOT, 'site/assets/map-calibration.json');
 // (x proportional to lng*cos(lat0), y proportional to -lat, north up). This
 // is the single source of truth for the numbers baked into map-calibration.json.
 // ---------------------------------------------------------------------------
-const BBOX = { south: 44.950, west: -93.181, north: 44.966, east: -93.151 };
+// Sized to the real venue list (sheet, 2026-08-02): Sundin Music Hall sits at
+// 44.967 and Jimmy Lee Rec Center at 44.9496, -93.1459 — both beyond the
+// original Snelling/University corridor guess.
+const BBOX = { south: 44.945, west: -93.180, north: 44.971, east: -93.140 };
 const LAT0 = (BBOX.south + BBOX.north) / 2;
 const M_PER_DEG_LAT = 111320; // standard equirectangular constant (meters/degree latitude)
 const M_PER_DEG_LNG = M_PER_DEG_LAT * Math.cos((LAT0 * Math.PI) / 180);

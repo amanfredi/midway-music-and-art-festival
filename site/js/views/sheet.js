@@ -44,7 +44,7 @@ export function openVenueSheet(venueId) {
   const todaysEvents = eventsForVenue(venueId)
     .filter((e) => dateKey(parseEventTimes(e).start) === todayKey)
     .sort((a, b) => a.start.localeCompare(b.start));
-  const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}`;
+  const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking`;
 
   open(`
     <h2 class="sheet__title">${esc(venue.name)}</h2>

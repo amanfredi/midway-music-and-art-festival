@@ -151,7 +151,7 @@ No external requests of any kind: system font stack, no CDNs, no analytics.
   only when `settings.you_are_here_enabled === "true"` AND user taps a locate
   button (geolocation permission requested on tap, never on load).
 - Venue detail includes an "Open in Google Maps" link:
-  `https://www.google.com/maps/dir/?api=1&destination=<lat>,<lng>` (plain
+  `https://www.google.com/maps/dir/?api=1&destination=<lat>,<lng>&travelmode=walking` (plain
   link — allowed as user-initiated navigation, not a page resource).
 - `index.html` head must include exactly these integration points (owner: orchestrator):
   `<link rel="manifest" href="manifest.webmanifest">`,

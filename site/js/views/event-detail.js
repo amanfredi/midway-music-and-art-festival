@@ -18,7 +18,7 @@ export function renderEventDetail(container, content, eventId) {
   const { start, end } = parseEventTimes(event);
   const starred = isStarred(event.id);
   const kind = event.kind || 'music';
-  const mapsHref = venue ? `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}` : '';
+  const mapsHref = venue ? `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking` : '';
 
   container.innerHTML = `
     <section class="view event-detail">

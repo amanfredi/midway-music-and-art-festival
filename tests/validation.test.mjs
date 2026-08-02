@@ -51,7 +51,7 @@ describe("good fixtures", () => {
     assert.equal(content.venues.length, 9);
     assert.equal(content.events.length, 60);
     assert.equal(content.vendors.length, 15);
-    assert.equal(content.sponsors.length, 8);
+    assert.equal(content.sponsors.length, 11);
 
     // spot-check a venue (fixture is a committed snapshot of the real sheet)
     const venue = content.venues.find((v) => v.id === "midwaysaloon");
@@ -67,6 +67,7 @@ describe("good fixtures", () => {
 
     // events: start/end use the "T" wall-clock format, sorted by start then title
     assert.match(content.events[0].start, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    assert.match(content.events[0].end, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     for (let i = 1; i < content.events.length; i++) {
       const prev = content.events[i - 1];
       const cur = content.events[i];
@@ -74,14 +75,38 @@ describe("good fixtures", () => {
       assert.ok(inOrder, `events not sorted at index ${i}: (${prev.start}, "${prev.title}") vs (${cur.start}, "${cur.title}")`);
     }
 
-    // event kind distribution matches the scheduling requirements (50 titles
-    // -> 60 rows, with exactly 10 second sets, all music).
+    // every event carries a tickets value (default "General Admission" when
+    // the CSV cell was blank), from the fixed enum
+    const VALID_TICKETS = new Set([
+      "General Admission",
+      "General Admission (limited capacity)",
+      "Free Ticket Required",
+      "Paid Ticket Required",
+    ]);
+    for (const e of content.events) {
+      assert.ok(VALID_TICKETS.has(e.tickets), `event ${e.id} has unexpected tickets value ${JSON.stringify(e.tickets)}`);
+    }
+    const byTickets = {};
+    for (const e of content.events) byTickets[e.tickets] = (byTickets[e.tickets] ?? 0) + 1;
+    for (const value of VALID_TICKETS) {
+      assert.ok((byTickets[value] ?? 0) >= 1, `expected at least one event with tickets ${JSON.stringify(value)}`);
+    }
+
+    // spot-check the past-midnight event: end_time < start_time rolls to the next date
+    const pastMidnight = content.events.find((e) => e.id === "cedar-and-sage");
+    assert.ok(pastMidnight, "expected event cedar-and-sage");
+    assert.equal(pastMidnight.start, "2026-10-03T23:30");
+    assert.equal(pastMidnight.end, "2026-10-04T00:15");
+
+    // event kind distribution covers the full six-value enum
     const byKind = {};
     for (const e of content.events) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
-    assert.equal(byKind.art, 8);
-    assert.equal(byKind.family, 6);
-    assert.equal(byKind.community, 6);
-    assert.equal(byKind.music, 40);
+    assert.equal(byKind.music, 35);
+    assert.equal(byKind.art, 7);
+    assert.equal(byKind.performance, 5);
+    assert.equal(byKind.literary, 3);
+    assert.equal(byKind.vendor, 2);
+    assert.equal(byKind.other, 8);
 
     // each venue hosts 6-9 events
     const byVenue = {};
@@ -99,15 +124,37 @@ describe("good fixtures", () => {
       assert.ok(inOrder, `sponsors not sorted at index ${i}`);
     }
     for (const sponsor of content.sponsors) {
-      assert.match(sponsor.logo, /^assets\/sponsors\/.+/);
-      assert.ok(existsSync(path.join(REPO_ROOT, "site", sponsor.logo)), `${sponsor.logo} should exist on disk`);
       assert.equal(typeof sponsor.tier_order, "number");
+      assert.ok(sponsor.tier_slug, `sponsor ${sponsor.id} missing tier_slug`);
+      // lat/lng are numbers when the sponsor has a location, null otherwise —
+      // never absent, never a string.
+      if (sponsor.lat === null) {
+        assert.equal(sponsor.lng, null, `sponsor ${sponsor.id} has lat null but lng not null`);
+      } else {
+        assert.equal(typeof sponsor.lat, "number");
+        assert.equal(typeof sponsor.lng, "number");
+      }
+      if (sponsor.logo) {
+        assert.match(sponsor.logo, /^assets\/sponsors\/.+/);
+        assert.ok(existsSync(path.join(REPO_ROOT, "site", sponsor.logo)), `${sponsor.logo} should exist on disk`);
+      }
+    }
+
+    // tier caps: exactly 1 emerald, at most 5 ruby; quartz sponsors have no logo
+    const byTierSlug = {};
+    for (const s of content.sponsors) byTierSlug[s.tier_slug] = (byTierSlug[s.tier_slug] ?? 0) + 1;
+    assert.equal(byTierSlug.emerald, 1);
+    assert.ok(byTierSlug.ruby >= 1 && byTierSlug.ruby <= 5);
+    for (const s of content.sponsors.filter((s) => s.tier_slug === "quartz")) {
+      assert.equal(s.logo, "", `quartz sponsor ${s.id} should have no logo`);
     }
 
     // settings: values are plain strings, not coerced booleans
     assert.equal(content.settings.festival_name, "Midway Music & Arts Festival");
     assert.equal(content.settings.you_are_here_enabled, "true");
     assert.equal(typeof content.settings.you_are_here_enabled, "string");
+    assert.equal(content.settings.donation_url, "https://www.zeffy.com/en-US/donation-form/midway-music-and-arts");
+    assert.equal(content.settings.donation_label, "Donate");
   });
 
   test("rebuilding unchanged content is byte-identical (stable service-worker version)", () => {
@@ -133,7 +180,7 @@ describe("bad fixtures", () => {
     },
     {
       dir: "bad-date",
-      mustInclude: ["events.csv", "row 2", "10/02/2026 5:00 PM"],
+      mustInclude: ["events.csv", "row 2", "10/02/2026"],
     },
     {
       dir: "missing-field",
@@ -144,8 +191,8 @@ describe("bad fixtures", () => {
       mustInclude: ["events.csv", "row 3", "midway-strays", "duplicate"],
     },
     {
-      dir: "end-before-start",
-      mustInclude: ["events.csv", "row 2", "after"],
+      dir: "equal-start-end",
+      mustInclude: ["events.csv", "row 2", "differ"],
     },
     {
       dir: "bad-latlng",
@@ -162,6 +209,18 @@ describe("bad fixtures", () => {
     {
       dir: "missing-logo",
       mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg"],
+    },
+    {
+      dir: "bad-tickets",
+      mustInclude: ["events.csv", "row 2", "VIP Pass", "unknown tickets"],
+    },
+    {
+      dir: "bad-tier",
+      mustInclude: ["sponsors.csv", "row 2", "platinum", "unknown tier"],
+    },
+    {
+      dir: "emerald-limit-exceeded",
+      mustInclude: ["sponsors.csv", "row 3", "emerald", "at most 1"],
     },
   ];
 

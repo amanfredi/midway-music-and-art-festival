@@ -1,6 +1,6 @@
 id,title,venue_id,date,start_time,end_time,kind,tickets,description
-midway-strays,The Midway Strays,midwaysaloon,2026-10-02,17:00,18:00,music,,"An indie rock quartet plays loud, reverb-heavy songs on the main stage."
-midway-strays,Neon Decay,midwaysaloon,2026-10-02,18:15,19:15,music,,"A punk rock band plays fast, three-chord songs with shouted vocals."
+midway-strays,The Midway Strays,midwaysaloon,2026-10-02,17:00,17:00,music,,"An indie rock quartet plays loud, reverb-heavy songs on the main stage."
+neon-decay,Neon Decay,midwaysaloon,2026-10-02,18:15,19:15,music,,"A punk rock band plays fast, three-chord songs with shouted vocals."
 open-mic-night,Open Mic Night,jimmyleereccenter,2026-10-03,11:00,12:00,literary,,"Residents sign up to share songs, poems, or comedy on stage."
 rusty-nails,The Rusty Nails,jimmyleereccenter,2026-10-03,19:00,19:45,music,,"A garage rock band plays raw, unpolished rock and roll."
 punk-rockers,The Punk Rockers,midwaysaloon,2026-10-03,20:00,20:45,music,,"A five-piece band plays aggressive, fast-paced punk songs."

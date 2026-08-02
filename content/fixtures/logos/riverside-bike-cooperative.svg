@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" role="img" aria-label="Riverside Bike Cooperative (placeholder logo)">
+  <rect width="240" height="120" rx="10" fill="#2f6b5e"/>
+  <circle cx="30" cy="76" r="12" fill="none" stroke="#8fc9ba" stroke-width="4"/><circle cx="58" cy="76" r="12" fill="none" stroke="#8fc9ba" stroke-width="4"/><line x1="30" y1="76" x2="44" y2="52" stroke="#8fc9ba" stroke-width="4"/><line x1="44" y1="52" x2="58" y2="76" stroke="#8fc9ba" stroke-width="4"/><line x1="44" y1="52" x2="30" y2="76" stroke="#8fc9ba" stroke-width="4"/>
+  <text x="150" y="56" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eaf5f1">Riverside Bike</text>
+  <text x="150" y="76" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#eaf5f1">Cooperative</text>
+  <text x="150" y="100" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="9" letter-spacing="1" fill="#eaf5f1" opacity="0.65">PLACEHOLDER LOGO</text>
+</svg>

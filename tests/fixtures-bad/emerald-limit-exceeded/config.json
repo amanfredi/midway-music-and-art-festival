@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "venues": "tests/fixtures-bad/emerald-limit-exceeded/venues.csv",
+    "events": "tests/fixtures-bad/emerald-limit-exceeded/events.csv",
+    "vendors": "tests/fixtures-bad/emerald-limit-exceeded/vendors.csv",
+    "sponsors": "tests/fixtures-bad/emerald-limit-exceeded/sponsors.csv",
+    "settings": "tests/fixtures-bad/emerald-limit-exceeded/settings.csv"
+  }
+}

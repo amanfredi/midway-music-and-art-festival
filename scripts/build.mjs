@@ -553,9 +553,11 @@ async function main() {
   for (const key of SOURCE_ORDER) hash.update(loaded[key].buffer);
   const version = hash.digest("hex").slice(0, 12);
 
+  // No timestamp or other volatile fields: identical sources must produce
+  // byte-identical output, so an unchanged rebuild yields the same service
+  // worker version and clients don't re-download the whole site.
   const content = {
     version,
-    built_at: new Date().toISOString(),
     settings: settingsResult.clean,
     venues: venuesResult.clean,
     events,

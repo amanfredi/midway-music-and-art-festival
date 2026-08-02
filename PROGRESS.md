@@ -45,7 +45,8 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   CONTRACTS.md and scripts/{olc,location}.mjs.
 - 2026-08-02 (later): venues tab is LIVE from the organizers' Google Sheet
   (URL in content/config.json); fixture venues.csv is a committed snapshot;
-  tests use hermetic tests/fixtures-good/config.json. Placeholder events
+  validation tests use hermetic tests/fixtures-good/config.json (the default
+  `npm run build` still fetches the sheet). Placeholder events
   remapped onto the 9 real venues. Map regenerated with wider bbox (Jimmy
   Lee Rec Center + Sundin). MMAF branding applied: header logo, brand
   palette, emblem app icons. Maps links default to walking directions.

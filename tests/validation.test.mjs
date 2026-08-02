@@ -41,13 +41,12 @@ describe("good fixtures", () => {
     assert.ok(existsSync(contentPath), "site/data/content.json should exist");
     const content = JSON.parse(readFileSync(contentPath, "utf8"));
 
-    for (const key of ["version", "built_at", "settings", "venues", "events", "vendors", "sponsors"]) {
+    for (const key of ["version", "settings", "venues", "events", "vendors", "sponsors"]) {
       assert.ok(key in content, `content.json missing top-level key "${key}"`);
     }
 
     assert.equal(content.version.length, 12, "version should be 12 hex chars");
     assert.match(content.version, /^[0-9a-f]{12}$/, "version should be lowercase hex");
-    assert.match(content.built_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
     assert.equal(content.venues.length, 9);
     assert.equal(content.events.length, 60);
@@ -111,15 +110,18 @@ describe("good fixtures", () => {
     assert.equal(typeof content.settings.you_are_here_enabled, "string");
   });
 
-  test("version is stable across rebuilds of the same content", () => {
+  test("rebuilding unchanged content is byte-identical (stable service-worker version)", () => {
     const first = runBuild(GOOD_CONFIG);
     const contentPath = path.join(REPO_ROOT, "site/data/content.json");
-    const v1 = JSON.parse(readFileSync(contentPath, "utf8")).version;
+    const bytes1 = readFileSync(contentPath, "utf8");
     const second = runBuild(GOOD_CONFIG);
-    const v2 = JSON.parse(readFileSync(contentPath, "utf8")).version;
+    const bytes2 = readFileSync(contentPath, "utf8");
     assert.equal(first.status, 0);
     assert.equal(second.status, 0);
-    assert.equal(v1, v2, "version hash should depend only on source CSV bytes, not on build time");
+    // Byte-identity is what keeps the generated sw.js version (a hash of all
+    // site bytes) stable across no-change deploys, so clients don't re-download
+    // the whole precache after every cron rebuild.
+    assert.equal(bytes1, bytes2, "unchanged sources must produce byte-identical content.json");
   });
 });
 

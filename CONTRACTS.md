@@ -102,7 +102,6 @@ the first.
 ```json
 {
   "version": "a1b2c3d4e5f6",
-  "built_at": "2026-08-01T22:00:00Z",
   "settings": { "festival_name": "…", "banner_id": "…", "banner_text": "…", "you_are_here_enabled": "false", "…": "…" },
   "venues":   [ { "id": "…", "name": "…", "address": "…", "lat": 44.9557, "lng": -93.1668, "description": "…", "url": "…" } ],
   "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "description": "…" } ],

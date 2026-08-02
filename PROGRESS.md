@@ -40,3 +40,8 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
 - gh authed as amanfredi; push to origin main verified working.
 - RESOLVED 2026-08-01: Anthony made the repo public and enabled Pages; Deploy
   workflow succeeded and the live URL was verified (see Status).
+- 2026-08-02: venues/vendors CSV schema changed — single `location` column
+  (decimal pair or Google Maps plus code) replaces `lat`/`lng`; see
+  CONTRACTS.md and scripts/{olc,location}.mjs. Sheet being set up by
+  Anthony/organizers should use the new column. MMAF brand assets committed
+  at repo root, not yet wired into the site.

@@ -15,9 +15,34 @@ import { initInstallPrompt } from './pwa-install.js';
 const viewEl = document.getElementById('view');
 const bannerRegion = document.getElementById('banner-region');
 const festivalNameEl = document.getElementById('festival-name');
+const routeAnnouncer = document.getElementById('route-announcer');
 const navLinks = [...document.querySelectorAll('.tab-bar a')];
 
 let currentCleanup = null;
+
+// Human-readable names for the route-change live-region announcement below.
+// Matches the nav labels (CONTRACTS.md: "Support" is the #/sponsors route
+// relabeled in the nav only) rather than the route/hash names themselves.
+const ROUTE_NAMES = {
+  now: 'Now',
+  schedule: 'Schedule',
+  map: 'Map',
+  starred: 'Starred',
+  vendors: 'Vendors',
+  sponsors: 'Support',
+  event: 'Event detail',
+};
+
+function announceRoute(routeName) {
+  if (!routeAnnouncer) return;
+  const label = ROUTE_NAMES[routeName] || routeName;
+  // Clear first, then set on the next frame: an unchanged aria-live value
+  // (e.g. navigating to the same view twice) wouldn't otherwise re-announce.
+  routeAnnouncer.textContent = '';
+  requestAnimationFrame(() => {
+    routeAnnouncer.textContent = `${label} view`;
+  });
+}
 
 function renderBanner() {
   const content = store.getContent();
@@ -83,6 +108,13 @@ async function handleRoute(route) {
     default:
       currentCleanup = renderNow(viewEl, content);
   }
+
+  announceRoute(name);
+  // Move focus to the view container on every route change so keyboard/screen
+  // reader users land on the new content instead of wherever they were on the
+  // previous view (e.g. the nav link or a now-removed element). preventScroll
+  // because #view is already scrolled to top above and is fully in viewport.
+  viewEl.focus({ preventScroll: true });
 }
 
 function renderSplash() {

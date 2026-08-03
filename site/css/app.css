@@ -868,6 +868,18 @@ img {
   100% { transform: scale(1.6); opacity: 0; }
 }
 
+/* -- reduced motion: the only non-essential animation/transitions in the app
+   are the you-are-here pulse and the toast fade/slide-in -- */
+@media (prefers-reduced-motion: reduce) {
+  .you-are-here__pulse {
+    animation: none;
+  }
+
+  .toast {
+    transition: none;
+  }
+}
+
 /* -- toasts -- */
 
 #toast-root {
@@ -906,6 +918,14 @@ img {
 a:focus-visible, button:focus-visible {
   outline: 3px solid var(--color-primary-dark);
   outline-offset: 2px;
+}
+
+/* the map svg and its pins are focusable (keyboard pan; Enter/Space to open a
+   pin's detail) -- offset is negative since an outside outline on the pins'
+   parent svg would get clipped by the map-frame's overflow:hidden. */
+.circuit-map-svg:focus-visible, .pin:focus-visible {
+  outline: 3px solid var(--color-primary-dark);
+  outline-offset: -3px;
 }
 
 /* -- small screens keep everything single-column by default; from here up,

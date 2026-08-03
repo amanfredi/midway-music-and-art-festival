@@ -3,8 +3,9 @@ import { esc } from '../util.js';
 // Grouped by type (food/art/retail) rather than a flat list: festival-goers
 // browsing vendors are usually looking for "something to eat" or "art to
 // buy", not a specific name, so type is the more useful first cut. Order and
-// labels match the existing vendor badge/legend convention elsewhere in the
-// app (map legend, badge--vendor-* CSS).
+// labels match the existing vendor badge convention elsewhere in the app
+// (badge--vendor-* CSS; vendors have no map pins or map-legend entry -- see
+// CONTRACTS.md Map + geo contract).
 const TYPE_LABELS = { food: 'Food', art: 'Art & Craft', retail: 'Retail' };
 const TYPE_ORDER = ['food', 'art', 'retail'];
 

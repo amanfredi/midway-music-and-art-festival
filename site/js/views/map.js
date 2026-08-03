@@ -24,6 +24,7 @@ const MIN_ZOOM_FRACTION = 0.08; // how far in a user may zoom, relative to full 
 const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_DIST = 24;
 const TAP_MOVE_THRESHOLD = 10;
+const KEYBOARD_PAN_FRACTION = 0.2; // how far one arrow-key press moves, relative to the current viewport
 
 const TRANSIT_LINE_LETTER = { green: 'G', a: 'A', b: 'B' };
 const TRANSIT_LINE_NAME = { green: 'METRO Green Line', a: 'METRO A Line', b: 'METRO B Line' };
@@ -90,6 +91,39 @@ function setupInteraction(svg, original, onActivatePin) {
   function reset() {
     view = { ...original };
     apply();
+  }
+
+  function panBy(dx, dy) {
+    view.x += dx;
+    view.y += dy;
+    clampPan();
+    apply();
+  }
+
+  // Keyboard equivalent of drag-panning (mouse/touch drag has no keyboard
+  // analogue otherwise). Step is relative to the current viewport so it stays
+  // useful at any zoom level. Listening on the svg root rather than each pin
+  // means arrow keys pan regardless of which focusable element inside the map
+  // (a pin, or the svg itself) currently has focus.
+  function onKeyDown(e) {
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault();
+        panBy(-view.w * KEYBOARD_PAN_FRACTION, 0);
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        panBy(view.w * KEYBOARD_PAN_FRACTION, 0);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        panBy(0, -view.h * KEYBOARD_PAN_FRACTION);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        panBy(0, view.h * KEYBOARD_PAN_FRACTION);
+        break;
+    }
   }
 
   function toSvgPoint(clientX, clientY) {
@@ -175,6 +209,7 @@ function setupInteraction(svg, original, onActivatePin) {
   svg.addEventListener('pointermove', onPointerMove);
   svg.addEventListener('pointerup', onPointerUp);
   svg.addEventListener('pointercancel', onPointerUp);
+  svg.addEventListener('keydown', onKeyDown);
 
   return {
     zoomIn: () => zoomBy(0.7),
@@ -185,6 +220,7 @@ function setupInteraction(svg, original, onActivatePin) {
       svg.removeEventListener('pointermove', onPointerMove);
       svg.removeEventListener('pointerup', onPointerUp);
       svg.removeEventListener('pointercancel', onPointerUp);
+      svg.removeEventListener('keydown', onKeyDown);
     },
   };
 }
@@ -259,6 +295,12 @@ export async function renderMap(container, content) {
   }
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   svg.classList.add('circuit-map-svg');
+  // Pan/zoom was pointer-only (drag + pinch + the on-screen zoom buttons);
+  // this makes the map itself a keyboard-operable control, panned with the
+  // arrow keys once focused -- the aria-label doubles as the usage hint.
+  svg.setAttribute('tabindex', '0');
+  svg.setAttribute('role', 'group');
+  svg.setAttribute('aria-label', 'Circuit map. Use the arrow keys to pan, and the zoom buttons below to zoom in and out.');
 
   let projector;
   try {

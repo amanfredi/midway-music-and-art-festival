@@ -120,10 +120,17 @@ export function renderSchedule(container, content, route) {
     <section class="view schedule-view">
       <h1 class="view-title">Schedule</h1>
       <div class="schedule-controls">
-        <div class="day-switcher" role="tablist" aria-label="Festival day">
+        <!-- Plain button group with aria-pressed, not role="tablist": day,
+             group-by, and kind-filter below all compose to determine the
+             schedule list's contents, so no one of them owns an independent
+             set of exclusive panels the way real tabs do. A full ARIA tabs
+             pattern (tabpanel + aria-controls + roving tabindex) would claim
+             a relationship that isn't there; this matches the sibling
+             group-toggle/kind-filter controls instead (CONTRACTS.md). -->
+        <div class="day-switcher" role="group" aria-label="Festival day">
           ${days
             .map(
-              (d) => `<button type="button" class="day-tab ${d.key === activeDayKey ? 'is-active' : ''}" role="tab" aria-selected="${d.key === activeDayKey}" data-day="${esc(d.key)}">${esc(shortDayLabel(d.date))}</button>`
+              (d) => `<button type="button" class="day-tab ${d.key === activeDayKey ? 'is-active' : ''}" aria-pressed="${d.key === activeDayKey}" data-day="${esc(d.key)}">${esc(shortDayLabel(d.date))}</button>`
             )
             .join('')}
         </div>

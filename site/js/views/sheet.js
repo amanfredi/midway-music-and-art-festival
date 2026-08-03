@@ -3,7 +3,7 @@
 
 import { esc } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
-import { findVenue, findVendor, findSponsor, eventsForVenue } from '../store.js';
+import { findVenue, findSponsor, eventsForVenue } from '../store.js';
 
 function root() {
   return document.getElementById('sheet-root');
@@ -13,12 +13,17 @@ function escKeyHandler(ev) {
   if (ev.key === 'Escape') closeSheet();
 }
 
+// The element focused right before a sheet opens (the pin/button that
+// triggered it), so closeSheet() can return focus there.
+let triggerEl = null;
+
 function open(innerHtml) {
   const r = root();
   if (!r) return;
+  triggerEl = document.activeElement;
   r.innerHTML = `
     <div class="sheet-overlay" id="sheet-overlay">
-      <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
         <button type="button" class="sheet__close" id="sheet-close" aria-label="Close">&times;</button>
         ${innerHtml}
       </div>
@@ -29,12 +34,21 @@ function open(innerHtml) {
   r.querySelector('#sheet-close').addEventListener('click', closeSheet);
   document.addEventListener('keydown', escKeyHandler);
   r.querySelectorAll('[data-close-sheet]').forEach((el) => el.addEventListener('click', closeSheet));
+  // Focus the dialog itself (not the close button): its aria-labelledby
+  // announces the sheet's title first, before a screen reader user tabs into
+  // its content.
+  r.querySelector('.sheet').focus();
 }
 
 export function closeSheet() {
   const r = root();
+  const wasOpen = !!(r && r.innerHTML);
   if (r) r.innerHTML = '';
   document.removeEventListener('keydown', escKeyHandler);
+  if (wasOpen && triggerEl && typeof triggerEl.focus === 'function' && document.contains(triggerEl)) {
+    triggerEl.focus();
+  }
+  triggerEl = null;
 }
 
 export function openVenueSheet(venueId) {
@@ -47,7 +61,7 @@ export function openVenueSheet(venueId) {
   const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking`;
 
   open(`
-    <h2 class="sheet__title">${esc(venue.name)}</h2>
+    <h2 class="sheet__title" id="sheet-title">${esc(venue.name)}</h2>
     <p class="sheet__address">${esc(venue.address)}</p>
     ${venue.description ? `<p class="sheet__description">${esc(venue.description)}</p>` : ''}
     <h3 class="sheet__subtitle">Today at this venue</h3>
@@ -60,23 +74,13 @@ export function openVenueSheet(venueId) {
   `);
 }
 
-export function openVendorSheet(vendorId) {
-  const vendor = findVendor(vendorId);
-  if (!vendor) return;
-  open(`
-    <h2 class="sheet__title">${esc(vendor.name)}</h2>
-    <span class="badge badge--vendor-${esc(vendor.type)}">${esc(vendor.type)}</span>
-    ${vendor.description ? `<p class="sheet__description">${esc(vendor.description)}</p>` : ''}
-  `);
-}
-
 // iOS Safari has no beforeinstallprompt API, so the install button opens
 // this instead: the same steps a person would find under Safari's Share
 // button, kept in-page because the site has no external links to send them
 // to (offline-first).
 export function openInstallInstructionsSheet() {
   open(`
-    <h2 class="sheet__title">Install this app</h2>
+    <h2 class="sheet__title" id="sheet-title">Install this app</h2>
     <p class="sheet__description">Add the Circuit Map to your Home Screen for quicker access and better offline support:</p>
     <ol class="sheet__steps">
       <li>Tap the <strong>Share</strong> button in Safari's toolbar.</li>
@@ -91,7 +95,7 @@ export function openSponsorSheet(sponsorId) {
   if (!sponsor || !Number.isFinite(sponsor.lat) || !Number.isFinite(sponsor.lng)) return;
   const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${sponsor.lat},${sponsor.lng}&travelmode=walking`;
   open(`
-    <h2 class="sheet__title">${esc(sponsor.name)}</h2>
+    <h2 class="sheet__title" id="sheet-title">${esc(sponsor.name)}</h2>
     ${sponsor.blurb ? `<p class="sheet__description">${esc(sponsor.blurb)}</p>` : ''}
     <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>
   `);

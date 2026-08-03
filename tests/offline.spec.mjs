@@ -48,9 +48,14 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   expect(venueCount).toBeGreaterThan(0);
   expect(await page.locator('[data-testid="venue-pin"]').count()).toBe(venueCount);
 
-  // sponsors render offline with bundled logos
+  // vendors render offline
+  await page.goto('/' + T + '#/vendors');
+  await expect(page.locator('[data-testid="vendor-list"]')).toBeVisible();
+
+  // sponsors render offline with bundled logos, and the donate link is present
   await page.goto('/' + T + '#/sponsors');
   await expect(page.locator('[data-testid="sponsor-list"]')).toBeVisible();
+  await expect(page.locator('[data-testid="donate-link"]')).toBeVisible();
   const logoOk = await page
     .locator('[data-testid="sponsor-list"] img')
     .first()

@@ -3,7 +3,7 @@
 
 import { esc } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
-import { findVenue, findVendor, eventsForVenue } from '../store.js';
+import { findVenue, findVendor, findSponsor, eventsForVenue } from '../store.js';
 
 function root() {
   return document.getElementById('sheet-root');
@@ -83,5 +83,16 @@ export function openInstallInstructionsSheet() {
       <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
       <li>Tap <strong>Add</strong> in the top-right corner.</li>
     </ol>
+  `);
+}
+
+export function openSponsorSheet(sponsorId) {
+  const sponsor = findSponsor(sponsorId);
+  if (!sponsor || !Number.isFinite(sponsor.lat) || !Number.isFinite(sponsor.lng)) return;
+  const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${sponsor.lat},${sponsor.lng}&travelmode=walking`;
+  open(`
+    <h2 class="sheet__title">${esc(sponsor.name)}</h2>
+    ${sponsor.blurb ? `<p class="sheet__description">${esc(sponsor.blurb)}</p>` : ''}
+    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>
   `);
 }

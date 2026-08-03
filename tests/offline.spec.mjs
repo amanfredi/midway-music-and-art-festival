@@ -48,6 +48,12 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   expect(venueCount).toBeGreaterThan(0);
   expect(await page.locator('[data-testid="venue-pin"]').count()).toBe(venueCount);
 
+  // one transit pin per stop in the committed transit.json (offline: served
+  // from precache) — asserted while still on the map view
+  const transitStopCount = await page.evaluate(async () => (await (await fetch('assets/transit.json')).json()).stops.length);
+  expect(transitStopCount).toBeGreaterThan(0);
+  expect(await page.locator('[data-testid="transit-pin"]').count()).toBe(transitStopCount);
+
   // vendors render offline
   await page.goto('/' + T + '#/vendors');
   await expect(page.locator('[data-testid="vendor-list"]')).toBeVisible();

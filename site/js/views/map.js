@@ -1,25 +1,55 @@
 import { esc, showToast } from '../util.js';
 import { makeProjector } from '../geo.js';
-import { openVenueSheet, openVendorSheet } from './sheet.js';
+import { openVenueSheet, openSponsorSheet } from './sheet.js';
 
 // Pin sizes are in map units (1 unit = 1 meter, per CONTRACTS.md), not CSS
 // pixels. Like any real map, symbols are drawn deliberately larger than true
 // scale so they stay visible/tappable at the full zoomed-out view; the
 // pinch/double-tap/button zoom controls exist precisely so a precise tap is
 // always one zoom-in away.
+//
+// All three pin types (CONTRACTS.md pin table) are diamonds, sized per type:
+// venue and "Featured Destination" sponsors are the visually dominant pins;
+// transit and generic sponsors are a step down. Vendor pins are gone
+// entirely -- vendors moved to the #/vendors list view.
 const VENUE_PIN_R = 42;
 const VENUE_HIT_R = 110;
-const VENDOR_SIZE = 26;
-const VENDOR_HIT_R = 80;
+const TRANSIT_PIN_R = 34;
+const TRANSIT_HIT_R = 90;
+const SPONSOR_FEATURED_R = 48;
+const SPONSOR_FEATURED_HIT_R = 125;
+const SPONSOR_GENERIC_R = 34;
+const SPONSOR_GENERIC_HIT_R = 90;
 const MIN_ZOOM_FRACTION = 0.08; // how far in a user may zoom, relative to full view
 const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_DIST = 24;
 const TAP_MOVE_THRESHOLD = 10;
 
-function vendorShapeMarkup(type) {
-  if (type === 'food') return `<circle class="pin__vendor-shape" r="${VENDOR_SIZE}"></circle>`;
-  if (type === 'art') return `<polygon class="pin__vendor-shape" points="0,-${VENDOR_SIZE} ${VENDOR_SIZE},${VENDOR_SIZE} ${-VENDOR_SIZE},${VENDOR_SIZE}"></polygon>`;
-  return `<rect class="pin__vendor-shape" x="${-VENDOR_SIZE}" y="${-VENDOR_SIZE}" width="${VENDOR_SIZE * 2}" height="${VENDOR_SIZE * 2}"></rect>`; // retail
+const TRANSIT_LINE_LETTER = { green: 'G', a: 'A', b: 'B' };
+const TRANSIT_LINE_NAME = { green: 'METRO Green Line', a: 'METRO A Line', b: 'METRO B Line' };
+const FEATURED_SPONSOR_TIERS = new Set(['emerald', 'ruby', 'sapphire']);
+
+/** SVG polygon points for a diamond (equal-length diagonals) of "radius" r, centered on the pin's translate(). */
+function diamondPoints(r) {
+  return `0,${-r} ${r},0 0,${r} ${-r},0`;
+}
+
+/**
+ * Transit pins carry the line letter(s) inside the diamond. Single-line stops
+ * get one centered letter, same as a venue number. Multi-line stops (a
+ * transfer point served by two lines) stack the letters on separate lines
+ * rather than e.g. a "G/A" slash -- more legible at pin size. Design call,
+ * see CONTRACTS.md / the map agent's final report for the reasoning.
+ */
+function transitLabelMarkup(lines) {
+  if (lines.length === 1) {
+    return `<text class="pin__label" dy="0.35em">${TRANSIT_LINE_LETTER[lines[0]]}</text>`;
+  }
+  const lineHeightEm = 1.05;
+  const tspans = lines
+    .map((l, i) => `<tspan x="0" dy="${i === 0 ? -((lines.length - 1) * lineHeightEm) / 2 + 0.32 : lineHeightEm}em">${TRANSIT_LINE_LETTER[l]}</tspan>`)
+    .join('');
+  return `<text class="pin__label pin__label--stacked">${tspans}</text>`;
 }
 
 /** Wires pan (drag) + pinch-zoom + double-tap-zoom + pin/background tap dispatch onto an inlined <svg>. */
@@ -177,10 +207,10 @@ export async function renderMap(container, content) {
       <div class="map-legend">
         <h2 class="map-legend__title">Legend</h2>
         <ul class="map-legend__list">
-          <li><span class="legend-swatch legend-swatch--venue">1</span> Venue</li>
-          <li><span class="legend-swatch legend-swatch--food"></span> Food vendor</li>
-          <li><span class="legend-swatch legend-swatch--art"></span> Art vendor</li>
-          <li><span class="legend-swatch legend-swatch--retail"></span> Retail vendor</li>
+          <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon><text x="16" y="16" dy="0.35em" text-anchor="middle">1</text></svg> Venue</li>
+          <li><svg class="legend-icon legend-icon--transit" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Transit</li>
+          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
+          <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
         </ul>
       </div>
       ${content.settings.map_attribution ? `<p class="map-attribution">${esc(content.settings.map_attribution)}</p>` : ''}
@@ -207,6 +237,17 @@ export async function renderMap(container, content) {
     return () => {};
   }
 
+  // Transit pins are an informational overlay, not core map infrastructure
+  // like the street SVG/calibration above -- a failed or missing fetch just
+  // means no transit pins render, not a broken map view.
+  let transitStops = [];
+  try {
+    const r = await fetch('assets/transit.json');
+    if (r.ok) transitStops = (await r.json()).stops ?? [];
+  } catch {
+    // offline/missing transit.json: map still works without the overlay
+  }
+
   // Inserting SVG markup into an <svg>-context element correctly namespaces
   // the children (supported in all evergreen browsers), so this is a plain
   // innerHTML assignment rather than manual createElementNS plumbing.
@@ -228,7 +269,12 @@ export async function renderMap(container, content) {
   }
 
   const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
-  const vendors = content.vendors.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
+  // Sponsor pins exist only for tiers emerald/ruby/sapphire ("Featured
+  // Destination") and topaz ("Sponsor") -- quartz never gets a pin -- and
+  // only when the sponsor has a location (CONTRACTS.md Map + geo contract).
+  const sponsors = content.sponsors.filter(
+    (s) => (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') && Number.isFinite(s.lat) && Number.isFinite(s.lng)
+  );
 
   const pinsMarkup = [];
   venues.forEach((v, i) => {
@@ -236,23 +282,38 @@ export async function renderMap(container, content) {
     pinsMarkup.push(`
       <g class="pin pin--venue" data-testid="venue-pin" data-venue-id="${esc(v.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="Venue ${i + 1}: ${esc(v.name)}">
         <circle class="pin__hit" r="${VENUE_HIT_R}"></circle>
-        <circle class="pin__circle" r="${VENUE_PIN_R}"></circle>
-        <text class="pin__label" text-anchor="middle" dy="0.35em">${i + 1}</text>
+        <polygon class="pin__diamond" points="${diamondPoints(VENUE_PIN_R)}"></polygon>
+        <text class="pin__label" dy="0.35em">${i + 1}</text>
       </g>`);
   });
-  vendors.forEach((v) => {
-    const { x, y } = projector.project(v.lat, v.lng);
+  transitStops.forEach((s) => {
+    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng) || !Array.isArray(s.lines) || s.lines.length === 0) return;
+    const { x, y } = projector.project(s.lat, s.lng);
+    const lineNames = s.lines.map((l) => TRANSIT_LINE_NAME[l] || l).join(', ');
     pinsMarkup.push(`
-      <g class="pin pin--vendor pin--vendor-${esc(v.type)}" data-testid="vendor-pin" data-vendor-id="${esc(v.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="${esc(v.type)} vendor: ${esc(v.name)}">
-        <circle class="pin__hit" r="${VENDOR_HIT_R}"></circle>
-        ${vendorShapeMarkup(v.type)}
+      <g class="pin pin--transit" data-testid="transit-pin" data-transit-id="${esc(s.id)}" transform="translate(${x} ${y})" tabindex="0" aria-label="${esc(s.name)}: ${esc(lineNames)}">
+        <circle class="pin__hit" r="${TRANSIT_HIT_R}"></circle>
+        <polygon class="pin__diamond" points="${diamondPoints(TRANSIT_PIN_R)}"></polygon>
+        ${transitLabelMarkup(s.lines)}
+      </g>`);
+  });
+  sponsors.forEach((s) => {
+    const featured = FEATURED_SPONSOR_TIERS.has(s.tier_slug);
+    const r = featured ? SPONSOR_FEATURED_R : SPONSOR_GENERIC_R;
+    const hitR = featured ? SPONSOR_FEATURED_HIT_R : SPONSOR_GENERIC_HIT_R;
+    const kind = featured ? 'Featured Destination' : 'Sponsor';
+    const { x, y } = projector.project(s.lat, s.lng);
+    pinsMarkup.push(`
+      <g class="pin pin--sponsor-${featured ? 'featured' : 'generic'}" data-testid="sponsor-pin" data-sponsor-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="${kind}: ${esc(s.name)}">
+        <circle class="pin__hit" r="${hitR}"></circle>
+        <polygon class="pin__diamond" points="${diamondPoints(r)}"></polygon>
       </g>`);
   });
   svg.insertAdjacentHTML('beforeend', pinsMarkup.join(''));
 
   function activatePin(pinEl) {
     if (pinEl.dataset.venueId) openVenueSheet(pinEl.dataset.venueId);
-    else if (pinEl.dataset.vendorId) openVendorSheet(pinEl.dataset.vendorId);
+    else if (pinEl.dataset.sponsorId) openSponsorSheet(pinEl.dataset.sponsorId);
   }
   svg.querySelectorAll('.pin').forEach((pinEl) => {
     pinEl.addEventListener('keydown', (e) => {

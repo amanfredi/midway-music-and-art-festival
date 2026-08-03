@@ -1,0 +1,96 @@
+{
+  "stops": [
+    {
+      "id": "fairview-avenue",
+      "name": "Fairview Avenue",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.956418,
+      "lng": -93.178769
+    },
+    {
+      "id": "hamline-avenue",
+      "name": "Hamline Avenue",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.955716,
+      "lng": -93.156845
+    },
+    {
+      "id": "lexington-parkway",
+      "name": "Lexington Parkway",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.955748,
+      "lng": -93.146649
+    },
+    {
+      "id": "marshall-and-fairview-station",
+      "name": "Marshall & Fairview Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948413,
+      "lng": -93.17748
+    },
+    {
+      "id": "selby-and-hamline-station",
+      "name": "Selby & Hamline Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946658,
+      "lng": -93.156455
+    },
+    {
+      "id": "selby-and-lexington-station",
+      "name": "Selby & Lexington Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946625,
+      "lng": -93.146316
+    },
+    {
+      "id": "snelling-and-dayton-station",
+      "name": "Snelling & Dayton Station",
+      "lines": [
+        "a",
+        "b"
+      ],
+      "lat": 44.947392,
+      "lng": -93.167008
+    },
+    {
+      "id": "snelling-avenue-and-hewitt-avenue",
+      "name": "Snelling Avenue & Hewitt Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.966447,
+      "lng": -93.167066
+    },
+    {
+      "id": "snelling-avenue-and-minnehaha-avenue",
+      "name": "Snelling Avenue & Minnehaha Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.962867,
+      "lng": -93.167075
+    },
+    {
+      "id": "snelling-avenue-and-university-station",
+      "name": "Snelling Avenue & University Station",
+      "lines": [
+        "green",
+        "a"
+      ],
+      "lat": 44.955249,
+      "lng": -93.167007
+    }
+  ]
+}

@@ -94,6 +94,10 @@ export function findVendor(vendorId) {
   return content?.vendors.find((v) => v.id === vendorId);
 }
 
+export function findSponsor(sponsorId) {
+  return content?.sponsors.find((s) => s.id === sponsorId);
+}
+
 export function findEvent(eventId) {
   return content?.events.find((e) => e.id === eventId);
 }

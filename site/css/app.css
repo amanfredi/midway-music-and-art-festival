@@ -17,6 +17,13 @@
   --color-border: #e6dcc8;
   --color-danger: #a11f22;
 
+  /* Map pin + legend fills (CONTRACTS.md "Map + geo contract" pin table).
+     Venue/sponsor reuse the existing brand vars above (same literal colors,
+     no duplication); transit green is net-new and doesn't exist elsewhere. */
+  --pin-venue: var(--color-primary);
+  --pin-transit: #298d4e;
+  --pin-sponsor: var(--color-danger);
+
   --badge-music-bg: #ddeaf3;
   --badge-art-bg: #fdecd1;
   --badge-family-bg: #dff3ea;
@@ -695,35 +702,48 @@ img {
   gap: 0.4rem;
 }
 
-.legend-swatch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #fff;
+/* All three pin types are diamonds (CONTRACTS.md pin table). Legend icons are
+   real inline SVGs using the same polygon+stroke technique as the map pins
+   (see .pin__diamond below) rather than a CSS clip-path div -- a clip-path
+   can fake a *filled* diamond but can't render a clean *outlined* diamond
+   (border/box-shadow painting happens on the rectangular box before the clip
+   applies), and the generic-sponsor legend entry needs a true outline to
+   match its pin. */
+.legend-icon {
+  width: 20px;
+  height: 20px;
   flex: none;
 }
 
-.legend-swatch--venue {
-  border-radius: 50%;
-  background: var(--color-primary);
+.legend-icon--venue polygon {
+  fill: var(--pin-venue);
 }
 
-.legend-swatch--food {
-  border-radius: 50%;
-  background: #d0682f;
+.legend-icon--venue text {
+  fill: #fff;
+  font-family: -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 15px;
+  text-anchor: middle;
 }
 
-.legend-swatch--art {
-  background: var(--color-accent-dark);
-  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+.legend-icon--transit polygon {
+  fill: var(--pin-transit);
+  /* No letter here (unlike the real pins): a single example letter would
+     misrepresent a category that covers Green/A/B lines. Shape + color
+     alone still matches the map's transit pins exactly. */
 }
 
-.legend-swatch--retail {
-  background: #2f6fa0;
+.legend-icon--sponsor-featured polygon {
+  fill: var(--pin-sponsor);
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.legend-icon--sponsor-generic polygon {
+  fill: var(--color-surface);
+  stroke: var(--pin-sponsor);
+  stroke-width: 3;
 }
 
 .map-attribution {
@@ -771,17 +791,28 @@ img {
 }
 
 /* pins live inside the inlined map SVG; coordinates are in map units
-   (meters), so these are shape/color rules only — sizing happens in JS. */
+   (meters), so these are shape/color rules only — sizing happens in JS.
+   All three pin types share one diamond shape (.pin__diamond); only fill/
+   stroke vary by type, via the CSS vars declared in :root above. */
 .pin { cursor: pointer; }
 /* pointer-events: all so the (necessarily transparent) larger hit target is
    still tappable — a transparent SVG fill alone is not reliably hit-tested. */
 .pin__hit { fill: transparent; pointer-events: all; }
-.pin__circle { fill: var(--color-primary); stroke: #fff; stroke-width: 6; }
-.pin__label { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 700; font-size: 44px; }
+.pin__diamond { stroke: #fff; stroke-width: 6; }
+/* White glyph text on any of the three brand fills clears WCAG AA's 3:1
+   large-text threshold (glyphs are bold and 30px+ -- well above the 18.66px
+   bold/24px regular cutoff); transit green is the tightest at ~4.2:1 white-
+   on-fill, still short of the 4.5:1 *small*-text threshold, which is why
+   there's no glyph text this size anywhere it isn't bold+large. */
+.pin__label { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 700; font-size: 44px; text-anchor: middle; }
+.pin__label--stacked { font-size: 30px; }
 
-.pin--vendor-food .pin__vendor-shape { fill: #d0682f; stroke: #fff; stroke-width: 4; }
-.pin--vendor-art .pin__vendor-shape { fill: var(--color-accent-dark); stroke: #fff; stroke-width: 4; }
-.pin--vendor-retail .pin__vendor-shape { fill: #2f6fa0; stroke: #fff; stroke-width: 4; }
+.pin--venue .pin__diamond { fill: var(--pin-venue); }
+.pin--transit .pin__diamond { fill: var(--pin-transit); }
+.pin--sponsor-featured .pin__diamond { fill: var(--pin-sponsor); }
+/* Generic sponsor tier: same brand red, outlined instead of filled+larger --
+   the featured/generic visual distinction called for in CONTRACTS.md. */
+.pin--sponsor-generic .pin__diamond { fill: var(--color-surface); stroke: var(--pin-sponsor); stroke-width: 10; }
 
 .you-are-here__core { fill: #2f6fa0; stroke: #fff; stroke-width: 6; }
 .you-are-here__pulse {

@@ -1,5 +1,10 @@
 # Feature backlog — August 2026 round
 
+**Status 2026-08-02: Waves 0–2 all merged and deployed.** What remains here:
+the human QA checklist below, the TBD section, and one open decision (Web
+Share button on event/venue detail — recommended in the PWA research, awaiting
+Anthony's yes/no).
+
 Working plan for the current implementation round, from decisions settled with
 Anthony on 2026-08-02. PROGRESS.md stays the state journal; this file tracks
 what's being built now and what's consciously deferred. Delete or archive it

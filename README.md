@@ -134,6 +134,22 @@ Stars live only on the device (`localStorage`); iOS may clear them if the
 site goes unused for ~7 days — acceptable for a 3-day festival, worth
 knowing when testing weeks apart.
 
+## Known limitations
+
+- **The installed app and the Safari tab don't share storage on iOS.**
+  Adding the site to the Home Screen gives it its own isolated storage
+  context, separate from the regular Safari tab — starred events (and
+  everything else in `localStorage`) don't carry over between the two. Not
+  worth fixing: pick one and stick with it for the festival.
+- **Non-installed iOS Safari storage is deleted after 7 days without a
+  visit.** This is Safari's Intelligent Tracking Prevention, not a bug —
+  [WebKit bug 209563](https://bugs.webkit.org/show_bug.cgi?id=209563).
+  `navigator.storage.persist()`, requested silently at startup, does **not**
+  prevent it on iOS; only adding the site to the Home Screen does. (On
+  Chrome/Android, `persist()` does its job: it protects against eviction
+  under disk pressure.) The in-app install button exists mainly to get
+  people onto the Home Screen path.
+
 ## Repository map
 
 | Path | What it is |

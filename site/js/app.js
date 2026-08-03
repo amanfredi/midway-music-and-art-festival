@@ -8,6 +8,8 @@ import { renderEventDetail } from './views/event-detail.js';
 import { renderMap } from './views/map.js';
 import { renderStarred } from './views/starred.js';
 import { renderSponsors } from './views/sponsors.js';
+import { requestPersistentStorage } from './persist-storage.js';
+import { initInstallPrompt } from './pwa-install.js';
 
 const viewEl = document.getElementById('view');
 const bannerRegion = document.getElementById('banner-region');
@@ -122,4 +124,6 @@ async function boot() {
   }
 }
 
+initInstallPrompt();
+requestPersistentStorage();
 boot();

@@ -17,10 +17,31 @@ const SPONSORS_OUT_DIR = path.join(CWD, "site/assets/sponsors");
 const CONTENT_JSON_PATH = path.join(SITE_DATA_DIR, "content.json");
 
 const BBOX = { latMin: 44.94, latMax: 44.98, lngMin: -93.2, lngMax: -93.13 };
-const VALID_KINDS = new Set(["music", "art", "family", "community"]);
+const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
 const VALID_VENDOR_TYPES = new Set(["food", "art", "retail"]);
+const VALID_TICKETS = new Set([
+  "General Admission",
+  "General Admission (limited capacity)",
+  "Free Ticket Required",
+  "Paid Ticket Required",
+]);
+const DEFAULT_TICKETS = "General Admission";
 const ID_RE = /^[a-z0-9-]+$/;
-const DATE_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
+const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+const TIME_ONLY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+// Sponsor tier enum: slug is the CSV value, label is the display string
+// emitted as content.json's `tier`, order is the intrinsic rank (1 = most
+// prominent), maxCount caps how many sponsors may carry that tier (null =
+// unlimited), logoRequired says whether a missing `logo` is a build error.
+const SPONSOR_TIERS = [
+  { slug: "emerald", label: "Emerald Tier (Presenting Partner)", order: 1, maxCount: 1, logoRequired: true },
+  { slug: "ruby", label: "Ruby Tier (Leading Partner)", order: 2, maxCount: 5, logoRequired: true },
+  { slug: "sapphire", label: "Sapphire Tier (Supporting Partner)", order: 3, maxCount: null, logoRequired: true },
+  { slug: "topaz", label: "Topaz Tier (Community Partner)", order: 4, maxCount: null, logoRequired: true },
+  { slug: "quartz", label: "Quartz Tier (Neighborhood Supporter)", order: 5, maxCount: null, logoRequired: false },
+];
+const SPONSOR_TIER_BY_SLUG = new Map(SPONSOR_TIERS.map((t) => [t.slug, t]));
 
 const SOURCE_ORDER = ["venues", "events", "vendors", "sponsors", "settings"];
 
@@ -236,29 +257,40 @@ function validateLocation(fileLabel, records, identifierField) {
   return errors;
 }
 
-/** Parses "YYYY-MM-DD HH:MM" into a comparable numeric value, or null if invalid. */
-function parseWallDateTime(value) {
-  const match = DATE_RE.exec(value ?? "");
+/** Parses "YYYY-MM-DD" into {y, mo, d, ms} (ms = UTC midnight), or null if invalid. */
+function parseCalendarDate(value) {
+  const match = DATE_ONLY_RE.exec(value ?? "");
   if (!match) return null;
-  const [, yStr, moStr, dStr, hStr, miStr] = match;
+  const [, yStr, moStr, dStr] = match;
   const y = Number(yStr);
   const mo = Number(moStr);
   const d = Number(dStr);
-  const h = Number(hStr);
-  const mi = Number(miStr);
-  if (mo < 1 || mo > 12 || h > 23 || mi > 59) return null;
-  const ms = Date.UTC(y, mo - 1, d, h, mi);
+  if (mo < 1 || mo > 12) return null;
+  const ms = Date.UTC(y, mo - 1, d);
   const check = new Date(ms);
-  if (
-    check.getUTCFullYear() !== y ||
-    check.getUTCMonth() !== mo - 1 ||
-    check.getUTCDate() !== d ||
-    check.getUTCHours() !== h ||
-    check.getUTCMinutes() !== mi
-  ) {
-    return null; // e.g. Feb 30, hour 24, etc.
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) {
+    return null; // e.g. Feb 30
   }
-  return ms;
+  return { y, mo, d, ms };
+}
+
+/** Parses a 24h "HH:MM" clock time into {h, mi, minutes}, or null if invalid. */
+function parseClockTime(value) {
+  const match = TIME_ONLY_RE.exec(value ?? "");
+  if (!match) return null;
+  const h = Number(match[1]);
+  const mi = Number(match[2]);
+  return { h, mi, minutes: h * 60 + mi };
+}
+
+/** Adds `days` calendar days to a valid "YYYY-MM-DD" string. */
+function addCalendarDays(dateStr, days) {
+  const parsed = parseCalendarDate(dateStr);
+  if (!parsed) return dateStr; // defensive only: reached solely on already-invalid input, which fails the build regardless
+  const dt = new Date(parsed.ms);
+  dt.setUTCDate(dt.getUTCDate() + days);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +352,7 @@ function validateVendors(records) {
 function validateEvents(records, venueIds, skipVenueRefCheck) {
   const fileLabel = "events.csv";
   const errors = [
-    ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "start", "end"], "title"),
+    ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "date", "start_time", "end_time"], "title"),
     ...validateDuplicateIds(fileLabel, records, "title"),
     ...validateIdFormat(fileLabel, records, "title"),
   ];
@@ -341,52 +373,141 @@ function validateEvents(records, venueIds, skipVenueRefCheck) {
       );
     }
 
-    const start = rec.fields.start;
-    const end = rec.fields.end;
-    let startMs = null;
-    let endMs = null;
-    if (start && String(start).trim() !== "") {
-      startMs = parseWallDateTime(start);
-      if (startMs === null) {
-        errors.push(errorMsg(fileLabel, rec.rowNum, ident, `start "${start}" isn't a valid "YYYY-MM-DD HH:MM" date/time.`));
-      }
+    const ticketsRaw = rec.fields.tickets;
+    if (ticketsRaw !== undefined && String(ticketsRaw).trim() !== "" && !VALID_TICKETS.has(ticketsRaw)) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `unknown tickets value "${ticketsRaw}" (expected one of: ${[...VALID_TICKETS].join(" | ")}).`
+        )
+      );
     }
-    if (end && String(end).trim() !== "") {
-      endMs = parseWallDateTime(end);
-      if (endMs === null) {
-        errors.push(errorMsg(fileLabel, rec.rowNum, ident, `end "${end}" isn't a valid "YYYY-MM-DD HH:MM" date/time.`));
-      }
+
+    const dateRaw = rec.fields.date;
+    if (dateRaw && String(dateRaw).trim() !== "" && !parseCalendarDate(dateRaw)) {
+      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `date "${dateRaw}" isn't a valid "YYYY-MM-DD" date.`));
     }
-    if (startMs !== null && endMs !== null && endMs <= startMs) {
-      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `end "${end}" must be after start "${start}".`));
+
+    const startRaw = rec.fields.start_time;
+    const startOk = startRaw && String(startRaw).trim() !== "" ? parseClockTime(startRaw) : null;
+    if (startRaw && String(startRaw).trim() !== "" && !startOk) {
+      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `start_time "${startRaw}" isn't a valid 24h "HH:MM" time.`));
+    }
+
+    const endRaw = rec.fields.end_time;
+    const endOk = endRaw && String(endRaw).trim() !== "" ? parseClockTime(endRaw) : null;
+    if (endRaw && String(endRaw).trim() !== "" && !endOk) {
+      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `end_time "${endRaw}" isn't a valid 24h "HH:MM" time.`));
+    }
+
+    // Convention: end_time earlier than start_time means the event runs past
+    // midnight and ends the following day — valid, not an error. Equal times
+    // are ambiguous (zero-length, or a full 24 hours) and always an error.
+    if (startOk && endOk && startOk.minutes === endOk.minutes) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `end_time "${endRaw}" must differ from start_time "${startRaw}" — equal times are ambiguous ` +
+            `(zero-length, or a full 24 hours). If the event runs past midnight, give it an end_time earlier than start_time.`
+        )
+      );
     }
   }
 
-  const clean = records.map((rec) => ({
-    id: rec.fields.id ?? "",
-    title: rec.fields.title ?? "",
-    venue_id: rec.fields.venue_id ?? "",
-    start: (rec.fields.start ?? "").replace(" ", "T"),
-    end: (rec.fields.end ?? "").replace(" ", "T"),
-    kind: rec.fields.kind && rec.fields.kind.trim() !== "" ? rec.fields.kind : "music",
-    description: rec.fields.description ?? "",
-  }));
+  const clean = records.map((rec) => {
+    const dateRaw = rec.fields.date ?? "";
+    const startRaw = rec.fields.start_time ?? "";
+    const endRaw = rec.fields.end_time ?? "";
+    const dateOk = parseCalendarDate(dateRaw);
+    const startOk = parseClockTime(startRaw);
+    const endOk = parseClockTime(endRaw);
+
+    const start = dateOk && startOk ? `${dateRaw}T${startRaw}` : "";
+    let end = "";
+    if (dateOk && endOk) {
+      const rollsToNextDay = Boolean(startOk) && endOk.minutes < startOk.minutes;
+      const endDate = rollsToNextDay ? addCalendarDays(dateRaw, 1) : dateRaw;
+      end = `${endDate}T${endRaw}`;
+    }
+
+    const ticketsRaw = rec.fields.tickets;
+    const tickets =
+      ticketsRaw !== undefined && String(ticketsRaw).trim() !== "" && VALID_TICKETS.has(ticketsRaw)
+        ? ticketsRaw
+        : DEFAULT_TICKETS;
+
+    return {
+      id: rec.fields.id ?? "",
+      title: rec.fields.title ?? "",
+      venue_id: rec.fields.venue_id ?? "",
+      start,
+      end,
+      kind: rec.fields.kind && rec.fields.kind.trim() !== "" ? rec.fields.kind : "music",
+      tickets,
+      description: rec.fields.description ?? "",
+    };
+  });
   return { errors, clean };
 }
 
 function validateSponsorFields(records) {
   const fileLabel = "sponsors.csv";
   const errors = [
-    ...validateRequiredFields(fileLabel, records, ["id", "name", "tier", "tier_order", "logo"], "name"),
+    ...validateRequiredFields(fileLabel, records, ["id", "name", "tier"], "name"),
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
+    ...validateLocation(fileLabel, records, "name"),
   ];
+
+  const seenByTier = new Map(); // tier slug -> row numbers seen so far, in order
   for (const rec of records) {
-    const raw = rec.fields.tier_order;
-    if (raw && String(raw).trim() !== "" && !Number.isInteger(Number(raw))) {
-      errors.push(errorMsg(fileLabel, rec.rowNum, identifierFor(rec, "name"), `tier_order "${raw}" must be an integer.`));
+    const ident = identifierFor(rec, "name");
+    const tierSlug = rec.fields.tier;
+    if (!tierSlug || String(tierSlug).trim() === "") continue; // reported by required-field check
+
+    const tierDef = SPONSOR_TIER_BY_SLUG.get(tierSlug);
+    if (!tierDef) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `unknown tier "${tierSlug}" (expected one of: ${SPONSOR_TIERS.map((t) => t.slug).join("|")}).`
+        )
+      );
+      continue;
+    }
+
+    const logo = rec.fields.logo;
+    const hasLogo = logo && String(logo).trim() !== "";
+    if (tierDef.logoRequired && !hasLogo) {
+      errors.push(
+        errorMsg(fileLabel, rec.rowNum, ident, `missing required field "logo" (required for tier "${tierDef.slug}").`)
+      );
+    }
+
+    if (tierDef.maxCount != null) {
+      const rows = seenByTier.get(tierDef.slug) ?? [];
+      rows.push(rec.rowNum);
+      seenByTier.set(tierDef.slug, rows);
+      if (rows.length > tierDef.maxCount) {
+        errors.push(
+          errorMsg(
+            fileLabel,
+            rec.rowNum,
+            ident,
+            `tier "${tierDef.slug}" allows at most ${tierDef.maxCount} sponsor(s); this is number ${rows.length} ` +
+              `(first was row ${rows[0]}).`
+          )
+        );
+      }
     }
   }
+
   return errors;
 }
 
@@ -431,7 +552,10 @@ async function resolveSponsorLogos(records) {
   const resolved = new Map(); // rowNum -> { filename, buffer }
   for (const rec of records) {
     const logoValue = (rec.fields.logo ?? "").trim();
-    if (!logoValue) continue; // reported by required-field check
+    // A blank logo is expected for quartz sponsors (optional there); a blank
+    // logo on any other tier is caught as a missing-required-field error by
+    // validateSponsorFields, not here.
+    if (!logoValue) continue;
     const ident = identifierFor(rec, "name");
     const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
     if (/^https?:\/\//i.test(logoValue)) {
@@ -527,16 +651,23 @@ async function main() {
     process.exit(1);
   }
 
-  // Build sponsors JSON (logo path rewritten to the bundled site-relative path).
-  const sponsorsClean = parsed.sponsors.records.map((rec) => ({
-    id: rec.fields.id ?? "",
-    name: rec.fields.name ?? "",
-    tier: rec.fields.tier ?? "",
-    tier_order: Number(rec.fields.tier_order),
-    blurb: rec.fields.blurb ?? "",
-    logo: logoFiles.has(rec.rowNum) ? `assets/sponsors/${logoFiles.get(rec.rowNum).filename}` : "",
-    url: rec.fields.url ?? "",
-  }));
+  // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
+  // tier rewritten from the CSV slug to its display label + intrinsic rank).
+  const sponsorsClean = parsed.sponsors.records.map((rec) => {
+    const tierDef = SPONSOR_TIER_BY_SLUG.get(rec.fields.tier);
+    return {
+      id: rec.fields.id ?? "",
+      name: rec.fields.name ?? "",
+      tier: tierDef ? tierDef.label : rec.fields.tier ?? "",
+      tier_slug: tierDef ? tierDef.slug : rec.fields.tier ?? "",
+      tier_order: tierDef ? tierDef.order : 0,
+      blurb: rec.fields.blurb ?? "",
+      logo: logoFiles.has(rec.rowNum) ? `assets/sponsors/${logoFiles.get(rec.rowNum).filename}` : "",
+      url: rec.fields.url ?? "",
+      lat: rec.coords ? rec.coords.lat : null,
+      lng: rec.coords ? rec.coords.lng : null,
+    };
+  });
 
   const events = [...eventsResult.clean].sort((a, b) => {
     if (a.start !== b.start) return a.start < b.start ? -1 : 1;

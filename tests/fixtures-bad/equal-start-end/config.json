@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "venues": "tests/fixtures-bad/equal-start-end/venues.csv",
+    "events": "tests/fixtures-bad/equal-start-end/events.csv",
+    "vendors": "tests/fixtures-bad/equal-start-end/vendors.csv",
+    "sponsors": "tests/fixtures-bad/equal-start-end/sponsors.csv",
+    "settings": "tests/fixtures-bad/equal-start-end/settings.csv"
+  }
+}

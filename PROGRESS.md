@@ -67,3 +67,18 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   installability re-verified on the custom domain. A transient CDN 503
   during cutover exposed the first-visit module-graph fragility — fixed with
   the boot guard in index.html (auto-reload with backoff, Playwright-tested).
+- 2026-08-02 (August feature round complete, Waves 0–2 merged): schema
+  migration (Wave 0); schedule UX, map redesign with transit/sponsor pins,
+  vendors list view + Support donate button, PWA install/persist storage
+  (Wave 1, four parallel worktree agents); accessibility hardening + cleanup
+  + this docs pass (Wave 2) — route-change focus/announcement, sheet focus
+  management (`aria-labelledby`, focus-into/restore-on-close), day switcher
+  demoted from an incomplete tablist to a plain button group (see
+  CONTRACTS.md Accessibility contract), `prefers-reduced-motion` honored,
+  keyboard-pannable map; dead `openVendorSheet`/`findVendor` removed.
+  `npm test` green: 26 unit + 9 Playwright (6 existing + 3 new a11y-focused).
+  BACKLOG.md can be archived once its remaining checklist — all human QA, not
+  code — is done: iPhone airplane-mode pass, install-button check on a real
+  iPhone and Android Chrome, splash-screen render check, transit-stop
+  accuracy vs. Metro Transit's published stop lists, and the featured-vs-
+  generic sponsor-pin design review at the next demo.

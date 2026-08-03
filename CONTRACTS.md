@@ -253,17 +253,33 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 
 ## Accessibility contract (binding)
 
-- **Focus management**: focus moves to the new view's container on route
-  change, and into the sheet on open / back to the trigger on close.
-- **Tablist pattern**: everywhere `role="tablist"` is used (e.g. the schedule
-  day switcher), the pattern is complete — `aria-controls` linking each tab
-  to its panel, a real tabpanel, and roving `tabindex` (one tab in the
-  sequence at a time, arrow-key navigation between tabs).
+- **Focus management**: focus moves to `#view` on route change, and into the
+  sheet (the `.sheet` dialog element itself, `tabindex="-1"`) on open, back to
+  whatever triggered it on close. The sheet carries `aria-labelledby="sheet-title"`
+  pointing at its title heading.
+- **Route-change announcement**: a visually-hidden `#route-announcer`
+  (`aria-live="polite"`, `role="status"`) announces the destination view's
+  name (matching its nav label, e.g. "Support" not "sponsors") on every route
+  change.
+- **No `role="tablist"` anywhere in the app.** The schedule's day switcher,
+  group-by toggle, and kind filter are all plain button groups
+  (`role="group"`, `aria-pressed`/`is-active` reflecting the selected
+  button) — day, group-by, and kind together determine the schedule list's
+  contents, so no single one of them owns an independent set of exclusive
+  panels the way real tabs require; a full ARIA tabs pattern
+  (`aria-controls`, a tabpanel, roving tabindex) would misrepresent that
+  relationship. Revisit only if a future control genuinely owns its own set
+  of exclusive panels.
 - **Starred state** is exposed to screen readers in list views, not just
   visually (the row's star button carries `aria-pressed`; a visual-only star
   glyph is not sufficient).
-- **`prefers-reduced-motion`** is honored: non-essential animation (e.g. an
-  infinite pulse) is disabled or reduced when the user has that preference.
+- **`prefers-reduced-motion`** is honored: the app's only non-essential
+  animation/transitions — the infinite you-are-here pulse and the toast
+  fade/slide-in — are disabled when the user has that preference.
+- **Keyboard map panning**: the inlined map `<svg>` is focusable
+  (`tabindex="0"`, `role="group"`) and arrow keys pan it (relative-to-viewport
+  step, same clamping as drag-panning); its `aria-label` states this. Pins
+  keep their own `role="button"`/Enter-Space activation on top.
 - **WCAG AA contrast** everywhere, including the six kind-badge tints and any
   new pin/legend colors.
 

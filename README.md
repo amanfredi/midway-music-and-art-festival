@@ -118,7 +118,7 @@ The automated test covers Chromium; iOS Safari is the environment that
 matters and needs a hands-on check after any caching change:
 
 1. Open the deployed site in Safari over cellular or Wi-Fi. Browse: Now,
-   Schedule, Map, Sponsors. Star an event.
+   Schedule, Map, Vendors, Support. Star an event.
 2. Optionally add to Home Screen (Share → Add to Home Screen) and open from
    the icon.
 3. Turn on Airplane Mode (leave Wi-Fi off).

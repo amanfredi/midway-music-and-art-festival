@@ -172,8 +172,11 @@ img {
   min-height: var(--tab-bar-height);
   text-decoration: none;
   color: var(--color-text-muted);
-  font-size: 0.68rem;
+  /* 6 tabs at 320px is ~53px each; "Schedule" is the tightest label. Shrunk
+     from 0.68rem (comfortable at 5 tabs) to keep a safety margin at 6. */
+  font-size: 0.62rem;
   font-weight: 600;
+  padding: 0 2px;
 }
 
 .tab-bar a.is-active {
@@ -844,4 +847,142 @@ a:focus-visible, button:focus-visible {
     padding-left: calc(1.25rem + var(--safe-left));
     padding-right: calc(1.25rem + var(--safe-right));
   }
+}
+
+/* ============================================================
+   Wave 1C — vendors view + Support (donate button, tiered sponsors)
+   ============================================================ */
+
+/* -- donate button (top of Support view) -- */
+
+.donate-link {
+  display: flex;
+  width: 100%;
+  margin-bottom: 0.75rem;
+  font-size: 1.05rem;
+}
+
+/* -- vendors view: grouped by type (food/art/retail) -- */
+
+.vendor-group {
+  margin-bottom: 1.5rem;
+}
+
+.vendor-group__title {
+  font-size: 1rem;
+  color: var(--color-primary-dark);
+  border-bottom: 2px solid var(--color-accent);
+  padding-bottom: 0.3rem;
+}
+
+.vendor-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.vendor-card {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.vendor-card__name {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.vendor-card__description {
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  margin: 0.15rem 0 0;
+}
+
+/* -- tiered sponsors: emerald gets a dedicated spotlight, not a card grid -- */
+
+.sponsor-spotlight {
+  background: var(--color-surface);
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sponsor-spotlight__logo {
+  max-height: 140px;
+  width: auto;
+  object-fit: contain;
+}
+
+.sponsor-spotlight__name {
+  font-size: 1.15rem;
+  margin: 0;
+  color: var(--color-primary-dark);
+}
+
+.sponsor-spotlight__blurb {
+  font-size: 1rem;
+  margin: 0;
+  max-width: 40em;
+}
+
+.sponsor-spotlight__link {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* Logo prominence descends by tier: ruby > sapphire > topaz (emerald is the
+   spotlight above; quartz never gets a logo at all — see below). */
+.sponsor-card--ruby .sponsor-card__logo {
+  max-height: 84px;
+}
+
+.sponsor-card--sapphire .sponsor-card__logo {
+  max-height: 64px;
+}
+
+.sponsor-card--topaz .sponsor-card__logo {
+  max-height: 44px;
+}
+
+/* -- quartz: name + link text only, never a card or a logo -- */
+
+.sponsor-quartz-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sponsor-quartz-list li {
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.sponsor-quartz-list__link {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* -- a link rendered as inert text when a sponsor has no url (all tiers) -- */
+
+.sponsor-link--plain {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  cursor: default;
 }

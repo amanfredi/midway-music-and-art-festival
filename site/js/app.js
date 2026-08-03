@@ -7,6 +7,7 @@ import { renderSchedule } from './views/schedule.js';
 import { renderEventDetail } from './views/event-detail.js';
 import { renderMap } from './views/map.js';
 import { renderStarred } from './views/starred.js';
+import { renderVendors } from './views/vendors.js';
 import { renderSponsors } from './views/sponsors.js';
 
 const viewEl = document.getElementById('view');
@@ -69,6 +70,9 @@ async function handleRoute(route) {
       break;
     case 'starred':
       currentCleanup = renderStarred(viewEl, content);
+      break;
+    case 'vendors':
+      currentCleanup = renderVendors(viewEl, content);
       break;
     case 'sponsors':
       currentCleanup = renderSponsors(viewEl, content);

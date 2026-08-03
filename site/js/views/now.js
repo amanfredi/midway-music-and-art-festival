@@ -1,6 +1,6 @@
 import { esc } from '../util.js';
 import { now as clockNow, parseEventTimes, formatDayLabel, dateKey } from '../time.js';
-import { eventRowHtml } from './event-row.js';
+import { eventRowHtml, bindEventRowStars } from './event-row.js';
 import { installButtonHtml, bindInstallButton, onInstallStateChange } from '../pwa-install.js';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
@@ -87,6 +87,7 @@ export function renderNow(container, content) {
         ${upNextGroups.length ? upNextGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
         ${installButtonHtml()}
       </section>`;
+    bindEventRowStars(container);
     bindInstallButton(container);
   }
 
@@ -106,6 +107,7 @@ export function renderNow(container, content) {
         <div class="event-list">${firstDayEvents.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
         ${installButtonHtml()}
       </section>`;
+    bindEventRowStars(container);
     bindInstallButton(container);
   }
 

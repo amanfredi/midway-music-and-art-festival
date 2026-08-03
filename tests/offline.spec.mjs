@@ -88,6 +88,43 @@ test('notice banner shows and dismissal persists offline', async ({ page, contex
   await expect(page.locator('[data-testid="notice-banner"]')).toHaveCount(0);
 });
 
+test('row star toggle updates immediately without scroll jump, and survives an offline reload', async ({ page, context }) => {
+  await page.goto('/' + T);
+  await waitForServiceWorker(page);
+  await page.goto('/' + T + '#/schedule');
+
+  const rows = page.locator('[data-testid="event-row"]');
+  await expect(rows.first()).toBeVisible();
+  const count = await rows.count();
+  // A row further down the list, so bringing it into view requires an actual
+  // scroll — proving the assertion below isn't vacuously true at scrollTop 0.
+  const targetRow = rows.nth(Math.min(6, count - 1));
+  const star = targetRow.locator('[data-testid="row-star-toggle"]');
+  const eventId = await star.getAttribute('data-event-id');
+  await expect(star).toHaveAttribute('aria-pressed', 'false');
+
+  // Scroll the target row into view *before* recording scrollBefore — a raw
+  // star.click() would auto-scroll to reach an off-screen element first,
+  // which would falsely look like "the toggle changed the scroll position".
+  await star.scrollIntoViewIfNeeded();
+  const scrollBefore = await page.evaluate(() => document.getElementById('view').scrollTop);
+  expect(scrollBefore).toBeGreaterThan(0);
+
+  await star.click();
+  await expect(star).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => document.getElementById('view').scrollTop)).toBe(scrollBefore);
+
+  // --- go offline and reload: the star (localStorage) survives
+  await context.setOffline(true);
+  await page.reload();
+  const sameStar = page.locator(`[data-testid="row-star-toggle"][data-event-id="${eventId}"]`);
+  await expect(sameStar).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goto('/' + T + '#/starred');
+  await expect(page.locator('[data-testid="starred-list"]')).toBeVisible();
+  expect(await page.locator('[data-testid="starred-list"] [data-testid="event-row"]').count()).toBe(1);
+});
+
 test('PWA installability basics: manifest, icons, service worker scope', async ({ page, request }) => {
   await page.goto('/');
   const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href');

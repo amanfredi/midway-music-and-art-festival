@@ -26,6 +26,7 @@ export function renderEventDetail(container, content, eventId) {
       <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
       <h1 class="event-detail__title">${esc(event.title)}</h1>
       <p class="event-detail__time">${esc(formatDayLabel(start))} &middot; ${esc(formatTime(start))}&ndash;${esc(formatTime(end))}</p>
+      <p class="event-detail__tickets">${esc(event.tickets)}</p>
       <p class="event-detail__venue">
         ${venue ? `<button type="button" class="link-btn" id="venue-link">${esc(venue.name)}</button><br><span class="event-detail__address">${esc(venue.address)}</span>` : '<span>Venue TBA</span>'}
       </p>

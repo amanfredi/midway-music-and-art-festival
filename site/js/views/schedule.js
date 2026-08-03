@@ -1,7 +1,16 @@
 import { esc } from '../util.js';
 import { now as clockNow, parseWall, formatTime, shortDayLabel, dateKey } from '../time.js';
 import { navigate } from '../router.js';
-import { eventRowHtml } from './event-row.js';
+import { eventRowHtml, bindEventRowStars } from './event-row.js';
+
+// Canonical kind order (matches scripts/build.mjs VALID_KINDS) — used for both
+// the filter chip order and the "by category" group order.
+const KINDS = ['music', 'art', 'performance', 'literary', 'vendor', 'other'];
+const GROUPS = ['time', 'venue', 'category'];
+
+function kindLabel(kind) {
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
 
 function uniqueDays(events) {
   const seen = new Map();
@@ -54,6 +63,25 @@ function renderByVenue(events, venuesById) {
     .join('');
 }
 
+function renderByCategory(events, venuesById) {
+  const groups = new Map();
+  for (const e of events) {
+    const kind = e.kind || 'music';
+    if (!groups.has(kind)) groups.set(kind, []);
+    groups.get(kind).push(e);
+  }
+  return KINDS.filter((kind) => groups.has(kind))
+    .map((kind) => ({ kind, events: groups.get(kind).sort((a, b) => a.start.localeCompare(b.start)) }))
+    .map(
+      (g) => `
+      <div class="category-group">
+        <h3 class="category-group__title">${esc(kindLabel(g.kind))}</h3>
+        <div class="event-list">${g.events.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
+      </div>`
+    )
+    .join('');
+}
+
 export function renderSchedule(container, content, route) {
   const days = uniqueDays(content.events);
   if (!days.length) {
@@ -69,10 +97,24 @@ export function renderSchedule(container, content, route) {
     : days.some((d) => d.key === todayKey)
       ? todayKey
       : days[0].key;
-  const group = route.params.get('group') === 'venue' ? 'venue' : 'time';
+  const group = GROUPS.includes(route.params.get('group')) ? route.params.get('group') : 'time';
+  const kindFilter = KINDS.includes(route.params.get('kind')) ? route.params.get('kind') : 'all';
 
   const dayEvents = content.events.filter((e) => dateKey(parseWall(e.start)) === activeDayKey);
-  const bodyHtml = group === 'venue' ? renderByVenue(dayEvents, venuesById) : renderByTime(dayEvents, venuesById);
+  const filteredEvents = kindFilter === 'all' ? dayEvents : dayEvents.filter((e) => (e.kind || 'music') === kindFilter);
+  const bodyHtml =
+    group === 'venue'
+      ? renderByVenue(filteredEvents, venuesById)
+      : group === 'category'
+        ? renderByCategory(filteredEvents, venuesById)
+        : renderByTime(filteredEvents, venuesById);
+
+  const hashFor = (overrides) => {
+    const day = overrides.day ?? activeDayKey;
+    const g = overrides.group ?? group;
+    const kind = overrides.kind ?? kindFilter;
+    return `#/schedule?day=${day}&group=${g}&kind=${kind}`;
+  };
 
   container.innerHTML = `
     <section class="view schedule-view">
@@ -88,6 +130,13 @@ export function renderSchedule(container, content, route) {
         <div class="group-toggle" role="group" aria-label="Group by">
           <button type="button" class="toggle-btn ${group === 'time' ? 'is-active' : ''}" data-group="time">By time</button>
           <button type="button" class="toggle-btn ${group === 'venue' ? 'is-active' : ''}" data-group="venue">By venue</button>
+          <button type="button" class="toggle-btn ${group === 'category' ? 'is-active' : ''}" data-group="category">By category</button>
+        </div>
+        <div class="kind-filter" data-testid="kind-filter" role="group" aria-label="Filter by kind">
+          <button type="button" class="chip ${kindFilter === 'all' ? 'is-active' : ''}" data-kind="all" aria-pressed="${kindFilter === 'all'}">All</button>
+          ${KINDS.map(
+            (k) => `<button type="button" class="chip ${kindFilter === k ? 'is-active' : ''}" data-kind="${k}" aria-pressed="${kindFilter === k}">${esc(kindLabel(k))}</button>`
+          ).join('')}
         </div>
       </div>
       <div data-testid="schedule-list" class="schedule-list">
@@ -96,9 +145,13 @@ export function renderSchedule(container, content, route) {
     </section>`;
 
   container.querySelectorAll('.day-tab').forEach((btn) => {
-    btn.addEventListener('click', () => navigate(`#/schedule?day=${btn.dataset.day}&group=${group}`));
+    btn.addEventListener('click', () => navigate(hashFor({ day: btn.dataset.day })));
   });
   container.querySelectorAll('.toggle-btn').forEach((btn) => {
-    btn.addEventListener('click', () => navigate(`#/schedule?day=${activeDayKey}&group=${btn.dataset.group}`));
+    btn.addEventListener('click', () => navigate(hashFor({ group: btn.dataset.group })));
   });
+  container.querySelectorAll('.kind-filter .chip').forEach((btn) => {
+    btn.addEventListener('click', () => navigate(hashFor({ kind: btn.dataset.kind })));
+  });
+  bindEventRowStars(container);
 }

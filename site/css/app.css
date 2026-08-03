@@ -319,10 +319,17 @@ img {
 }
 
 .event-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.15rem 0.75rem;
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.event-row__link {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
   background: var(--color-surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
@@ -332,14 +339,25 @@ img {
   min-height: 44px;
 }
 
+/* Time + kind badge/ticket icon share a top line (space-between) so the
+   title below gets the link's *full* width. A 3-column grid (time | title |
+   badge), matching the row's pre-star-button layout, measured out to a
+   ~78px title column on a 390px viewport once the sibling star button's
+   44px + gap came out of the budget — not enough room for titles like
+   "Community Garden Tour" without mid-word wraps. Stacking instead gives
+   the title the whole card width. -- */
+.event-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .event-row__time {
-  grid-column: 1;
-  grid-row: 1 / 3;
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--color-primary-dark);
   white-space: nowrap;
-  align-self: center;
 }
 
 .event-row__day {
@@ -352,8 +370,6 @@ img {
 }
 
 .event-row__main {
-  grid-column: 2;
-  grid-row: 1 / 3;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -361,7 +377,7 @@ img {
 
 .event-row__title {
   font-weight: 700;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .event-row__venue {
@@ -369,38 +385,31 @@ img {
   color: var(--color-text-muted);
 }
 
-.event-row .badge {
-  grid-column: 3;
-  grid-row: 1;
-  justify-self: end;
-}
-
-.event-row__star {
-  grid-column: 3;
-  grid-row: 2;
-  justify-self: end;
-  color: var(--color-accent-dark);
-}
-
-.event-row-wrap {
+.event-row__meta {
+  flex: none;
   display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.event-row-wrap .event-row {
-  flex: 1;
-}
-
-.unstar-btn {
+.event-row__star-btn {
   flex: none;
   width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
-  color: var(--color-danger);
-  font-size: 1.1rem;
+  color: var(--color-accent-dark);
+  font-size: 1.2rem;
   cursor: pointer;
+}
+
+.event-row__star-btn[aria-pressed="true"] {
+  background: var(--badge-art-bg);
+  border-color: var(--color-accent-dark);
 }
 
 .venue-group__title, .time-group__title {
@@ -468,6 +477,12 @@ img {
 
 .event-detail__time {
   color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.event-detail__tickets {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
   font-weight: 600;
 }
 
@@ -844,4 +859,72 @@ a:focus-visible, button:focus-visible {
     padding-left: calc(1.25rem + var(--safe-left));
     padding-right: calc(1.25rem + var(--safe-right));
   }
+}
+
+/* ============================================================
+   Wave 1A: schedule UX — appended additively (kind badges for the
+   new kinds, ticket-stub icons, kind-filter chips, "by category"
+   grouping). See event-row.js / schedule.js / starred.js.
+   ============================================================ */
+
+/* -- kind badges: performance/literary/vendor/other. music (existing
+   --badge-music-bg) and art (existing --badge-art-bg) already had
+   text-safe tints and are unchanged. Contrast ratios computed against
+   WCAG 2.1 (>=4.5:1 required for this text size; all comfortably clear). -- */
+.badge--performance { background: #f9e3e3; color: #8f1b1e; } /* red family — 7.31:1 */
+.badge--literary { background: #dff3ea; color: #1f6b4a; } /* green family — 5.57:1 */
+.badge--vendor { background: #ece1f5; color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 */
+.badge--other { background: #ece4d8; color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 */
+
+/* -- ticket-stub icons: Free/Paid Ticket Required only (events.csv
+   `tickets`). Labelled via role="img" + aria-label on the <svg> itself
+   (see event-row.js) — screen readers get the label regardless of the
+   tiny visual "FREE"/"$" glyph, so this is not aria-hidden. -- */
+.ticket-icon { flex: none; }
+.ticket-icon--free .ticket-icon__body { fill: #1f7a45; } /* dark green; white text 5.35:1 */
+.ticket-icon--paid .ticket-icon__body { fill: var(--color-accent-dark); } /* white text 5.93:1 */
+.ticket-icon__notch { fill: var(--color-surface); }
+.ticket-icon__perf { stroke: rgba(255, 255, 255, 0.65); stroke-width: 1; }
+.ticket-icon__text { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 800; font-size: 8px; }
+
+/* -- kind filter chips (schedule view) -- */
+.kind-filter {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+}
+
+.chip {
+  min-height: 44px;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.chip.is-active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* -- "by category" grouping: same look as .venue-group/.time-group,
+   duplicated rather than added to their shared selector to keep this
+   section purely additive. -- */
+.category-group__title {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--color-bg);
+  padding: 0.4rem 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.6rem;
 }

@@ -1,6 +1,6 @@
 import { esc } from '../util.js';
 import { now as clockNow, parseEventTimes, formatDayLabel, dateKey } from '../time.js';
-import { eventRowHtml } from './event-row.js';
+import { eventRowHtml, bindEventRowStars } from './event-row.js';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 const REFRESH_MS = 60 * 1000;
@@ -83,6 +83,7 @@ export function renderNow(container, content) {
         <h2 class="view-subtitle">Up next</h2>
         ${upNextGroups.length ? upNextGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
       </section>`;
+    bindEventRowStars(container);
   }
 
   function drawNotStarted(t, festivalStart, times) {
@@ -100,6 +101,7 @@ export function renderNow(container, content) {
         <h2 class="view-subtitle">Opening lineup &mdash; ${esc(formatDayLabel(festivalStart))}</h2>
         <div class="event-list">${firstDayEvents.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
       </section>`;
+    bindEventRowStars(container);
   }
 
   function drawEnded() {

@@ -50,6 +50,16 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   remapped onto the 9 real venues. Map regenerated with wider bbox (Jimmy
   Lee Rec Center + Sundin). MMAF branding applied: header logo, brand
   palette, emblem app icons. Maps links default to walking directions.
+- 2026-08-02 (August feature round, Wave 0 merged): events schema is now
+  date/start_time/end_time (end_time < start_time = past-midnight, valid;
+  equal = error), kinds music|art|performance|literary|vendor|other, new
+  tickets column; sponsors use tier slugs (emerald..quartz, caps 1/5) with
+  optional location, no tier_order column; settings gained donation_url/
+  donation_label. CONTRACTS.md rewritten (routes incl. #/vendors, diamond
+  pin/transit contract, a11y section, new test hooks). Fixture venue id
+  refreshed to ginkgocoffeehouse — the live sheet had corrected the typo,
+  which was failing every live-sheet build (and CI) until this merge.
+  BACKLOG.md tracks the round; Wave 1 (4 parallel UI agents) next.
 - RESOLVED 2026-08-02: custom domain https://go.midwaymusicandart.org/ is the
   live URL (github.io 301s to it). Initial cert provisioning was stuck
   (GitHub health check showed eligible-but-unissued for ~4h); Anthony's

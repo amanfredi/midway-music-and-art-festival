@@ -69,3 +69,19 @@ export function openVendorSheet(vendorId) {
     ${vendor.description ? `<p class="sheet__description">${esc(vendor.description)}</p>` : ''}
   `);
 }
+
+// iOS Safari has no beforeinstallprompt API, so the install button opens
+// this instead: the same steps a person would find under Safari's Share
+// button, kept in-page because the site has no external links to send them
+// to (offline-first).
+export function openInstallInstructionsSheet() {
+  open(`
+    <h2 class="sheet__title">Install this app</h2>
+    <p class="sheet__description">Add the Circuit Map to your Home Screen for quicker access and better offline support:</p>
+    <ol class="sheet__steps">
+      <li>Tap the <strong>Share</strong> button in Safari's toolbar.</li>
+      <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+      <li>Tap <strong>Add</strong> in the top-right corner.</li>
+    </ol>
+  `);
+}

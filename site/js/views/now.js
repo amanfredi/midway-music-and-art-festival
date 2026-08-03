@@ -1,6 +1,7 @@
 import { esc } from '../util.js';
 import { now as clockNow, parseEventTimes, formatDayLabel, dateKey } from '../time.js';
 import { eventRowHtml } from './event-row.js';
+import { installButtonHtml, bindInstallButton, onInstallStateChange } from '../pwa-install.js';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 const REFRESH_MS = 60 * 1000;
@@ -36,7 +37,9 @@ export function renderNow(container, content) {
       container.innerHTML = `
         <section data-testid="now-view" class="view now-view">
           <p class="empty-state">No events scheduled yet — check back once the schedule is published.</p>
+          ${installButtonHtml()}
         </section>`;
+      bindInstallButton(container);
       return;
     }
 
@@ -82,7 +85,9 @@ export function renderNow(container, content) {
         ${onNowGroups.length ? onNowGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
         <h2 class="view-subtitle">Up next</h2>
         ${upNextGroups.length ? upNextGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
+        ${installButtonHtml()}
       </section>`;
+    bindInstallButton(container);
   }
 
   function drawNotStarted(t, festivalStart, times) {
@@ -99,7 +104,9 @@ export function renderNow(container, content) {
         </div>
         <h2 class="view-subtitle">Opening lineup &mdash; ${esc(formatDayLabel(festivalStart))}</h2>
         <div class="event-list">${firstDayEvents.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
+        ${installButtonHtml()}
       </section>`;
+    bindInstallButton(container);
   }
 
   function drawEnded() {
@@ -111,10 +118,18 @@ export function renderNow(container, content) {
           <p>${esc(content.settings.festival_dates_label || '')}</p>
           <a class="btn btn--primary" href="#/schedule">Browse the full schedule</a>
         </div>
+        ${installButtonHtml()}
       </section>`;
+    bindInstallButton(container);
   }
 
   draw();
   const timer = setInterval(draw, REFRESH_MS);
-  return () => clearInterval(timer);
+  // Redraw on install-state changes (e.g. beforeinstallprompt firing after
+  // this view already rendered) so the button appears without a reload.
+  const unsubscribeInstall = onInstallStateChange(draw);
+  return () => {
+    clearInterval(timer);
+    unsubscribeInstall();
+  };
 }

@@ -22,8 +22,6 @@ Anthony Manfredi (volunteer, spouse of Lisa, who is building the festival's umbr
 - **No native app** — no app-store registration, review process, or install friction.
 - **No server-side runtime** — nothing to operate, patch, or pay for. Static hosting only.
 - **No push notifications** (phone buzzing while site is closed) — on iOS this requires home-screen install plus a push server; a banner shown on next open captures most of the value.
-- **No Google Maps / slippy-map engine in v1** — Google Maps JS API requires connectivity and forbids offline tile caching; self-hosted vector tiles are real added engineering. The illustrated map replaces it (see Approach).
-- **No text search in v1** — kind filtering (schedule chips for music/art/performance/literary/vendor/other) shipped in the August 2026 round, consciously overriding this non-goal in part; free-text search across events remains out of scope, revisited only if content scale or demand grows.
 - **No accounts, tracking, or personal data collection** — starring is device-local.
 
 ## Constraints
@@ -64,7 +62,7 @@ A **static, offline-capable website (PWA)** on GitHub Pages under a festival sub
 - **Whether the GPS "you are here" dot ships at all** — organizers may not want it; architecture keeps it possible. Decide after demo feedback.
 - **Domain/subdomain name** — needed before publicizing, not before building.
 - **Minimum browser/device floor** — assume evergreen iOS Safari + Android Chrome for POC; revisit only if organizers report older-device constraints.
-- **Search/filtering** — revisit only if content scale or demo feedback demands it.
+- **Search/filtering** — revisit only if content scale or user feedback demands it.
 
 ## Ledger
 

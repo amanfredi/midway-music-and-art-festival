@@ -375,11 +375,8 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 
 ## Conventions
 
-- Plain ES modules, no framework, no runtime deps. `package.json` is owned by
+- Plain ES modules, no runtime deps. `package.json` is owned by
   the orchestrator — agents report needed devDependencies instead of editing it.
 - npm scripts: `build` (content+sw), `serve`, `test` (node --test + Playwright).
 - Mobile-first, light theme, system fonts, 44px+ touch targets, WCAG AA contrast.
-- Placeholder content: real streets, invented establishments — nothing that
-  could be mistaken for a real business or real festival information (the
-  donation URL is the one intentional exception: it's the organizers' real
-  Zeffy page).
+- Content that is intentionally placeholder should not refer to real businesses or artists, because that would inappropriately connect real people to an event that they are not necessarily involved in on a public website.

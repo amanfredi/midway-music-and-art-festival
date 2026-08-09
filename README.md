@@ -1,14 +1,13 @@
 # Midway Music & Arts Fest — map & schedule site
 
 An offline-capable map and schedule website for the Midway Music & Arts
-Fest (October 2–4, 2026, St. Paul, MN) — the digital version of the
-festival's "Circuit Map". Attendees load it once, and it keeps working on
-festival day even with no cell signal: schedule, venue map, and starred
-events all survive airplane mode and browser tab reloads.
+Fest (October 2–4, 2026, St. Paul, MN).
+Attendees load it once, and it keeps working on festival day even with no cell signal.
+Schedule, venue map, and starred events all survive airplane mode and browser tab reloads.
 
-> **Everything on the demo site is placeholder.** All venue, artist, vendor,
-> and sponsor names are fictional (the streets are real). Do not treat
-> anything here as actual festival information.
+> **Some content on the demo site is placeholder.** All artist, vendor,
+> and sponsor names are currently fictional.
+> Venues are populated from the live spreadsheet.
 
 The design goals and decision history live in [DEFINITION.md](DEFINITION.md);
 internal component interfaces in [CONTRACTS.md](CONTRACTS.md).
@@ -19,8 +18,8 @@ The site is plain HTML/CSS/JS on GitHub Pages — no framework, no server, no
 accounts, no external requests. A service worker precaches every file on
 first visit and serves everything from cache afterward, so being offline (or
 having the tab evicted and reloaded, as iOS Safari likes to do) doesn't
-break anything. Content comes from CSV — committed fixture files today, a
-coordinator-edited Google Sheet later — and a build script validates it and
+break anything. Content comes from CSV — placeholder data via committed fixture files, and
+live data from coordinator-edited Google Sheets — and a build script validates it and
 compiles it into the JSON the site reads. A broken edit fails the build with
 a readable error instead of shipping a broken site.
 
@@ -86,11 +85,11 @@ gh api -X POST repos/amanfredi/midway-music-and-art-festival/pages -f build_type
 ## Content updates
 
 `content/config.json` maps each content tab (venues, events, vendors,
-sponsors, settings) to a source: today a fixture CSV in `content/fixtures/`,
-later a Google Sheet tab published to the web. The build treats both
+sponsors, settings) to a source: either a fixture CSV in `content/fixtures/`,
+or a Google Sheet tab published to the web. The build treats both
 identically, so the swap is config-only:
 
-1. Create a Google Sheet with five tabs whose header rows match the fixture
+1. Create a Google Sheet with tabs whose header rows match the fixture
    CSVs (column reference: CONTRACTS.md). Venue and vendor positions go in a
    single `location` column that takes either decimal coordinates
    (`44.9557, -93.1668`) or the plus code shown on a Google Maps place card
@@ -98,7 +97,7 @@ identically, so the swap is config-only:
    easy path.
 2. File → Share → Publish to web → select each tab → CSV format → copy each
    tab's URL.
-3. Replace the five paths in `content/config.json` with those URLs; commit.
+3. Replace the paths in `content/config.json` with those URLs; commit.
 
 After that, a coordinator edits the sheet and the site rebuilds either on
 the 6-hour schedule in `.github/workflows/rebuild-content.yml` or on demand
@@ -108,7 +107,7 @@ misspelled venue ids, bad dates, missing fields — fail the build with a
 message naming the tab, row, and problem; the live site stays on the last
 good version.
 
-### During festival weekend
+### During the festival
 
 Tighten the rebuild cron in `rebuild-content.yml` so sheet edits land fast.
 The notice banner ("Main stage running 30 min late") is the `banner_text` /
@@ -116,7 +115,7 @@ The notice banner ("Main stage running 30 min late") is the `banner_text` /
 Attendees see it next time their device gets signal; dismissing it sticks
 until the id changes again.
 
-## Swapping in the real map artwork
+## Swapping in the real map artwork (maybe)
 
 The current map is a generated placeholder drawn from OpenStreetMap street
 centerlines at true scale (1 SVG unit = 1 meter). The commissioned artwork
@@ -147,10 +146,6 @@ matters and needs a hands-on check after any caching change:
    This simulates iOS evicting the tab.
 6. Turn Airplane Mode off, reload once, and confirm the site still works
    online (it should quietly pick up any newly published content).
-
-Stars live only on the device (`localStorage`); iOS may clear them if the
-site goes unused for ~7 days — acceptable for a 3-day festival, worth
-knowing when testing weeks apart.
 
 ## Known limitations
 

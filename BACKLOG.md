@@ -9,12 +9,10 @@ Items are not prioritized against each other. The festival is October 2–4,
 ## Decisions that need Anthony
 
 **Map library — keep hand-rolling, or adopt MapLibre GL JS?** Current answer is
-not yet, but the case has grown. DEFINITION.md lists "no map engine" as a
-non-goal and treats zero runtime dependencies plus offline as the point;
+not yet, but the case has grown.
 MapLibre requires WebGL, which fails in iOS Lockdown Mode and on low-end
 phones where a static SVG always works, and adds roughly 230 KB gzipped.
-Leaflet is a worse fit still: offline raster tiles for this area run to tens of
-megabytes. Against that, zoom-dependent labelling, feature filtering by zoom
+Against that, zoom-dependent labelling, feature filtering by zoom
 and label collision are exactly what an engine gives for free, and the last
 round hand-rolled all three — plus the reported iOS lag below is evidence that
 a large static SVG has its own cost. This decision should be made together with
@@ -49,6 +47,8 @@ Two related interaction gaps: **clicking a pin should highlight it**, and
 and recenter the map on it**, as though the pin itself had been tapped. Today
 the card opens the detail sheet without any connection to the map.
 
+A further refinement of the venue/map interaction might involve having the venue info card pop up as a map tooltip, rather than a separate card at the bottom of the screen.
+
 **Scroll and zoom lag noticeably on a recent iPhone.** Observed, not yet
 diagnosed. The likely cause is the size and node count of the inlined SVG, in
 which case it bears directly on the map-library decision above; that hypothesis
@@ -79,7 +79,8 @@ Accessibility contract in CONTRACTS.md if it turns up gaps. The reference copy
 is in `reference/`.
 
 An **in-depth code and test review** — the codebase has grown through several
-fast QA rounds, and no one has read it end to end since.
+fast QA rounds, and no one has read it end to end since. In particular, focus on
+whether the key user-facing features have appropriate test coverage, if the code makes appropriate use of reusable components rather than copy/pasting similar patterns, and if adopting any 3rd party libraries or frameworks could reduce the volume of code to maintain in this repository and still keep the desired offline-only functionality (e.g. by bundling the library at build time). The current app state should be documented by screenshots before any refactoring, so that any resulting changes can be easily identified.
 
 **Web Share API** for sharing a link to anything with a URL: events already
 have one (`#/event/<id>`), venues do not yet. Research from 2026-08-02 flagged
@@ -90,13 +91,15 @@ event/venue detail" note, which was the same idea.
 **QA on Android**, and an **agent review from a user's perspective**, possibly
 using Claude for Chrome.
 
+**Consider adding View Transitions for additional polish**, but this is low priority and might not even be an improvement.
+
 ## Content and data
 
-The organizers need to fix two things in the venues sheet. **Mosaic on a Stick
-carries Hamline Park's address and plus code verbatim** (`1564 Lafond Ave` /
-`XR5M+X8`), so its pin lands exactly on the park's and hides it — one of the two
-entries is wrong. **Vig Guitars and Fluid Ink Tattoos are about 14 m apart**,
-which is genuine data but makes the overlapping-pin problem above concrete.
+There are two data quirks in the venues sheet that expose limitations with the current map implementation:
+**Mosaic on a Stick carries Hamline Park's address and plus code verbatim** (`1564 Lafond Ave` /
+`XR5M+X8`), so its pin lands exactly on the park's and hides it. The store is actually located within the park, so the addresses are accurate.
+**Vig Guitars and Fluid Ink Tattoos are about 14 m apart**,
+This also causes overlapping pins.
 
 `content/fixtures/venues.csv` is a few venues behind the live sheet. Harmless —
 it is only a snapshot, and the tests build from it deliberately — but worth
@@ -132,10 +135,3 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] Nav fits and reads at 320 px with six tabs.
 - [ ] Transit stop names and positions verified against Metro Transit's
       published Green Line / A Line / B Line stop lists.
-
-## Deferred, not forgotten
-
-From the 2026-08-02 PWA feature survey: **View Transitions** are pure polish,
-and **Wake Lock** would need to be an opt-in toggle since it fights battery
-life. Everything else surveyed was rejected, including manifest `shortcuts`,
-which iOS ignores.

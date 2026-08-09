@@ -40,6 +40,42 @@ Google Sheet creation when real content exists, Aug 8–9 organizer demo.
   artwork — a hand-drawn map is still on the table, and `geo.js` was built so
   that swapping artwork means new control points only.
 
+### Open decisions from the 2026-08-08 QA round (Anthony's call)
+
+Shipped as-is; each is a deliberate default that can be changed cheaply.
+
+- [] **Transit pin density.** Widening the map bbox took transit pins from 10
+  to 34, out as far as Stadium Village and Selby & Arundel. They're accurate,
+  but far more than the one stop (Raymond Ave) that was actually requested.
+  Keep the full set as context, or filter to a radius around the core?
+  One-line change in `map.js` where `transitStops` is filtered.
+- [] **Zoom-out limit.** Zoom-out currently stops when the square view reaches
+  the map's north–south extent, so ~4 of the 6 miles are visible at once and
+  you pan east–west for the rest (`maxViewW` in `map.js#setupInteraction`).
+  The alternative shows the full 6-mile width with empty bands top and bottom,
+  which reads as broken. Panning was chosen; revisit if it feels cramped.
+- [] **`map.svg` weight.** 197KB → 507KB, all of it precached for offline. The
+  core/sparse-surround split already avoided the naive ~1.3MB. If this matters,
+  the next lever is the `simplify()` tolerance in `tools/make-map.mjs` (currently
+  2 m), which trades geometry fidelity for bytes.
+- [] Minor: the OSM station dots and names baked into `map.svg` now sit
+  underneath the much larger transit pins — mild visual redundancy. Either
+  suppress the baked dots in `make-map.mjs` or leave them as a zoomed-in detail.
+
+### Needs a real device (can't be checked from the harness)
+
+- [] **Header-scroll behavior on a phone.** The page (not `#view`) is now the
+  scroll container. Verified via Playwright screenshots at 393px, but momentum
+  scrolling, rubber-banding and the sticky control bar under a real iOS/Android
+  browser chrome are not something a headless screenshot can confirm. Anthony
+  offered to verify interactively.
+- [] **Sticky control bar vs. the iOS status bar, installed.** `.schedule-controls`
+  pins at `top: var(--safe-top)`, which should evaluate to 0 given
+  `apple-mobile-web-app-status-bar-style: default` (iOS puts the web view below
+  the status bar in that mode). Unverified — if the bar does tuck under the
+  status bar in standalone mode, the fix is an opaque fixed filler of height
+  `var(--safe-top)`. Check during the next airplane-mode pass.
+
 ## Agent branches (worktrees)
 
 Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,

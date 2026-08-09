@@ -59,8 +59,25 @@ trusting any change to caching or the build.
 ## Deploy
 
 Pushing to `main` runs `.github/workflows/deploy.yml`: tests, then build,
-then deploy to GitHub Pages. One-time repo setup (already done if the site
-is live): repo must be public (free-plan Pages requirement), then
+then deploy to GitHub Pages. To deploy on demand instead — after a sheet
+edit, or to re-run a failed deploy — both workflows accept a manual trigger:
+
+```sh
+gh workflow run deploy.yml           # test + build + deploy (~90s)
+gh workflow run rebuild-content.yml  # re-pull the sheet and redeploy
+gh run watch                         # follow the run to completion
+gh run list --limit 5                # or just check recent results
+```
+
+The Actions tab does the same thing. There is deliberately no local deploy
+script: Pages is set to `build_type=workflow`, so it publishes only what the
+workflow uploads, and that path is what enforces the "tests must pass first"
+gate. Publishing from a laptop would mean switching Pages to branch-based
+deploys, which also means carrying a `CNAME` file in the published branch to
+keep the custom domain — worth knowing before anyone tries it.
+
+One-time repo setup (already done if the site is live): repo must be public
+(free-plan Pages requirement), then
 
 ```sh
 gh api -X POST repos/amanfredi/midway-music-and-art-festival/pages -f build_type=workflow
@@ -85,7 +102,8 @@ identically, so the swap is config-only:
 
 After that, a coordinator edits the sheet and the site rebuilds either on
 the 6-hour schedule in `.github/workflows/rebuild-content.yml` or on demand
-(Actions tab → "Rebuild content" → Run workflow). Validation errors —
+(`gh workflow run rebuild-content.yml`, or Actions tab → "Rebuild content" →
+Run workflow). Validation errors —
 misspelled venue ids, bad dates, missing fields — fail the build with a
 message naming the tab, row, and problem; the live site stays on the last
 good version.

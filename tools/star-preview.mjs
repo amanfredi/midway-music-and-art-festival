@@ -4,7 +4,12 @@
 // than by describing. Uses the real site/css/app.css so the comparison is
 // honest; writes .screenshots/star-options.png.
 //
-// Not part of the site or the build. Delete once the star design is settled.
+// RESOLVED 2026-08-08: variant B (borderless, larger glyph) was chosen and is
+// what site/css/app.css now implements. Kept only as the record of what was
+// compared — safe to delete, and the variants below no longer track the
+// shipped CSS if it changes.
+//
+// Not part of the site or the build.
 //
 // Usage: node tools/star-preview.mjs
 

@@ -80,7 +80,7 @@ is in `reference/`.
 
 An **in-depth code and test review** — the codebase has grown through several
 fast QA rounds, and no one has read it end to end since. In particular, focus on
-whether the key user-facing features have appropriate test coverage, if the code makes appropriate use of reusable components rather than copy/pasting similar patterns, and if adopting any 3rd party libraries or frameworks could reduce the volume of code to maintain in this repository and still keep the desired offline-only functionality (e.g. by bundling the library at build time). The current app state should be documented by screenshots before any refactoring, so that any resulting changes can be easily identified.
+whether the key user-facing features have appropriate test coverage, if the code makes appropriate use of reusable components rather than copy/pasting similar patterns, and if adopting any 3rd party libraries or frameworks could reduce the volume of code to maintain in this repository and still keep the desired offline-only functionality (e.g. by bundling the library at build time). The current app state should be documented by screenshots before any refactoring, so that any resulting changes can be easily identified. This is defined and in progress, see definitions/code-and-test-review.md.
 
 **Web Share API** for sharing a link to anything with a URL: events already
 have one (`#/event/<id>`), venues do not yet. Research from 2026-08-02 flagged

@@ -24,18 +24,24 @@ function isStandalone() {
   );
 }
 
-// Only iOS WebKit (Safari and every other iOS browser, which are all
-// WebKit wrappers) exposes this boolean. It's the only reliable signal for
-// "this browser will never fire beforeinstallprompt" without UA sniffing.
-function isIOS() {
-  return typeof navigator.standalone === 'boolean';
+// `navigator.standalone` is WebKit-only and marks the browsers that will
+// never fire beforeinstallprompt — but it is NOT iOS-only: macOS Safari
+// exposes it too, and has its own install flow ("Add to Dock", Safari 17+).
+// Telling them apart matters because the instruction steps differ, and
+// showing a Mac user "Add to Home Screen" is simply wrong (QA, 2026-08-08).
+//
+// maxTouchPoints is the discriminator rather than a UA string: iPhone and
+// iPad both report a nonzero value (iPadOS reports a Mac UA, so UA sniffing
+// would misfile every iPad), and desktop Safari reports 0.
+function safariFlavor() {
+  if (typeof navigator.standalone !== 'boolean') return null;
+  return navigator.maxTouchPoints > 0 ? 'ios' : 'macos';
 }
 
 function mode() {
   if (installed || isStandalone()) return null;
   if (deferredPrompt) return 'chromium';
-  if (isIOS()) return 'ios';
-  return null;
+  return safariFlavor();
 }
 
 /** Call once at startup. Wires the Chromium install-prompt lifecycle. */
@@ -84,8 +90,8 @@ export function bindInstallButton(container) {
         /* dismissed, or the browser doesn't support userChoice */
       }
       notify();
-    } else if (m === 'ios') {
-      openInstallInstructionsSheet();
+    } else if (m === 'ios' || m === 'macos') {
+      openInstallInstructionsSheet(m);
     }
   });
 }

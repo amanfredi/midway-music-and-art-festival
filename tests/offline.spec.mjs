@@ -106,13 +106,14 @@ test('row star toggle updates immediately without scroll jump, and survives an o
   // Scroll the target row into view *before* recording scrollBefore — a raw
   // star.click() would auto-scroll to reach an off-screen element first,
   // which would falsely look like "the toggle changed the scroll position".
+  // The page itself is the scroll container (app.css "body"), not #view.
   await star.scrollIntoViewIfNeeded();
-  const scrollBefore = await page.evaluate(() => document.getElementById('view').scrollTop);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
   expect(scrollBefore).toBeGreaterThan(0);
 
   await star.click();
   await expect(star).toHaveAttribute('aria-pressed', 'true');
-  expect(await page.evaluate(() => document.getElementById('view').scrollTop)).toBe(scrollBefore);
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
 
   // --- go offline and reload: the star (localStorage) survives
   await context.setOffline(true);

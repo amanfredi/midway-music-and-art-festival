@@ -31,13 +31,51 @@ const CALIBRATION_OUT = path.join(ROOT, 'site/assets/map-calibration.json');
 // (x proportional to lng*cos(lat0), y proportional to -lat, north up). This
 // is the single source of truth for the numbers baked into map-calibration.json.
 // ---------------------------------------------------------------------------
-// Sized to the real venue list (sheet, 2026-08-02): Sundin Music Hall sits at
-// 44.967 and Jimmy Lee Rec Center at 44.9496, -93.1459 — both beyond the
-// original Snelling/University corridor guess.
-const BBOX = { south: 44.945, west: -93.180, north: 44.971, east: -93.140 };
-const LAT0 = (BBOX.south + BBOX.north) / 2;
+// Extent (QA, 2026-08-08): centered on Hamline Park, 6 miles east-west by 4
+// miles north-south. The festival's own footprint is the inner 4x2 miles; the
+// extra mile on every side is context, so someone arriving from outside the
+// neighborhood can see where they are relative to it. Reaching this far west
+// is also what brings the Raymond Avenue Green Line station onto the map.
+//
+// The whole extent is never the default view — see CORE below and the home
+// view in site/js/views/map.js.
+const CENTER = { lat: 44.9599375, lng: -93.1666875 }; // Hamline Park (venues sheet)
+const MILE_M = 1609.344;
 const M_PER_DEG_LAT = 111320; // standard equirectangular constant (meters/degree latitude)
-const M_PER_DEG_LNG = M_PER_DEG_LAT * Math.cos((LAT0 * Math.PI) / 180);
+const M_PER_DEG_LNG_AT = (lat) => M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+
+const HALF_HEIGHT_MI = 2;
+const HALF_WIDTH_MI = 3;
+const dLat = (HALF_HEIGHT_MI * MILE_M) / M_PER_DEG_LAT;
+const dLng = (HALF_WIDTH_MI * MILE_M) / M_PER_DEG_LNG_AT(CENTER.lat);
+
+const BBOX = {
+  south: round6(CENTER.lat - dLat),
+  north: round6(CENTER.lat + dLat),
+  west: round6(CENTER.lng - dLng),
+  east: round6(CENTER.lng + dLng),
+};
+
+// Residential streets are drawn only inside CORE -- a 2.4 x 1.8 mile box
+// around the same center, comfortably containing every venue. Outside it the
+// map keeps arterials, spines and motorways only. Drawing every residential
+// street across all 24 square miles produced a gray mat with no legible
+// structure, and roughly quadrupled the file that has to be cached offline.
+const CORE_HALF_W_MI = 1.2;
+const CORE_HALF_H_MI = 0.9;
+const CORE = {
+  south: CENTER.lat - (CORE_HALF_H_MI * MILE_M) / M_PER_DEG_LAT,
+  north: CENTER.lat + (CORE_HALF_H_MI * MILE_M) / M_PER_DEG_LAT,
+  west: CENTER.lng - (CORE_HALF_W_MI * MILE_M) / M_PER_DEG_LNG_AT(CENTER.lat),
+  east: CENTER.lng + (CORE_HALF_W_MI * MILE_M) / M_PER_DEG_LNG_AT(CENTER.lat),
+};
+
+function round6(v) {
+  return Math.round(v * 1e6) / 1e6;
+}
+
+const LAT0 = (BBOX.south + BBOX.north) / 2;
+const M_PER_DEG_LNG = M_PER_DEG_LNG_AT(LAT0);
 
 function project(lat, lng) {
   return {
@@ -88,7 +126,7 @@ async function fetchOnce(url) {
         // (mod_negotiation), and its usage policy asks for an identifying
         // User-Agent -- both required for Node's fetch() to succeed here.
         Accept: '*/*',
-        'User-Agent': 'midway-circuit-map-make-map.mjs (github.com/amanfredi/midway-music-and-art-festival)',
+        'User-Agent': 'mmaf-make-map.mjs (github.com/amanfredi/midway-music-and-art-festival)',
       },
       body: 'data=' + encodeURIComponent(QUERY),
       signal: controller.signal,
@@ -250,17 +288,35 @@ function widthTier(way) {
   return 'arterial'; // primary/secondary/tertiary + their links (excluding the two spines)
 }
 
+/** True when any part of the way's geometry falls inside CORE (see above). */
+function touchesCore(way) {
+  return (way.geometry || []).some(
+    (g) =>
+      g &&
+      g.lat >= CORE.south &&
+      g.lat <= CORE.north &&
+      g.lon >= CORE.west &&
+      g.lon <= CORE.east
+  );
+}
+
 function extractFromOverpass(elements) {
   const tiers = { resid: [], arterial: [], spine: [], motorway: [] };
   const streetGroups = new Map();
   const rail = [];
   const stations = [];
+  let droppedResid = 0;
 
   for (const el of elements) {
     if (el.type === 'way' && el.tags?.highway && HIGHWAY_RE.test(el.tags.highway)) {
+      const tier = widthTier(el);
+      // Sparse surround: residential streets survive only in the core.
+      if (tier === 'resid' && !touchesCore(el)) {
+        droppedResid++;
+        continue;
+      }
       const pts = wayToPoints(el);
       if (!pts) continue;
-      const tier = widthTier(el);
       tiers[tier].push(pts);
       const name = el.tags.name;
       if (name) {
@@ -277,6 +333,7 @@ function extractFromOverpass(elements) {
     }
   }
 
+  if (droppedResid) console.log(`  dropped ${droppedResid} residential ways outside the core`);
   return { tiers, streetGroups, rail, stations };
 }
 
@@ -354,15 +411,20 @@ function placeLabels(streetGroups) {
 
   for (const [name, recs] of ordered) {
     const tier = recs[0].tier;
-    const totalLen = recs.reduce((s, r) => s + polylineLength(r.points), 0);
-    const numWanted = totalLen > 600 ? 2 : 1;
-    const fontSize = tier === 'spine' ? 15 : tier === 'arterial' ? 11 : 8;
+    // Only arterials and the two spines get names (QA, 2026-08-08). At this
+    // extent, labeling every residential street produced ~900 labels that were
+    // unreadable at any zoom the map actually opens at, and they crowded out
+    // the arterial names that people navigate by.
+    if (tier !== 'spine' && tier !== 'arterial') continue;
+    const totalLen = recs.reduce((sum, r) => sum + polylineLength(r.points), 0);
+    const numWanted = totalLen > 600 * SCALE ? 2 : 1;
+    const fontSize = tier === 'spine' ? t(14) : t(11);
 
     const candidates = [];
     for (const rec of recs) {
       const len = polylineLength(rec.points);
       if (len < fontSize * 3) continue; // too short to bother
-      const fractions = len > 300 ? [0.5, 0.25, 0.75] : [0.5];
+      const fractions = len > 300 * SCALE ? [0.5, 0.25, 0.75] : [0.5];
       for (const f of fractions) candidates.push({ rec, len, f });
     }
     candidates.sort((a, b) => b.len - a.len || Math.abs(a.f - 0.5) - Math.abs(b.f - 0.5));
@@ -402,24 +464,41 @@ function pathD(points) {
   return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 }
 
+// Everything below is in map units (= meters), so on-screen size depends on how
+// much map fits the viewport. The old values were tuned when the whole 2-mile
+// bbox filled a desktop window; on a phone they rendered as hairlines and
+// illegible labels. SCALE re-tunes the entire sheet at once against the *home*
+// view (site/js/views/map.js HOME_VIEW_M, ~3000 m across a ~360 px phone map),
+// which is the view that has to be readable at a glance on festival day.
+// Change SCALE and re-run rather than nudging individual numbers.
+// Text needs a much larger factor than line work. Stroke widths represent real
+// road widths and look right at ~2.75x; type has a legibility floor that has
+// nothing to do with scale, and at 2.75x street names rendered at ~3.5 CSS px
+// on a phone -- present in the file, unreadable on the device.
+const SCALE = 2.75;
+const TEXT_SCALE = 7;
+const s = (v) => +(v * SCALE).toFixed(1);
+const t = (v) => +(v * TEXT_SCALE).toFixed(1);
+
+const FONT = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+
 const STYLE = `
   .street { fill:none; stroke-linecap:round; stroke-linejoin:round; }
-  .resid-casing    { stroke:#cdb99a; stroke-width:15; }
-  .resid-fill      { stroke:#f0e2c6; stroke-width:10; }
-  .arterial-casing { stroke:#b0854f; stroke-width:21; }
-  .arterial-fill   { stroke:#e8c793; stroke-width:16; }
-  .spine-casing    { stroke:#8a5a2e; stroke-width:29; }
-  .spine-fill      { stroke:#d9a75f; stroke-width:24; }
-  .motorway-casing { stroke:#b7b0a1; stroke-width:23; opacity:0.5; }
-  .motorway-fill   { stroke:#ded7c8; stroke-width:18; opacity:0.5; }
-  .greenline  { fill:none; stroke:#3f7d5c; stroke-width:3.5; stroke-dasharray:7 6; stroke-linecap:round; }
-  .station-dot   { fill:#fbf8f0; stroke:#3f7d5c; stroke-width:2.5; }
-  .station-label { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:10px; font-weight:600; fill:#2e4a3c; text-anchor:middle; }
-  .street-label  { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; text-anchor:middle; }
-  .street-label.spine    { font-size:15px; font-weight:700; fill:#4a3218; }
-  .street-label.arterial { font-size:11px; font-weight:600; fill:#5c4326; }
-  .street-label.resid    { font-size:8px;  font-weight:500; fill:#6b5638; }
-  .attribution { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:9px; fill:#8a7a63; }
+  .resid-casing    { stroke:#cdb99a; stroke-width:${s(15)}; }
+  .resid-fill      { stroke:#f0e2c6; stroke-width:${s(10)}; }
+  .arterial-casing { stroke:#b0854f; stroke-width:${s(21)}; }
+  .arterial-fill   { stroke:#e8c793; stroke-width:${s(16)}; }
+  .spine-casing    { stroke:#8a5a2e; stroke-width:${s(29)}; }
+  .spine-fill      { stroke:#d9a75f; stroke-width:${s(24)}; }
+  .motorway-casing { stroke:#b7b0a1; stroke-width:${s(23)}; opacity:0.5; }
+  .motorway-fill   { stroke:#ded7c8; stroke-width:${s(18)}; opacity:0.5; }
+  .greenline  { fill:none; stroke:#3f7d5c; stroke-width:${s(3.5)}; stroke-dasharray:${s(7)} ${s(6)}; stroke-linecap:round; }
+  .station-dot   { fill:#fbf8f0; stroke:#3f7d5c; stroke-width:${s(2.5)}; }
+  .station-label { font-family:${FONT}; font-size:${t(9)}px; font-weight:600; fill:#2e4a3c; text-anchor:middle; }
+  .street-label  { font-family:${FONT}; text-anchor:middle; paint-order:stroke; stroke:#faf3e7; stroke-width:${t(1.1)}; stroke-linejoin:round; }
+  .street-label.spine    { font-size:${t(14)}px; font-weight:700; fill:#4a3218; }
+  .street-label.arterial { font-size:${t(11)}px; font-weight:600; fill:#5c4326; }
+  .attribution { font-family:${FONT}; font-size:${t(8)}px; fill:#8a7a63; }
 `.trim();
 
 function buildSvg({ tiers, rail, stations, labels }) {
@@ -429,7 +508,7 @@ function buildSvg({ tiers, rail, stations, labels }) {
       1
     )}" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">`
   );
-  parts.push('<title>Midway Circuit Map street grid</title>');
+  parts.push('<title>Midway Music &amp; Arts Fest street map</title>');
   parts.push(`<style>${STYLE}</style>`);
   parts.push(`<rect x="0" y="0" width="${W.toFixed(1)}" height="${H.toFixed(1)}" fill="#faf3e7"/>`);
 
@@ -450,15 +529,17 @@ function buildSvg({ tiers, rail, stations, labels }) {
     parts.push(`<path class="greenline" d="${rail.map(pathD).join(' ')}"/>`);
   }
 
-  for (const s of stations) {
-    parts.push(`<circle class="station-dot" cx="${s.x.toFixed(1)}" cy="${s.y.toFixed(1)}" r="7"/>`);
+  for (const st of stations) {
+    parts.push(`<circle class="station-dot" cx="${st.x.toFixed(1)}" cy="${st.y.toFixed(1)}" r="${s(7)}"/>`);
   }
-  for (const s of stations) {
-    parts.push(`<text class="station-label" x="${s.x.toFixed(1)}" y="${(s.y - 10).toFixed(1)}">${esc(s.name)}</text>`);
+  for (const st of stations) {
+    parts.push(
+      `<text class="station-label" x="${st.x.toFixed(1)}" y="${(st.y - t(9)).toFixed(1)}">${esc(st.name)}</text>`
+    );
   }
 
   for (const l of labels) {
-    const cls = l.tier === 'spine' ? 'spine' : l.tier === 'arterial' ? 'arterial' : 'resid';
+    const cls = l.tier === 'spine' ? 'spine' : 'arterial';
     const x = l.x.toFixed(1);
     const y = l.y.toFixed(1);
     parts.push(
@@ -468,7 +549,9 @@ function buildSvg({ tiers, rail, stations, labels }) {
     );
   }
 
-  parts.push(`<text class="attribution" x="8" y="${(H - 8).toFixed(1)}">Map data © OpenStreetMap contributors</text>`);
+  parts.push(
+    `<text class="attribution" x="${s(8)}" y="${(H - s(8)).toFixed(1)}">Map data © OpenStreetMap contributors</text>`
+  );
   parts.push('</svg>');
   return parts.join('\n') + '\n';
 }

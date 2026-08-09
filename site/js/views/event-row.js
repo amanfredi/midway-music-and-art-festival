@@ -9,26 +9,29 @@ import { esc } from '../util.js';
 import { parseEventTimes, formatTime, shortDayName, dateKey } from '../time.js';
 import { isStarred, toggleStar } from '../store.js';
 
-// Two of the four `tickets` values get a small ticket-stub icon next to the
-// kind badge in list rows (CONTRACTS.md events.csv / BACKLOG.md). The icon is
-// a labelled SVG (role="img" + aria-label), not aria-hidden, so screen readers
-// perceive it — the visible "FREE"/"$" stub text is decorative sugar on top.
+// Two of the four `tickets` values get a ticket icon next to the kind badge in
+// list rows (CONTRACTS.md events.csv). Artwork is the organizers' own brand
+// ticket, defined once as a <symbol> in index.html and referenced here — see
+// tools/make-ticket-icons.mjs. Labelled (role="img" + aria-label) rather than
+// aria-hidden: the icon carries information no other part of the row does.
 const TICKET_ICONS = {
-  'Free Ticket Required': { code: 'FREE', label: 'Free ticket required', variant: 'free' },
-  'Paid Ticket Required': { code: '$', label: 'Paid ticket required', variant: 'paid' },
+  'Free Ticket Required': { id: 'icon-ticket-free', label: 'Free ticket required' },
+  'Paid Ticket Required': { id: 'icon-ticket-paid', label: 'Paid ticket required' },
 };
 
 function ticketIconHtml(tickets) {
   const info = TICKET_ICONS[tickets];
   if (!info) return '';
-  return `
-    <svg class="ticket-icon ticket-icon--${info.variant}" viewBox="0 0 36 20" width="34" height="19" role="img" aria-label="${esc(info.label)}" focusable="false">
-      <rect class="ticket-icon__body" x="1" y="1" width="34" height="18" rx="3" ry="3" />
-      <circle class="ticket-icon__notch" cx="14" cy="1" r="3" />
-      <circle class="ticket-icon__notch" cx="14" cy="19" r="3" />
-      <line class="ticket-icon__perf" x1="14" y1="5" x2="14" y2="15" />
-      <text class="ticket-icon__text" x="25" y="14" text-anchor="middle">${esc(info.code)}</text>
-    </svg>`;
+  return `<svg class="ticket-icon" role="img" aria-label="${esc(info.label)}" focusable="false"><use href="#${info.id}"></use></svg>`;
+}
+
+// events.csv `age_limit` is blank for the overwhelming majority of events;
+// only "18+"/"21+" render. Announced as a phrase rather than leaving a screen
+// reader to interpret "21+".
+function ageBadgeHtml(ageLimit) {
+  if (ageLimit !== '18+' && ageLimit !== '21+') return '';
+  const years = ageLimit.slice(0, 2);
+  return `<span class="badge badge--age" role="img" aria-label="Ages ${years} and up">${esc(ageLimit)}</span>`;
 }
 
 export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null } = {}) {
@@ -49,6 +52,7 @@ export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null
           <span class="event-row__meta">
             <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
             ${ticketIconHtml(event.tickets)}
+            ${ageBadgeHtml(event.age_limit)}
           </span>
         </span>
         <span class="event-row__main">

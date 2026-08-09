@@ -1,4 +1,4 @@
-/* Midway Circuit Map — app shell styles.
+/* Midway Music & Arts Fest — app shell styles.
    Mobile-first, light theme, system fonts only, WCAG AA contrast targets,
    44px+ touch targets, safe-area-aware for iOS standalone mode. */
 
@@ -47,10 +47,13 @@
   box-sizing: border-box;
 }
 
-html, body {
-  height: 100%;
-}
-
+/* The document itself scrolls — deliberately, not by omission. #view used to
+   be the scroll container with the logo header pinned above it, which meant
+   the header could never scroll away and a sliver of moving content showed
+   between it and each view's sticky control bar. Scrolling the page instead
+   lets the banner and logo scroll off while `position: sticky` control bars
+   pin to the top of the viewport. Don't reintroduce a height constraint here
+   (QA, 2026-08-08). */
 body {
   margin: 0;
   min-height: 100dvh;
@@ -97,9 +100,6 @@ img {
 /* -- layout shell -- */
 
 .app-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
   background: var(--color-surface);
   border-bottom: 3px solid var(--color-accent);
   padding: calc(0.5rem + var(--safe-top)) 1rem 0.5rem;
@@ -127,8 +127,6 @@ img {
 
 #view {
   flex: 1 1 auto;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 1rem 1rem calc(1.5rem + var(--tab-bar-height) + var(--safe-bottom));
   padding-left: calc(1rem + var(--safe-left));
   padding-right: calc(1rem + var(--safe-right));
@@ -309,8 +307,34 @@ img {
   color: var(--color-primary-dark);
 }
 
-.empty-state__note {
+/* -- starred view footer: storage caveat + the install pitch that mitigates
+   it. Sits below the list (and below the empty state) rather than above, so
+   it never pushes the actual saved events off the first screen. -- */
+
+.starred-footer {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+}
+
+.starred-footer__note {
   font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+/* An un-starred row lingers dimmed for a few seconds so the star can be
+   tapped again to undo (see starred.js). Dimmed, not struck through: the row
+   is still fully interactive during the grace period. */
+.event-row--unstarred {
+  opacity: 0.45;
+  transition: opacity 200ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-row--unstarred {
+    transition: none;
+  }
 }
 
 /* -- badges -- */
@@ -409,36 +433,54 @@ img {
   color: var(--color-text-muted);
 }
 
+/* Labels stack vertically (kind, then ticket, then age limit) rather than
+   running along one line: on a narrow row a horizontal strip pushes the title
+   around and truncates unpredictably once an event carries two or three of
+   them. Right-aligned so the stack shares an edge with the star button. */
 .event-row__meta {
   flex: none;
   display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
 }
 
+/* Borderless, with the glyph doing the work (QA, 2026-08-08). The boxed
+   version read as a second card competing with the row for attention. This
+   matches the dominant pattern for save/bookmark controls in list rows —
+   Mail's star, Podcasts' +, Maps' bookmark are all bare trailing-edge glyphs;
+   containers show up mainly when the control sits over imagery.
+   Alternatives explored in tools/star-preview.mjs.
+   The tap target stays 48px and stays on the right, where a right thumb
+   reaches it, and remains a sibling of the link, not nested inside it. */
 .event-row__star-btn {
   flex: none;
-  width: 44px;
-  min-height: 44px;
+  width: 48px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-accent-dark);
-  font-size: 1.2rem;
+  border: none;
+  background: none;
+  /* Muted rather than accent-colored when off, so a screenful of unsaved rows
+     doesn't look like a screenful of saved ones at a glance. */
+  color: #7c878e;
+  font-size: 1.75rem;
+  line-height: 1;
   cursor: pointer;
 }
 
 .event-row__star-btn[aria-pressed="true"] {
-  background: var(--badge-art-bg);
-  border-color: var(--color-accent-dark);
+  color: var(--color-accent);
 }
 
+/* Second tier of the sticky stack: pins directly below whichever control bar
+   is above it. --sticky-stack-top is set per view (see schedule.js) from the
+   measured control-bar height; it falls back to the bare safe-area inset on
+   views that have no control bar, like Now. */
 .venue-group__title, .time-group__title {
   position: sticky;
-  top: 0;
+  top: var(--sticky-stack-top, var(--safe-top));
   z-index: 5;
   background: var(--color-bg);
   padding: 0.4rem 0;
@@ -453,11 +495,14 @@ img {
 
 .schedule-controls {
   position: sticky;
-  top: 0;
+  top: var(--safe-top);
   z-index: 10;
   background: var(--color-bg);
-  padding-bottom: 0.6rem;
-  margin-bottom: 0.5rem;
+  /* Negative margins + matching padding so the pinned bar's background bleeds
+     to the window edges; without them, rows scrolling past would show through
+     #view's horizontal padding on either side. */
+  margin: 0 -1rem 0.5rem;
+  padding: 0.35rem 1rem 0.6rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -645,6 +690,16 @@ img {
   gap: 0.4rem;
 }
 
+/* Transit sheet: the lines serving a stop. Plain list — these aren't links. */
+.sheet__line-list {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.sheet__line-list li {
+  margin-bottom: 0.2rem;
+}
+
 .sheet__event-link {
   display: block;
   min-height: 44px;
@@ -663,18 +718,38 @@ img {
   margin-bottom: 0.5rem;
 }
 
+/* Glyph sitting inline in a sentence ("tap the [icon] Share button"), aligned
+   to the text baseline rather than the line box so it doesn't ride high. */
+.inline-glyph {
+  display: inline-block;
+  vertical-align: -0.22em;
+  margin: 0 0.1em;
+  color: var(--color-primary);
+}
+
 /* -- map view -- */
 
+/* Capped rather than full-bleed: on a wide laptop window an uncapped square
+   map grew as tall as the window was wide, pushing the legend and the venue
+   key entirely below the fold (QA, 2026-08-08). The cap also keeps the map's
+   on-screen scale within ~1.5x of a phone's, so one set of street widths, pin
+   sizes and label sizes reads correctly on both. */
 .map-frame {
   position: relative;
+  max-width: 560px;
+  margin: 0 auto;
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow-card);
   background: var(--color-surface);
 }
 
+/* Square, and deliberately not tied to the SVG's 6x4-mile aspect ratio: the
+   view is a square window that pans over a wider map (see map.js), so matching
+   the frame to the whole map would letterbox it. */
 .map-svg-wrap {
   width: 100%;
+  aspect-ratio: 1 / 1;
   touch-action: none;
   background: #f4ecd8;
 }
@@ -839,23 +914,27 @@ img {
 /* pointer-events: all so the (necessarily transparent) larger hit target is
    still tappable — a transparent SVG fill alone is not reliably hit-tested. */
 .pin__hit { fill: transparent; pointer-events: all; }
-.pin__diamond { stroke: #fff; stroke-width: 6; }
+/* Stroke and glyph sizes below are in map units too, and were rescaled with
+   the pin radii in map.js when the map extent grew (QA, 2026-08-08). They keep
+   the same proportions to the diamond as before, so the pins look identical —
+   just larger on screen. */
+.pin__diamond { stroke: #fff; stroke-width: 16; }
 /* White glyph text on any of the three brand fills clears WCAG AA's 3:1
    large-text threshold (glyphs are bold and 30px+ -- well above the 18.66px
    bold/24px regular cutoff); transit green is the tightest at ~4.2:1 white-
    on-fill, still short of the 4.5:1 *small*-text threshold, which is why
    there's no glyph text this size anywhere it isn't bold+large. */
-.pin__label { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 700; font-size: 44px; text-anchor: middle; }
-.pin__label--stacked { font-size: 30px; }
+.pin__label { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 700; font-size: 120px; text-anchor: middle; }
+.pin__label--stacked { font-size: 82px; }
 
 .pin--venue .pin__diamond { fill: var(--pin-venue); }
 .pin--transit .pin__diamond { fill: var(--pin-transit); }
 .pin--sponsor-featured .pin__diamond { fill: var(--pin-sponsor); }
 /* Generic sponsor tier: same brand red, outlined instead of filled+larger --
    the featured/generic visual distinction called for in CONTRACTS.md. */
-.pin--sponsor-generic .pin__diamond { fill: var(--color-surface); stroke: var(--pin-sponsor); stroke-width: 10; }
+.pin--sponsor-generic .pin__diamond { fill: var(--color-surface); stroke: var(--pin-sponsor); stroke-width: 27; }
 
-.you-are-here__core { fill: #2f6fa0; stroke: #fff; stroke-width: 6; }
+.you-are-here__core { fill: #2f6fa0; stroke: #fff; stroke-width: 16; }
 .you-are-here__pulse {
   fill: rgba(47, 111, 160, 0.35);
   animation: pulse 2s ease-out infinite;
@@ -1077,9 +1156,8 @@ a:focus-visible, button:focus-visible {
 }
 
 /* ============================================================
-   Wave 1A: schedule UX — appended additively (kind badges for the
-   new kinds, ticket-stub icons, kind-filter chips, "by category"
-   grouping). See event-row.js / schedule.js / starred.js.
+   Schedule UX: kind badges for the newer kinds, ticket icons, and
+   "by category" grouping. See event-row.js / schedule.js / starred.js.
    ============================================================ */
 
 /* -- kind badges: performance/literary/vendor/other. music (existing
@@ -1091,41 +1169,29 @@ a:focus-visible, button:focus-visible {
 .badge--vendor { background: #ece1f5; color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 */
 .badge--other { background: #ece4d8; color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 */
 
-/* -- ticket-stub icons: Free/Paid Ticket Required only (events.csv
-   `tickets`). Labelled via role="img" + aria-label on the <svg> itself
-   (see event-row.js) — screen readers get the label regardless of the
-   tiny visual "FREE"/"$" glyph, so this is not aria-hidden. -- */
-.ticket-icon { flex: none; }
-.ticket-icon--free .ticket-icon__body { fill: #1f7a45; } /* dark green; white text 5.35:1 */
-.ticket-icon--paid .ticket-icon__body { fill: var(--color-accent-dark); } /* white text 5.93:1 */
-.ticket-icon__notch { fill: var(--color-surface); }
-.ticket-icon__perf { stroke: rgba(255, 255, 255, 0.65); stroke-width: 1; }
-.ticket-icon__text { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 800; font-size: 8px; }
-
-/* -- kind filter chips (schedule view) -- */
-.kind-filter {
-  display: flex;
-  gap: 0.4rem;
-  overflow-x: auto;
+/* -- ticket icons: Free/Paid Ticket Required only (events.csv `tickets`).
+   Brand artwork, defined once as a <symbol> in index.html and referenced with
+   <use>; colors are baked into the symbol (brand red body, knocked-out white
+   lettering). Labelled via role="img" + aria-label on the <svg> itself, so
+   this is deliberately not aria-hidden. Source aspect ratio is 624:384. -- */
+.ticket-icon {
+  flex: none;
+  width: 34px;
+  height: 21px;
 }
 
-.chip {
-  min-height: 44px;
-  padding: 0 0.85rem;
-  border-radius: 999px;
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 600;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  cursor: pointer;
+/* The sprite is a definitions block, never rendered directly. */
+.sprite {
+  display: none;
 }
 
-.chip.is-active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
+/* -- age limit (events.csv `age_limit`): red family, matching the
+   .badge--performance pairing at 7.31:1, so it reads as a restriction
+   without competing with the ticket icon directly above it. -- */
+.badge--age {
+  background: #f9e3e3;
+  color: #8f1b1e;
+  font-variant-numeric: tabular-nums;
 }
 
 /* -- "by category" grouping: same look as .venue-group/.time-group,
@@ -1133,7 +1199,7 @@ a:focus-visible, button:focus-visible {
    section purely additive. -- */
 .category-group__title {
   position: sticky;
-  top: 0;
+  top: var(--sticky-stack-top, var(--safe-top));
   z-index: 5;
   background: var(--color-bg);
   padding: 0.4rem 0;

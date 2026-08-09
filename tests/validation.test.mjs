@@ -150,7 +150,7 @@ describe("good fixtures", () => {
     }
 
     // settings: values are plain strings, not coerced booleans
-    assert.equal(content.settings.festival_name, "Midway Music & Arts Festival");
+    assert.equal(content.settings.festival_name, "Midway Music & Arts Fest");
     assert.equal(content.settings.you_are_here_enabled, "true");
     assert.equal(typeof content.settings.you_are_here_enabled, "string");
     assert.equal(content.settings.donation_url, "https://www.zeffy.com/en-US/donation-form/midway-music-and-arts");
@@ -169,6 +169,37 @@ describe("good fixtures", () => {
     // site bytes) stable across no-change deploys, so clients don't re-download
     // the whole precache after every cron rebuild.
     assert.equal(bytes1, bytes2, "unchanged sources must produce byte-identical content.json");
+  });
+});
+
+describe("id normalization", () => {
+  // Ids are machine keys typed by hand into a spreadsheet. Rather than failing
+  // the whole build over punctuation, build.mjs slugifies them — and slugifies
+  // events.venue_id the same way, so the two tabs agree however each was typed.
+  test("punctuated ids are slugified, and venue references still resolve", () => {
+    const result = runBuild("tests/fixtures-normalize/config.json");
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+
+    // The rewriting is reported, not silent.
+    assert.match(result.stdout, /Normalized 2 id\(s\)/);
+    assert.match(result.stdout, /"Mamas Market & Deli" -> "mamasmarketdeli"/);
+
+    const content = JSON.parse(readFileSync(path.join(REPO_ROOT, "site/data/content.json"), "utf8"));
+    const venue = content.venues.find((v) => v.id === "mamasmarketdeli");
+    assert.ok(venue, "venue id should have been slugified to mamasmarketdeli");
+
+    // One event referenced it as "mamasmarket&deli" and another as the clean
+    // "mamasmarketdeli"; both must land on the same venue.
+    const referencing = content.events.filter((e) => e.venue_id === "mamasmarketdeli");
+    assert.ok(referencing.length >= 2, `expected both spellings to resolve, got ${referencing.length}`);
+  });
+
+  test("normalization is a no-op for ids that are already valid", () => {
+    // Guards the property that makes this safe to apply to events: a starred
+    // event id or a shared #/event/<id> link can never be invalidated by it.
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0);
+    assert.doesNotMatch(result.stdout, /Normalized/);
   });
 });
 
@@ -213,6 +244,16 @@ describe("bad fixtures", () => {
     {
       dir: "bad-tickets",
       mustInclude: ["events.csv", "row 2", "VIP Pass", "unknown tickets"],
+    },
+    {
+      dir: "bad-age-limit",
+      mustInclude: ["events.csv", "row 2", "over 21", "unknown age_limit"],
+    },
+    {
+      // Ids are normalized rather than rejected, so the only id that can still
+      // fail is one with nothing to normalize.
+      dir: "bad-id-unusable",
+      mustInclude: ["venues.csv", "row 2", "no letters or numbers"],
     },
     {
       dir: "bad-tier",

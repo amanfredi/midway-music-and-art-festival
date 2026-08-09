@@ -26,6 +26,10 @@ const VALID_TICKETS = new Set([
   "Paid Ticket Required",
 ]);
 const DEFAULT_TICKETS = "General Admission";
+// Optional events column. Blank is the common case (all ages) and stays blank
+// in content.json so the UI can test it falsily; only these two values render
+// a badge.
+const VALID_AGE_LIMITS = new Set(["18+", "21+"]);
 const ID_RE = /^[a-z0-9-]+$/;
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_ONLY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -203,6 +207,74 @@ function validateDuplicateIds(fileLabel, records, identifierField, idField = "id
   return errors;
 }
 
+/**
+ * Ids are machine keys that volunteers type by hand into a spreadsheet, so the
+ * build normalizes them rather than rejecting them: an apostrophe or an
+ * ampersand in an id used to fail the whole build (and with it CI and the
+ * deploy) over a field nobody ever sees.
+ *
+ * Everything outside [a-z0-9-] is dropped, whitespace included — NOT converted
+ * to hyphens. Two reasons, both about matching rather than aesthetics:
+ *
+ *  - It makes the events→venues reference maximally forgiving. "Mamas Market &
+ *    Deli", "mamasmarket&deli" and "mamasmarketdeli" all collapse to the same
+ *    key, so the two tabs agree however each was typed. Hyphenating spaces
+ *    would split the first away from the other two.
+ *  - It matches the convention already in the venues sheet, where ids are
+ *    concatenated words (midwaysaloon, blackgarnetbooks, jimmyleereccenter).
+ *
+ * Hyphens the coordinator typed are kept, so the hyphenated event ids
+ * (midway-strays, poetry-reading-circle) survive untouched. That matters: this
+ * function is a no-op for every already-valid id, so normalization can never
+ * invalidate a starred event or a shared #/event/<id> link.
+ */
+function slugifyId(raw) {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+/**
+ * Rewrites every id (and every `venue_id` reference) in place to its slug,
+ * before any other validation runs — so duplicate detection and the
+ * events→venues foreign-key check both operate on normalized values. Applying
+ * the same function to both sides of the reference is what lets a coordinator
+ * write "Mamas Market & Deli" in one tab and "mamasmarketdeli" in the other
+ * and still have them match.
+ *
+ * A value that slugifies to nothing (e.g. "&&&") is deliberately left
+ * untouched, so validateIdFormat can report it against what's in the sheet.
+ *
+ * Returns human-readable notes about what changed; the caller prints them so
+ * the rewriting isn't invisible.
+ */
+function normalizeIds(parsed) {
+  const notes = [];
+  const rewrite = (fileLabel, records, idField, identifierField) => {
+    for (const rec of records) {
+      const raw = rec.fields[idField];
+      if (raw === undefined || String(raw).trim() === "") continue;
+      const slug = slugifyId(raw);
+      if (!slug || slug === String(raw)) continue;
+      notes.push(
+        `${fileLabel} row ${rec.rowNum} (${identifierFor(rec, identifierField)}): ${idField} "${raw}" -> "${slug}"`
+      );
+      rec.fields[idField] = slug;
+    }
+  };
+  rewrite("venues.csv", parsed.venues.records, "id", "name");
+  rewrite("vendors.csv", parsed.vendors.records, "id", "name");
+  rewrite("sponsors.csv", parsed.sponsors.records, "id", "name");
+  rewrite("events.csv", parsed.events.records, "id", "title");
+  rewrite("events.csv", parsed.events.records, "venue_id", "title");
+  return notes;
+}
+
+// Runs after normalizeIds, so anything still failing ID_RE had no letters or
+// numbers to build an id from at all.
 function validateIdFormat(fileLabel, records, identifierField, idField = "id") {
   const errors = [];
   for (const rec of records) {
@@ -214,7 +286,8 @@ function validateIdFormat(fileLabel, records, identifierField, idField = "id") {
           fileLabel,
           rec.rowNum,
           identifierFor(rec, identifierField),
-          `${idField} "${id}" must be lowercase letters, numbers, and hyphens only ([a-z0-9-]+).`
+          `${idField} "${id}" has no letters or numbers to build an id from. ` +
+            `Ids are normalized to lowercase letters, numbers, and hyphens.`
         )
       );
     }
@@ -385,6 +458,18 @@ function validateEvents(records, venueIds, skipVenueRefCheck) {
       );
     }
 
+    const ageRaw = rec.fields.age_limit;
+    if (ageRaw !== undefined && String(ageRaw).trim() !== "" && !VALID_AGE_LIMITS.has(String(ageRaw).trim())) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `unknown age_limit "${ageRaw}" (expected blank, or one of: ${[...VALID_AGE_LIMITS].join(" | ")}).`
+        )
+      );
+    }
+
     const dateRaw = rec.fields.date;
     if (dateRaw && String(dateRaw).trim() !== "" && !parseCalendarDate(dateRaw)) {
       errors.push(errorMsg(fileLabel, rec.rowNum, ident, `date "${dateRaw}" isn't a valid "YYYY-MM-DD" date.`));
@@ -440,6 +525,9 @@ function validateEvents(records, venueIds, skipVenueRefCheck) {
         ? ticketsRaw
         : DEFAULT_TICKETS;
 
+    const ageRaw = String(rec.fields.age_limit ?? "").trim();
+    const age_limit = VALID_AGE_LIMITS.has(ageRaw) ? ageRaw : "";
+
     return {
       id: rec.fields.id ?? "",
       title: rec.fields.title ?? "",
@@ -448,6 +536,7 @@ function validateEvents(records, venueIds, skipVenueRefCheck) {
       end,
       kind: rec.fields.kind && rec.fields.kind.trim() !== "" ? rec.fields.kind : "music",
       tickets,
+      age_limit,
       description: rec.fields.description ?? "",
     };
   });
@@ -623,6 +712,14 @@ async function main() {
   const parsed = {};
   for (const key of SOURCE_ORDER) {
     parsed[key] = loaded[key] ? rowsToRecords(parseCSV(loaded[key].text)) : { header: [], records: [] };
+  }
+
+  // Before any validation: ids and venue_id references become slugs, so
+  // duplicate detection and the foreign-key check below compare like with like.
+  const idNotes = normalizeIds(parsed);
+  if (idNotes.length) {
+    console.log(`Normalized ${idNotes.length} id(s):`);
+    for (const n of idNotes) console.log(`  - ${n}`);
   }
 
   const venuesResult = validateVenues(parsed.venues.records);

@@ -31,8 +31,10 @@ const CACHE_PATH = path.join(__dirname, 'osm-transit-cache.json');
 const TRANSIT_OUT = path.join(ROOT, 'site/assets/transit.json');
 
 // Must match CONTRACTS.md's Map + geo contract bbox and tools/make-map.mjs's
-// BBOX exactly -- this is the same map, just a different data layer.
-const BBOX = { south: 44.945, west: -93.180, north: 44.971, east: -93.140 };
+// BBOX exactly -- this is the same map, just a different data layer. Derived
+// the same way there: Hamline Park +/- 3 miles east-west, +/- 2 miles
+// north-south (QA, 2026-08-08).
+const BBOX = { south: 44.931024, west: -93.22798, north: 44.988851, east: -93.105395 };
 
 // ---------------------------------------------------------------------------
 // Overpass query: Green Line LRT stations (single node per station, already
@@ -65,7 +67,7 @@ async function fetchOnce(url) {
         // (mod_negotiation), and its usage policy asks for an identifying
         // User-Agent -- both required for Node's fetch() to succeed here.
         Accept: '*/*',
-        'User-Agent': 'midway-circuit-map-make-transit.mjs (github.com/amanfredi/midway-music-and-art-festival)',
+        'User-Agent': 'mmaf-make-transit.mjs (github.com/amanfredi/midway-music-and-art-festival)',
       },
       body: 'data=' + encodeURIComponent(QUERY),
       signal: controller.signal,

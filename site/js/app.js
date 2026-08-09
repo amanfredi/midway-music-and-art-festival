@@ -79,7 +79,9 @@ async function handleRoute(route) {
     currentCleanup = null;
   }
   viewEl.innerHTML = '';
-  viewEl.scrollTop = 0;
+  // The window is the scroll container now (see app.css "body"), so resetting
+  // viewEl.scrollTop would be a no-op.
+  window.scrollTo(0, 0);
 
   const name = route.parts[0] || 'now';
   setActiveTab(name === 'event' ? '' : name);
@@ -113,7 +115,8 @@ async function handleRoute(route) {
   // Move focus to the view container on every route change so keyboard/screen
   // reader users land on the new content instead of wherever they were on the
   // previous view (e.g. the nav link or a now-removed element). preventScroll
-  // because #view is already scrolled to top above and is fully in viewport.
+  // matters more now that the page scrolls: without it, focusing #view scrolls
+  // the logo header off on every navigation.
   viewEl.focus({ preventScroll: true });
 }
 

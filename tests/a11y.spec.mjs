@@ -36,6 +36,58 @@ test('opening the venue sheet moves focus into the dialog; closing it restores f
   await expect(trigger).toBeFocused();
 });
 
+test('a transit pin opens a sheet naming the lines that serve the stop', async ({ page }) => {
+  await page.goto('/' + T + '#/map');
+  await expect(page.locator('#circuit-map')).toBeVisible();
+
+  // Snelling & University is the transfer point: one pin, two lines, and the
+  // case the single-maps-link decision was made for (CONTRACTS.md).
+  const pin = page.locator('[data-transit-id="snelling-avenue-and-university-station"]');
+  await expect(pin).toBeVisible();
+  await pin.press('Enter');
+
+  const dialog = page.locator('.sheet[role="dialog"]');
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('#sheet-title')).toHaveText('Snelling Avenue & University Station');
+  await expect(dialog.locator('.sheet__line-list li')).toHaveText([
+    'METRO Green Line',
+    'METRO A Line',
+  ]);
+  // Exactly one maps link, not one per line.
+  await expect(dialog.locator('a[href*="google.com/maps"]')).toHaveCount(1);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(pin).toBeFocused();
+});
+
+test('the map opens at the home view, not the full extent, and can pan in every direction', async ({ page }) => {
+  await page.goto('/' + T + '#/map');
+  const svg = page.locator('#circuit-map');
+  await expect(svg).toBeVisible();
+
+  const parseVb = async () => (await svg.getAttribute('viewBox')).split(/\s+/).map(Number);
+  const [x0, y0, w0, h0] = await parseVb();
+
+  // Home view is a ~3km square well inside the ~9.7 x 6.4 km map, and is not
+  // pinned to any edge — the point of the change is that there is somewhere to
+  // drag to in all four directions from the default view.
+  expect(w0).toBeCloseTo(h0, 0);
+  expect(w0).toBeLessThan(4000);
+  expect(x0).toBeGreaterThan(0);
+  expect(y0).toBeGreaterThan(0);
+
+  await svg.focus();
+  await page.keyboard.press('ArrowLeft');
+  expect((await parseVb())[0]).toBeLessThan(x0);
+  await page.keyboard.press('ArrowUp');
+  expect((await parseVb())[1]).toBeLessThan(y0);
+
+  // Zooming out reveals more map than the home view showed.
+  await page.click('#zoom-out');
+  expect((await parseVb())[2]).toBeGreaterThan(w0);
+});
+
 test('map canvas is keyboard-focusable and arrow keys pan it once zoomed in', async ({ page }) => {
   await page.goto('/' + T + '#/map');
   const svg = page.locator('#circuit-map');

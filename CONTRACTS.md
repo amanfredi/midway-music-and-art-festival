@@ -1,6 +1,6 @@
 # Build contracts — internal integration spec
 
-Interfaces and file ownership for the components of the Circuit Map site. Every
+Interfaces and file ownership for the components of the festival site. Every
 component must build against these contracts, not against another component's
 implementation. If a contract is wrong, fix the contract first, then the code.
 
@@ -64,8 +64,20 @@ Header row required, exact snake_case column names. Extra columns are ignored
 (coordinators may keep notes columns). All CSV parsing is RFC 4180 (quoted
 fields, embedded commas/newlines/quotes).
 
+**Ids are normalized, not rejected.** Every `id` — and `events.venue_id` — is
+slugified at build time: lowercased, with everything outside `[a-z0-9-]`
+removed (whitespace included, *not* converted to hyphens). Hyphens that were
+typed are kept. Two consequences worth relying on:
+- The same function runs on both sides of the events→venues reference, so
+  `Mamas Market & Deli`, `mamasmarket&deli` and `mamasmarketdeli` are one key.
+- It is a no-op for any id that already matches `[a-z0-9-]+`, so normalization
+  can never invalidate a starred event id or a shared `#/event/<id>` link.
+
+Build errors remain for a value that slugifies to nothing (`&&&`) and for two
+rows that slugify to the same id. The build prints every rewrite it made.
+
 **venues.csv** — `id, name, address, location, description, url`
-- `id`: unique slug `[a-z0-9-]+`; `url` optional, others required.
+- `id`: unique, normalized as above; `url` optional, others required.
 - `location`: either decimal `lat, lng` (`44.9557, -93.1668`) **or** a Google
   Maps plus code — full (`86P8XR4H+C2`) or short as copied from a place card
   (`XR4H+C2 St. Paul, Minnesota`; locality text is ignored). Short codes
@@ -73,7 +85,7 @@ fields, embedded commas/newlines/quotes).
   the emitted content.json always carries plain `lat`/`lng` numbers, so the
   site itself never sees plus codes.
 
-**events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, description`
+**events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, age_limit, description`
 - `date`: `YYYY-MM-DD`. `start_time`/`end_time`: 24h `HH:MM`, festival-local
   wall time (America/Chicago). No timezone math anywhere — devices at the
   festival are in that timezone. An event lives on one calendar `date`; a
@@ -90,6 +102,9 @@ fields, embedded commas/newlines/quotes).
   Admission` (default when blank or column missing) · `General Admission
   (limited capacity)` · `Free Ticket Required` · `Paid Ticket Required`. Any
   other value is a build error.
+- `age_limit`: optional, blank (the default — all ages) or exactly `18+` or
+  `21+`. Any other value is a build error. Blank stays blank in content.json;
+  the two set values render a badge in every event row.
 - `description` optional.
 
 **vendors.csv** — `id, name, type, description, location`
@@ -148,7 +163,7 @@ never stop at the first.
   "version": "a1b2c3d4e5f6",
   "settings": { "festival_name": "…", "banner_id": "…", "banner_text": "…", "you_are_here_enabled": "false", "donation_url": "…", "donation_label": "Donate", "…": "…" },
   "venues":   [ { "id": "…", "name": "…", "address": "…", "lat": 44.9557, "lng": -93.1668, "description": "…", "url": "…" } ],
-  "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "description": "…" } ],
+  "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "age_limit": "", "description": "…" } ],
   "vendors":  [ { "id": "…", "name": "…", "type": "food", "description": "…", "lat": 44.9557, "lng": -93.1668 } ],
   "sponsors": [ { "id": "…", "name": "…", "tier": "Emerald Tier (Presenting Partner)", "tier_slug": "emerald", "tier_order": 1, "blurb": "…", "logo": "assets/sponsors/….svg", "url": "…", "lat": 44.9557, "lng": -93.1668 } ]
 }
@@ -167,11 +182,22 @@ it has no `location`, and numbers when it does.
 
 - `site/assets/map.svg`: stylized-but-true-scale street map. `viewBox="0 0 W H"`
   where 1 SVG unit = 1 meter, plain local equirectangular projection
-  (x ∝ lng·cos(lat₀), y ∝ −lat), bbox lng [-93.180, -93.140], lat
-  [44.945, 44.971] (sized to the real venue list, including Jimmy Lee Rec
-  Center and Sundin Music Hall). Streets drawn from real OSM centerlines with names labeled;
-  Green Line stations marked. No pins baked in — the UI overlays
-  pins at runtime. Root `<svg>` must have `id="circuit-map"`.
+  (x ∝ lng·cos(lat₀), y ∝ −lat). Bbox is centered on Hamline Park
+  (44.9599375, -93.1666875) and spans **6 miles east–west by 4 miles
+  north–south**: lng [-93.227980, -93.105395], lat [44.931024, 44.988851].
+  Streets drawn from real OSM centerlines. Two density tiers: residential
+  streets are drawn only inside a 2.4 × 1.8 mile **core** around the same
+  center; outside it only arterials, spines and motorways appear. Only
+  arterials and the two spines (Snelling, University) are labeled. Green Line
+  stations marked. No pins baked in — the UI overlays pins at runtime. Root
+  `<svg>` must have `id="circuit-map"`.
+- **Home view vs. full extent.** The map never opens at the full extent. It
+  opens at, and resets to, a square ~3000 m "home view" centered on the SVG's
+  center; the full viewBox is only the limit for panning and zooming out.
+  Zoom-out stops when the square view reaches the map's shorter (north–south)
+  side — panning east–west covers the rest of the 6-mile width. The map frame
+  is a fixed square, capped at 560px wide, so its aspect ratio is deliberately
+  *not* the SVG's.
 - `site/assets/map-calibration.json`:
   `{ "svg_viewbox": [0, 0, W, H], "control_points": [ { "lat": …, "lng": …, "x": …, "y": … }, … ] }`
   — 3+ non-collinear points, exact under the projection used to draw the SVG.
@@ -196,8 +222,11 @@ it has no `location`, and numbers when it does.
   tiers `emerald`–`topaz` **and only** when that sponsor has a `location`;
   `quartz` never gets a pin regardless of `location`. `emerald`/`ruby`/`sapphire`
   render as "Featured Destination"; `topaz` renders as a generic "Sponsor" pin.
-  Tapping a venue or sponsor pin opens its detail; transit pins are
-  informational only (no detail view). "You are here" dot only when
+  Tapping a venue, sponsor **or transit** pin opens its detail sheet. The
+  transit sheet lists which lines serve the stop (the only fact transit.json
+  carries beyond position) plus one Google Maps link to the stop location —
+  one link, not one per line, since a transfer point is several stop records
+  for the same intersection. "You are here" dot only when
   `settings.you_are_here_enabled === "true"` AND user taps a locate button
   (geolocation permission requested on tap, never on load).
 - Venue/sponsor detail includes an "Open in Google Maps" link:
@@ -234,9 +263,10 @@ CDNs, no analytics.
   the event `<a>` link plus a **sibling** star `<button aria-pressed>` (44px+
   touch target) — not a button nested inside the link, which is broken for
   screen readers and touch.
-- Filter by kind: a chip/control offering "All" plus the six `kind` values.
-  Schedule grouping gains a third mode, "by category", alongside the
-  existing by-time/by-venue.
+- Schedule grouping has three modes: by time, by venue, by category. There is
+  **no kind filter** — grouping by category already isolates a kind without
+  hiding the rest of the day (removed after QA, 2026-08-08). `#/schedule`
+  takes `day` and `group` params only.
 - `index.html` head must include exactly these integration points (owner: orchestrator):
   `<link rel="manifest" href="manifest.webmanifest">`,
   `<meta name="theme-color" content="#10577b">`,

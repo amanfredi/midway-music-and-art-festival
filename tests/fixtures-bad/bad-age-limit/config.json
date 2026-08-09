@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "venues": "tests/fixtures-bad/bad-age-limit/venues.csv",
+    "events": "tests/fixtures-bad/bad-age-limit/events.csv",
+    "vendors": "tests/fixtures-bad/bad-age-limit/vendors.csv",
+    "sponsors": "tests/fixtures-bad/bad-age-limit/sponsors.csv",
+    "settings": "tests/fixtures-bad/bad-age-limit/settings.csv"
+  }
+}

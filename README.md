@@ -1,7 +1,7 @@
-# Midway Festival Circuit Map
+# Midway Music & Arts Fest — map & schedule site
 
 An offline-capable map and schedule website for the Midway Music & Arts
-Festival (October 2–4, 2026, St. Paul, MN) — the digital version of the
+Fest (October 2–4, 2026, St. Paul, MN) — the digital version of the
 festival's "Circuit Map". Attendees load it once, and it keeps working on
 festival day even with no cell signal: schedule, venue map, and starred
 events all survive airplane mode and browser tab reloads.
@@ -159,6 +159,6 @@ knowing when testing weeks apart.
 | `content/fixtures/` | Placeholder CSV content + sponsor logo SVGs |
 | `content/config.json` | Where content comes from (fixture paths or sheet URLs) |
 | `scripts/` | Build (CSV→JSON, validation), service-worker generator, dev server |
-| `tools/` | One-off generators: map SVG from OSM data, PWA icons |
+| `tools/` | One-off generators (map SVG from OSM data, transit stops, PWA icons, ticket-icon sprite) and `shoot.mjs`, which renders routes to PNGs in `.screenshots/` for visual review |
 | `tests/` | Unit tests (validation, georeferencing) + Playwright offline test |
 | `.github/workflows/` | Deploy on push; scheduled/manual content rebuild |

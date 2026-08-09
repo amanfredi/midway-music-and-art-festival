@@ -40,7 +40,9 @@ test('Snelling & University intersection projects inside the viewBox and matches
   // Independently recompute via the raw equirectangular formula the
   // calibration's bbox-corner control points were themselves derived from,
   // so this checks the fitted transform against ground truth, not itself.
-  const BBOX = { south: 44.945, west: -93.180, north: 44.971, east: -93.140 };
+  // Must match tools/make-map.mjs BBOX and CONTRACTS.md's Map + geo contract:
+  // Hamline Park +/- 3 miles east-west, +/- 2 miles north-south.
+  const BBOX = { south: 44.931024, west: -93.22798, north: 44.988851, east: -93.105395 };
   const lat0 = (BBOX.south + BBOX.north) / 2;
   const mPerDegLat = 111320;
   const mPerDegLng = mPerDegLat * Math.cos((lat0 * Math.PI) / 180);

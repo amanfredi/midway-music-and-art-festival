@@ -1,7 +1,7 @@
 {
-  "name": "Midway Music & Arts Festival — Circuit Map",
-  "short_name": "Circuit Map",
-  "description": "Offline-capable map and schedule for the Midway Music & Arts Festival in St. Paul.",
+  "name": "Midway Music & Arts Fest",
+  "short_name": "MMAF",
+  "description": "Offline-capable map and schedule for the Midway Music & Arts Fest in St. Paul.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

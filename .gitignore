@@ -5,3 +5,5 @@ site/assets/sponsors/
 test-results/
 playwright-report/
 .DS_Store
+reference/
+.screenshots/

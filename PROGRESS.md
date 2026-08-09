@@ -1,4 +1,4 @@
-# Build progress — Circuit Map POC
+# Build progress — Midway Music & Arts Fest site
 
 Orientation file for resumed sessions. Authoritative scope: DEFINITION.md.
 Execution mechanics: PROMPT.md. Integration spec: CONTRACTS.md.
@@ -26,6 +26,19 @@ Google Sheet creation when real content exists, Aug 8–9 organizer demo.
 - [x] README rewrite (write-doc skill, editorial subagent pass applied)
 - [x] Verification: offline test (Playwright + dead-server harness), validation failure (bad-date fixture, readable message, exit 1), installability (CDP getInstallabilityErrors = [], manifest parse errors 0). Live-URL check pending repo visibility.
 - [x] Final report delivered in session
+- [] Review site for accessibility according to WCAG 2.2 and update Accessibility contract in CONTRACTS.md if necessary - see reference/ directory
+- [] QA on android
+- [] Agent review from user perspective. Maybe using Claude for chrome or claude cowork features?
+- [] Bus routes 67 and 72: draw the **routes as lines** on the map rather than
+  their stops as pins. Rejected adding ~40+ stop pins (clutter, and the map now
+  covers 24 sq mi); a route line gives the same "the bus goes along here"
+  information at a fraction of the visual cost. Deferred, not dismissed.
+- [] Deeper map-design pass against `reference/Accessibility - map-design-guide
+  (updated)_tcm38-565153.pdf`. The 2026-08-08 QA round retuned scale, density
+  and labeling by eye; the guide covers contrast, symbol size and legend
+  conventions systematically. Worth doing before commissioning hand-drawn
+  artwork — a hand-drawn map is still on the table, and `geo.js` was built so
+  that swapping artwork means new control points only.
 
 ## Agent branches (worktrees)
 
@@ -82,3 +95,34 @@ Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
   iPhone and Android Chrome, splash-screen render check, transit-stop
   accuracy vs. Metro Transit's published stop lists, and the featured-vs-
   generic sponsor-pin design review at the next demo.
+- 2026-08-08 (QA round, BUGS.md): app renamed to "Midway Music & Arts Fest"
+  (manifest `short_name` MMAF); icons rebuilt from the primary brand lockup and
+  a separate "M"-only PNG favicon added because Safari renders SVG favicons as
+  a gray placeholder; events gained `age_limit` (blank|18+|21+); ticket icons
+  replaced with the organizers' artwork as an inline `<symbol>` sprite; row
+  labels stack vertically; schedule kind filter removed (grouping stays);
+  the page (not `#view`) is now the scroll container so the logo header scrolls
+  away while control bars pin; starred rows linger dimmed for 6s before
+  removal; transit pins gained a detail sheet; the map was rebuilt at 6x4 miles
+  centered on Hamline Park with a dense core / sparse surround, a separate
+  square home view, and everything rescaled for phone legibility. Screenshot
+  harness added at `tools/shoot.mjs` (renders routes to PNGs for eyeballing).
+  `npm test` green: 27 unit + 9 Playwright.
+- RESOLVED 2026-08-08: the live sheet's `mamasmarket&deli` venue id was failing
+  every build (and CI, and deploy). Rather than widen the id charset, build.mjs
+  now **normalizes** ids instead of rejecting them, applying the same slugify
+  to `events.venue_id` so both tabs agree however each was typed. It is a
+  deliberate no-op for already-valid ids, so starred events and shared
+  `#/event/<id>` links can't be invalidated by it. Only an id that slugifies to
+  nothing, or two that collide, still fail. See CONTRACTS.md "Ids are
+  normalized, not rejected".
+- **Sheet data bugs found 2026-08-08** (organizers to fix, not code):
+  - Mosaic on a Stick carries Hamline Park's address *and* plus code verbatim
+    (`1564 Lafond Ave` / `XR5M+X8`), so its pin lands exactly on the park's and
+    hides it. One of the two is wrong.
+  - Vig Guitars and Fluid Ink Tattoos are ~14 m apart, so their pins overlap.
+    As the venue list grows (9 → 14 this week) the map needs a pin-collision
+    strategy — offset, or cluster-and-expand-on-zoom.
+- `content/fixtures/venues.csv` is now 5 venues behind the live sheet. Harmless
+  (it's only a snapshot, and tests build from it deliberately), but worth a
+  refresh next time the fixtures are touched.

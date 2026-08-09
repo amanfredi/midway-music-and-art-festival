@@ -2,11 +2,30 @@
   "version": 0.6,
   "generator": "Overpass API 0.7.62.11 87bfad18",
   "osm3s": {
-    "timestamp_osm_base": "2026-08-03T01:30:21Z",
+    "timestamp_osm_base": "2026-08-09T00:35:47Z",
     "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
   },
   "elements": [
 
+{
+  "type": "node",
+  "id": 2913631273,
+  "lat": 44.9557383,
+  "lon": -93.1263090,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Dale Street",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5210649"
+  }
+},
 {
   "type": "node",
   "id": 2913631274,
@@ -63,6 +82,128 @@
     "station": "light_rail",
     "wheelchair": "yes",
     "wikidata": "Q6537849"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631277,
+  "lat": 44.9717094,
+  "lon": -93.2152607,
+  "tags": {
+    "addr:city": "Minneapolis",
+    "addr:postcode": "55414",
+    "addr:state": "MN",
+    "light_rail": "yes",
+    "name": "Prospect Park",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7250795"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631278,
+  "lat": 44.9630871,
+  "lon": -93.1954717,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Raymond Avenue",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7298571"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631282,
+  "lat": 44.9747673,
+  "lon": -93.2228415,
+  "tags": {
+    "addr:city": "Minneapolis",
+    "addr:housenumber": "2301",
+    "addr:postcode": "55414",
+    "addr:state": "MN",
+    "addr:street": "Southeast University Avenue",
+    "light_rail": "yes",
+    "name": "Stadium Village",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7596495"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631283,
+  "lat": 44.9557403,
+  "lon": -93.1364979,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Victoria Street",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wikidata": "Q7927065",
+    "wikipedia": "en:Victoria Street station (Metro Transit)"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631285,
+  "lat": 44.9557653,
+  "lon": -93.1161239,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Western Avenue",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7987604"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631286,
+  "lat": 44.9674839,
+  "lon": -93.2064717,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Westgate",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7988820"
   }
 },
 {
@@ -9315,14 +9456,14 @@
 {
   "type": "node",
   "id": 33314377,
-  "lat": 44.9483793,
-  "lon": -93.2487209
+  "lat": 44.9483783,
+  "lon": -93.2487000
 },
 {
   "type": "node",
   "id": 33314397,
-  "lat": 44.9483771,
-  "lon": -93.2461215
+  "lat": 44.9483764,
+  "lon": -93.2461404
 },
 {
   "type": "node",
@@ -9429,8 +9570,8 @@
 {
   "type": "node",
   "id": 11907507576,
-  "lat": 44.9483778,
-  "lon": -93.2485892,
+  "lat": 44.9483785,
+  "lon": -93.2485942,
   "tags": {
     "highway": "crossing"
   }
@@ -9438,8 +9579,8 @@
 {
   "type": "node",
   "id": 11907507589,
-  "lat": 44.9483792,
-  "lon": -93.2487993,
+  "lat": 44.9483776,
+  "lon": -93.2488031,
   "tags": {
     "highway": "crossing"
   }
@@ -9491,6 +9632,18 @@
   "id": 13386257257,
   "lat": 44.9483753,
   "lon": -93.2458549
+},
+{
+  "type": "node",
+  "id": 14080943553,
+  "lat": 44.9483769,
+  "lon": -93.2462303,
+  "tags": {
+    "crossing": "uncontrolled",
+    "crossing:island": "yes",
+    "crossing:markings": "no",
+    "highway": "crossing"
+  }
 },
 {
   "type": "node",
@@ -9604,8 +9757,8 @@
 {
   "type": "node",
   "id": 1055998042,
-  "lat": 44.9483884,
-  "lon": -93.2442708
+  "lat": 44.9483797,
+  "lon": -93.2442707
 },
 {
   "type": "node",
@@ -10124,6 +10277,7 @@
   "lat": 44.9483889,
   "lon": -93.2333091,
   "tags": {
+    "crossing:signals": "yes",
     "highway": "crossing"
   }
 },
@@ -16709,6 +16863,7 @@
     "bin": "yes",
     "bus": "yes",
     "highway": "bus_stop",
+    "lit": "yes",
     "metcouncil:city_id": "MINNEAPOLIS",
     "metcouncil:corn_desc": "Nearside Westbound",
     "metcouncil:corner_loc": "2.0",
@@ -17497,8 +17652,10 @@
   "lat": 44.9483868,
   "lon": -93.1872469,
   "tags": {
+    "crossing:island": "no",
     "crossing:signals": "yes",
-    "highway": "crossing"
+    "highway": "crossing",
+    "tactile_paving": "yes"
   }
 },
 {
@@ -28631,6 +28788,7 @@
   "id": 1459534832,
   "nodes": [
     33314397,
+    14080943553,
     1071404657,
     11654096756,
     33314374

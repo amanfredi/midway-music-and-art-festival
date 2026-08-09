@@ -1,0 +1,9 @@
+{
+  "sources": {
+    "venues": "tests/fixtures-normalize/venues.csv",
+    "events": "tests/fixtures-normalize/events.csv",
+    "vendors": "tests/fixtures-normalize/vendors.csv",
+    "sponsors": "tests/fixtures-normalize/sponsors.csv",
+    "settings": "tests/fixtures-normalize/settings.csv"
+  }
+}

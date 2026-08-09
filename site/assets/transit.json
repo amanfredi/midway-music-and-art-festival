@@ -1,6 +1,15 @@
 {
   "stops": [
     {
+      "id": "dale-street",
+      "name": "Dale Street",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.955738,
+      "lng": -93.126309
+    },
+    {
       "id": "fairview-avenue",
       "name": "Fairview Avenue",
       "lines": [
@@ -19,6 +28,42 @@
       "lng": -93.156845
     },
     {
+      "id": "john-ireland-and-marshall-station",
+      "name": "John Ireland & Marshall Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948327,
+      "lng": -93.107779
+    },
+    {
+      "id": "lake-and-31st-avenue-station",
+      "name": "Lake & 31st Avenue Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948388,
+      "lng": -93.226827
+    },
+    {
+      "id": "lake-and-36th-avenue-station",
+      "name": "Lake & 36th Avenue Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948367,
+      "lng": -93.220356
+    },
+    {
+      "id": "lake-and-44th-avenue-station",
+      "name": "Lake & 44th Avenue Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948357,
+      "lng": -93.209897
+    },
+    {
       "id": "lexington-parkway",
       "name": "Lexington Parkway",
       "lines": [
@@ -28,6 +73,24 @@
       "lng": -93.146649
     },
     {
+      "id": "marshall-and-cleveland-station",
+      "name": "Marshall & Cleveland Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948396,
+      "lng": -93.18737
+    },
+    {
+      "id": "marshall-and-cretin-station",
+      "name": "Marshall & Cretin Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948377,
+      "lng": -93.192807
+    },
+    {
       "id": "marshall-and-fairview-station",
       "name": "Marshall & Fairview Station",
       "lines": [
@@ -35,6 +98,51 @@
       ],
       "lat": 44.948413,
       "lng": -93.17748
+    },
+    {
+      "id": "marshall-and-otis-station",
+      "name": "Marshall & Otis Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948372,
+      "lng": -93.197875
+    },
+    {
+      "id": "prospect-park",
+      "name": "Prospect Park",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.971709,
+      "lng": -93.215261
+    },
+    {
+      "id": "raymond-avenue",
+      "name": "Raymond Avenue",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.963087,
+      "lng": -93.195472
+    },
+    {
+      "id": "selby-and-arundel-station",
+      "name": "Selby & Arundel Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946532,
+      "lng": -93.11834
+    },
+    {
+      "id": "selby-and-dale-station",
+      "name": "Selby & Dale Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946589,
+      "lng": -93.126614
     },
     {
       "id": "selby-and-hamline-station",
@@ -55,6 +163,33 @@
       "lng": -93.146316
     },
     {
+      "id": "selby-and-victoria-station",
+      "name": "Selby & Victoria Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946615,
+      "lng": -93.136719
+    },
+    {
+      "id": "selby-and-western-station",
+      "name": "Selby & Western Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946612,
+      "lng": -93.11592
+    },
+    {
+      "id": "snelling-and-como-station",
+      "name": "Snelling & Como Station",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.976978,
+      "lng": -93.167713
+    },
+    {
       "id": "snelling-and-dayton-station",
       "name": "Snelling & Dayton Station",
       "lines": [
@@ -63,6 +198,24 @@
       ],
       "lat": 44.947392,
       "lng": -93.167008
+    },
+    {
+      "id": "snelling-avenue-and-como-avenue",
+      "name": "Snelling Avenue & Como Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.977759,
+      "lng": -93.166494
+    },
+    {
+      "id": "snelling-avenue-and-grand-avenue",
+      "name": "Snelling Avenue & Grand Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.939753,
+      "lng": -93.167028
     },
     {
       "id": "snelling-avenue-and-hewitt-avenue",
@@ -74,6 +227,15 @@
       "lng": -93.167066
     },
     {
+      "id": "snelling-avenue-and-hoyt-avenue",
+      "name": "Snelling Avenue & Hoyt Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.987898,
+      "lng": -93.167177
+    },
+    {
       "id": "snelling-avenue-and-minnehaha-avenue",
       "name": "Snelling Avenue & Minnehaha Avenue",
       "lines": [
@@ -81,6 +243,24 @@
       ],
       "lat": 44.962867,
       "lng": -93.167075
+    },
+    {
+      "id": "snelling-avenue-and-nebraska-avenue",
+      "name": "Snelling Avenue & Nebraska Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.986104,
+      "lng": -93.16684
+    },
+    {
+      "id": "snelling-avenue-and-saint-clair-avenue",
+      "name": "Snelling Avenue & Saint Clair Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.9345,
+      "lng": -93.167038
     },
     {
       "id": "snelling-avenue-and-university-station",
@@ -91,6 +271,42 @@
       ],
       "lat": 44.955249,
       "lng": -93.167007
+    },
+    {
+      "id": "stadium-village",
+      "name": "Stadium Village",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.974767,
+      "lng": -93.222841
+    },
+    {
+      "id": "victoria-street",
+      "name": "Victoria Street",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.95574,
+      "lng": -93.136498
+    },
+    {
+      "id": "western-avenue",
+      "name": "Western Avenue",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.955765,
+      "lng": -93.116124
+    },
+    {
+      "id": "westgate",
+      "name": "Westgate",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.967484,
+      "lng": -93.206472
     }
   ]
 }

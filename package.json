@@ -1,8 +1,8 @@
 {
-  "name": "midway-circuit-map",
+  "name": "midway-music-and-arts-fest",
   "version": "0.1.0",
   "private": true,
-  "description": "Offline-capable map & schedule PWA for the Midway Music & Arts Festival",
+  "description": "Offline-capable map & schedule PWA for the Midway Music & Arts Fest",
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs && node scripts/build-sw.mjs",

@@ -3,8 +3,10 @@ import { now as clockNow, parseWall, formatTime, shortDayLabel, dateKey } from '
 import { navigate } from '../router.js';
 import { eventRowHtml, bindEventRowStars } from './event-row.js';
 
-// Canonical kind order (matches scripts/build.mjs VALID_KINDS) — used for both
-// the filter chip order and the "by category" group order.
+// Canonical kind order (matches scripts/build.mjs VALID_KINDS) — the "by
+// category" group order. There is deliberately no kind *filter*: grouping by
+// category already answers "show me just the music" without hiding anything
+// (QA, 2026-08-08).
 const KINDS = ['music', 'art', 'performance', 'literary', 'vendor', 'other'];
 const GROUPS = ['time', 'venue', 'category'];
 
@@ -98,35 +100,32 @@ export function renderSchedule(container, content, route) {
       ? todayKey
       : days[0].key;
   const group = GROUPS.includes(route.params.get('group')) ? route.params.get('group') : 'time';
-  const kindFilter = KINDS.includes(route.params.get('kind')) ? route.params.get('kind') : 'all';
 
   const dayEvents = content.events.filter((e) => dateKey(parseWall(e.start)) === activeDayKey);
-  const filteredEvents = kindFilter === 'all' ? dayEvents : dayEvents.filter((e) => (e.kind || 'music') === kindFilter);
   const bodyHtml =
     group === 'venue'
-      ? renderByVenue(filteredEvents, venuesById)
+      ? renderByVenue(dayEvents, venuesById)
       : group === 'category'
-        ? renderByCategory(filteredEvents, venuesById)
-        : renderByTime(filteredEvents, venuesById);
+        ? renderByCategory(dayEvents, venuesById)
+        : renderByTime(dayEvents, venuesById);
 
   const hashFor = (overrides) => {
     const day = overrides.day ?? activeDayKey;
     const g = overrides.group ?? group;
-    const kind = overrides.kind ?? kindFilter;
-    return `#/schedule?day=${day}&group=${g}&kind=${kind}`;
+    return `#/schedule?day=${day}&group=${g}`;
   };
 
   container.innerHTML = `
     <section class="view schedule-view">
       <h1 class="view-title">Schedule</h1>
       <div class="schedule-controls">
-        <!-- Plain button group with aria-pressed, not role="tablist": day,
-             group-by, and kind-filter below all compose to determine the
-             schedule list's contents, so no one of them owns an independent
-             set of exclusive panels the way real tabs do. A full ARIA tabs
-             pattern (tabpanel + aria-controls + roving tabindex) would claim
-             a relationship that isn't there; this matches the sibling
-             group-toggle/kind-filter controls instead (CONTRACTS.md). -->
+        <!-- Plain button group with aria-pressed, not role="tablist": day and
+             group-by compose to determine the schedule list's contents, so
+             neither one owns an independent set of exclusive panels the way
+             real tabs do. A full ARIA tabs pattern (tabpanel + aria-controls
+             + roving tabindex) would claim a relationship that isn't there;
+             this matches the sibling group-toggle control instead
+             (CONTRACTS.md). -->
         <div class="day-switcher" role="group" aria-label="Festival day">
           ${days
             .map(
@@ -139,17 +138,29 @@ export function renderSchedule(container, content, route) {
           <button type="button" class="toggle-btn ${group === 'venue' ? 'is-active' : ''}" data-group="venue">By venue</button>
           <button type="button" class="toggle-btn ${group === 'category' ? 'is-active' : ''}" data-group="category">By category</button>
         </div>
-        <div class="kind-filter" data-testid="kind-filter" role="group" aria-label="Filter by kind">
-          <button type="button" class="chip ${kindFilter === 'all' ? 'is-active' : ''}" data-kind="all" aria-pressed="${kindFilter === 'all'}">All</button>
-          ${KINDS.map(
-            (k) => `<button type="button" class="chip ${kindFilter === k ? 'is-active' : ''}" data-kind="${k}" aria-pressed="${kindFilter === k}">${esc(kindLabel(k))}</button>`
-          ).join('')}
-        </div>
       </div>
       <div data-testid="schedule-list" class="schedule-list">
         ${bodyHtml || '<p class="empty-state">Nothing scheduled this day.</p>'}
       </div>
     </section>`;
+
+  // Two-tier sticky stack: the control bar pins to the top of the window, and
+  // the time/venue/category group headings pin directly beneath it rather than
+  // sliding underneath. The offset is the control bar's real height, which
+  // depends on how many day buttons wrap, so it's measured rather than guessed.
+  let disconnectStackObserver = null;
+  const controls = container.querySelector('.schedule-controls');
+  const section = container.querySelector('.schedule-view');
+  if (controls && section && typeof ResizeObserver === 'function') {
+    const setStackTop = () => {
+      section.style.setProperty('--sticky-stack-top', `calc(var(--safe-top) + ${controls.offsetHeight}px)`);
+    };
+    setStackTop();
+    // Re-measure on resize/rotate, where wrapping can change the bar's height.
+    const observer = new ResizeObserver(setStackTop);
+    observer.observe(controls);
+    disconnectStackObserver = () => observer.disconnect();
+  }
 
   container.querySelectorAll('.day-tab').forEach((btn) => {
     btn.addEventListener('click', () => navigate(hashFor({ day: btn.dataset.day })));
@@ -157,8 +168,9 @@ export function renderSchedule(container, content, route) {
   container.querySelectorAll('.toggle-btn').forEach((btn) => {
     btn.addEventListener('click', () => navigate(hashFor({ group: btn.dataset.group })));
   });
-  container.querySelectorAll('.kind-filter .chip').forEach((btn) => {
-    btn.addEventListener('click', () => navigate(hashFor({ kind: btn.dataset.kind })));
-  });
   bindEventRowStars(container);
+
+  return () => {
+    if (disconnectStackObserver) disconnectStackObserver();
+  };
 }

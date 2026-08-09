@@ -1,6 +1,6 @@
-# Midway Festival Circuit Map
+# Midway Music & Arts Fest — map & schedule site
 
-Offline-capable map/schedule PWA for the Midway Music & Arts Festival
+Offline-capable map/schedule PWA for the Midway Music & Arts Fest
 (St. Paul, Oct 2–4, 2026; organizer demo Aug 8–9). Live at
 https://go.midwaymusicandart.org/ (github.io redirects there).
 

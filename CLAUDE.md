@@ -1,8 +1,8 @@
 # Midway Music & Arts Fest — map & schedule site
 
 Offline-capable map/schedule PWA for the Midway Music & Arts Fest
-(St. Paul, Oct 2–4, 2026; organizer demo Aug 8–9). Live at
-https://go.midwaymusicandart.org/ (github.io redirects there).
+(St. Paul, Oct 2–4, 2026). Live at https://go.midwaymusicandart.org/
+(github.io redirects there).
 
 ## Where things are decided
 
@@ -13,8 +13,11 @@ https://go.midwaymusicandart.org/ (github.io redirects there).
   calibration, UI routes, storage keys, test hooks.
 - `README.md` — operator how-to: run, test, deploy, content swap, iPhone
   offline verification.
-- `PROGRESS.md` — state journal. Update it at milestones; resumed sessions
-  re-orient from it.
+- `PROGRESS.md` — state journal: current status and a dated log of what changed
+  and why. Resumed sessions re-orient from it.
+- `BACKLOG.md` — all forward-looking work: open decisions, open engineering
+  items, the human/device QA checklist, deferred ideas. Nothing belongs in both
+  this and PROGRESS.md.
 
 ## Invariants
 

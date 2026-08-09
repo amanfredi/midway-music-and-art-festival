@@ -1,196 +1,126 @@
 # Build progress — Midway Music & Arts Fest site
 
-Orientation file for resumed sessions. Authoritative scope: DEFINITION.md.
-Execution mechanics: PROMPT.md. Integration spec: CONTRACTS.md.
+State journal. Read the Status section to know where things stand, then the log
+for why the current design is what it is. Open work lives in BACKLOG.md;
+binding interfaces in CONTRACTS.md; scope and non-goals in DEFINITION.md.
 
-## Status: POC complete and LIVE (2026-08-01)
+## Status
 
-Live URL verified: https://amanfredi.github.io/midway-music-and-art-festival/
-(HTTP 200; SW active over HTTPS with correct scope; CDP installability errors
-empty; offline reload on the live site rendered schedule + map + pins.)
-Remaining items are Anthony's: real-iPhone airplane-mode test (README steps),
-Google Sheet creation when real content exists, Aug 8–9 organizer demo.
+Live and working at https://go.midwaymusicandart.org/ (the github.io URL 301s
+to it). Every push to `main` deploys; the last deploy and the full suite —
+30 unit + 15 Playwright — were green.
 
-## Milestones
+**Only the venues tab is real content.** It is live from the organizers' Google
+Sheet (URL in `content/config.json`), currently 14 venues.
+`content/fixtures/venues.csv` is a committed snapshot of it and now runs a few
+venues behind. Events, vendors, sponsors and settings are still **placeholder
+fixtures** — invented names, invented schedule. The dismissible banner on the
+site says so. Swapping each to a sheet tab is a one-line change in
+`content/config.json` once real content exists.
 
-- [x] Definition + prompt committed
-- [x] CONTRACTS.md written (schemas, interfaces, file ownership)
-- [x] Local-LLM experiment: placeholder content drafts (reviewed + cleaned; geography and collision-risky names fixed by orchestrator)
-- [x] Agent A: content pipeline (build.mjs, fixtures, validation + tests) — audited, merged
-- [x] Agent B: UI views — audited, merged
-- [x] Agent C: map generation (OSM→SVG), geo.js affine module + tests — audited (tests re-run, SVG rendered + eyeballed, scope clean), merged to main
-- [x] Orchestrator: PWA shell (manifest, icons), service worker + build-sw.mjs, serve.mjs
-- [x] Orchestrator: Playwright offline test (needs integrated site to run)
-- [x] Integration: merged, `npm run build` + `npm test` green locally AND in CI (run 30721533589: 15 unit + 3 Playwright pass)
-- [x] CI: deploy.yml + rebuild.yml committed; test job green; deploy job fails at configure-pages until repo is public
-- [x] README rewrite (write-doc skill, editorial subagent pass applied)
-- [x] Verification: offline test (Playwright + dead-server harness), validation failure (bad-date fixture, readable message, exit 1), installability (CDP getInstallabilityErrors = [], manifest parse errors 0). Live-URL check pending repo visibility.
-- [x] Final report delivered in session
-- [] Review site for accessibility according to WCAG 2.2 and update Accessibility contract in CONTRACTS.md if necessary - see reference/ directory
-- [] QA on android
-- [] Agent review from user perspective. Maybe using Claude for chrome or claude cowork features?
-- [] Bus routes 67 and 72: draw the **routes as lines** on the map rather than
-  their stops as pins. Rejected adding ~40+ stop pins (clutter, and the map now
-  covers 24 sq mi); a route line gives the same "the bus goes along here"
-  information at a fraction of the visual cost. Deferred, not dismissed.
-- [] Deeper map-design pass against `reference/Accessibility - map-design-guide
-  (updated)_tcm38-565153.pdf`. The 2026-08-08 QA round retuned scale, density
-  and labeling by eye; the guide covers contrast, symbol size and legend
-  conventions systematically. Worth doing before commissioning hand-drawn
-  artwork — a hand-drawn map is still on the table, and `geo.js` was built so
-  that swapping artwork means new control points only.
+The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
+service worker and CI all landed and were audited in earlier rounds.
 
-### Open items from the 2026-08-09 QA round
+## Log
 
-- [] **Overlapping venue pins.** With 14 venues (and several within ~15 m of
-  each other) pins stack and the one underneath is unreachable. Paint order is
-  now defined (transit → featured → sponsor → venue), but that only decides
-  *which* pin wins, not how to reach the loser. Needs an offset or
-  cluster-and-expand-on-zoom treatment. The venue key list below the map is the
-  workaround in the meantime.
-- [] **Transit letter missing on iOS.** Selby & Dale rendered without its "B"
-  on iPhone while showing correctly in macOS Safari. Overlap was ruled out
-  (nearest pin 652 m away). The `<text>` markup has since been hardened —
-  explicit `x`/`y`, `dominant-baseline` instead of an em-relative `dy`, and
-  fixed offsets instead of em units for stacked letters — but the cause was
-  never reproduced, and that stop now falls outside the 1.5-mile pin radius so
-  it no longer renders at all. Re-check on iOS.
-- [] **Street labels at deep zoom.** Labels are placed once for the whole map
-  with collision detection, then counter-scaled, and hidden by level of detail
-  as the view widens. Placement is still not zoom-*dependent* — the positions
-  are fixed — so a close view can land between labels. A real map engine
-  re-places labels per zoom; see the MapLibre note below.
+Newest first.
 
-### Open decisions from the 2026-08-08 QA round (Anthony's call)
+### 2026-08-09 — second QA round
 
-Shipped as-is; each is a deliberate default that can be changed cheaply.
+The map was largely rebuilt. Its extent is now a **10-mile square centered on
+Hamline Park**; the previous downtown-anchored rectangle left visibly torn
+north and south edges, because Overpass returns a way's whole geometry whenever
+it intersects the bbox, so some features ran past the boundary while others
+stopped dead at it. Light rail now comes from OSM **route relations** rather
+than `railway=light_rail` ways, which had swept in the Franklin Avenue
+maintenance yard and drawn it as a hatched blob; Green and Blue now draw in
+their own colors as one thick solid stroke instead of two thin dashed ones.
+Labels gained **level-of-detail classes** (`lod0`–`lod3`, with `data-lod` set
+on the root as the view widens) so a wide view keeps only the spine names
+instead of 400. Pins, map labels and the location dot all **counter-scale** to
+hold a constant on-screen size, rather than ballooning when zoomed in.
 
-- RESOLVED 2026-08-09: **transit pin density** — pins are now limited to stops
-  within 1.5 miles of the festival (15 of 64), which still includes Raymond
-  Avenue. `TRANSIT_PIN_RADIUS_M` in `map.js`.
-- RESOLVED 2026-08-09: **zoom-out limit** — zoom-out now runs to the map's full
-  width so both downtowns are visible at once; the square frame letterboxes
-  with a background matching the map's paper color.
-- [] **`map.svg` weight.** Now **1.87 MB raw / ~690 KB gzipped** at the 10-mile
-  square, all precached for offline. Raising `simplify()` from 2 m to 4 m was
-  measured and only saved 19 KB gzipped, so it was reverted — the size is in
-  the sheer number of ways, not in per-way precision. The real levers left are
-  a smaller extent or dropping `tertiary` from the fetched highway tags.
-  Related: **whether to keep hand-rolling the renderer at all** — see the
-  MapLibre/Leaflet note below.
-- [] **Map library (MapLibre GL JS / Leaflet)?** Raised 2026-08-09. Current
-  answer: not yet. DEFINITION.md lists "no map engine" as a non-goal and
-  zero-runtime-dependency/offline as the point; MapLibre needs WebGL (fails in
-  iOS Lockdown Mode and on low-end phones, where a static SVG always works) and
-  adds ~230 KB gzipped; Leaflet is a worse fit still, since offline raster
-  tiles for this area run to tens of MB. But zoom-dependent labelling, feature
-  filtering by zoom and label collision are exactly what a real engine gives
-  for free, and this round hand-rolled all three. Revisit after the festival if
-  street-level navigation becomes a first-class feature rather than
-  orientation; that decision should also settle the commissioned hand-drawn
-  map, which the current georeferencing design (geo.js + control points) is
-  built to support and a vector engine would complicate.
-- [] Minor: the OSM station dots and names baked into `map.svg` sit underneath
-  the transit pins — mild visual redundancy. Either suppress the baked dots in
-  `make-map.mjs` or leave them as a zoomed-in detail.
+Pin hit targets became diamonds matching the visible shape, at roughly 1.26×
+the pin radius — a diamond has area 2r² against a circle's πr², so matching the
+radius exactly would have cut the tappable area by about a third. Dragging the
+map no longer sweeps a text selection across every street name it crosses
+(`user-select: none`, scoped to the map surface).
 
-### Needs a real device (can't be checked from the harness)
+Event rows were restructured into two columns, text beside labels: as a top
+line, a stack of two labels pushed the title and venue down, so rows misaligned
+against each other. Event detail now repeats the row's own icons next to plain
+language ("Free Ticket Required", "Must be age 21 or older"), and vendor cards
+dropped the type badge that only repeated their group heading.
 
-- [] **Header-scroll behavior on a phone.** The page (not `#view`) is now the
-  scroll container. Verified via Playwright screenshots at 393px, but momentum
-  scrolling, rubber-banding and the sticky control bar under a real iOS/Android
-  browser chrome are not something a headless screenshot can confirm. Anthony
-  offered to verify interactively.
-- [] **Sticky control bar vs. the iOS status bar, installed.** `.schedule-controls`
-  pins at `top: var(--safe-top)`, which should evaluate to 0 given
-  `apple-mobile-web-app-status-bar-style: default` (iOS puts the web view below
-  the status bar in that mode). Unverified — if the bar does tuck under the
-  status bar in standalone mode, the fix is an opaque fixed filler of height
-  `var(--safe-top)`. Check during the next airplane-mode pass.
+One regression worth remembering as a *class* of bug: `renderMap` kept a stale
+reference to `original` (renamed to `full` when the view model was split into
+extent and home view) inside the geolocation success callback, which silently
+broke the "you are here" dot — the button simply did nothing. Paths behind a
+device permission are reachable by neither the screenshot harness nor the old
+test suite. They have coverage now, via Playwright's `setGeolocation`, and
+`tools/shoot.mjs --geo lat,lng` can exercise them visually.
 
-## Agent branches (worktrees)
+### 2026-08-08 — first QA round
 
-Agents work in worktrees on branches `agent/content-pipeline`, `agent/ui`,
-`agent/map-geo`; orchestrator merges into `main`.
+Renamed the app to "Midway Music & Arts Fest" (manifest `short_name` MMAF).
+Rebuilt the icons from the primary brand lockup, and added a separate "M"-only
+PNG favicon because Safari renders the SVG favicon as a gray placeholder where
+Chrome renders it correctly. Events gained an `age_limit` column
+(blank/18+/21+). Ticket icons were replaced with the organizers' own artwork,
+inlined as a `<symbol>` sprite so each row costs one `<use>` rather than a copy
+of the glyph paths. The schedule's kind filter was removed — grouping by
+category already isolates a kind without hiding the rest of the day. The page,
+not `#view`, became the scroll container, so the logo header scrolls away while
+control bars pin. Transit pins gained a detail sheet, and starred rows now
+linger dimmed for a few seconds before leaving the list. `tools/shoot.mjs` was
+added, rendering routes to PNGs so changes can be eyeballed without a manual
+browser pass.
 
-## Notes / decisions
+The live sheet also broke every build that day: a venue id of
+`mamasmarket&deli` failed the `[a-z0-9-]+` rule, taking down CI and deploys
+with it. Rather than widen the charset, `build.mjs` now **normalizes** ids
+instead of rejecting them, applying the same slugify to `events.venue_id` so
+both tabs agree however each was typed. It is deliberately a no-op for any
+already-valid id, so a starred event or a shared `#/event/<id>` link can never
+be invalidated by it. Only an id that slugifies to nothing, or two that
+collide, still fail.
 
-- Deploys propagate via SW version bump (generated sw.js hash); content.json
-  additionally gets per-request stale-while-revalidate. See CONTRACTS.md.
-- Demo clock override `?t=2026-10-03T15:00` so "on now" demos before October.
-- gh authed as amanfredi; push to origin main verified working.
-- RESOLVED 2026-08-01: Anthony made the repo public and enabled Pages; Deploy
-  workflow succeeded and the live URL was verified (see Status).
-- 2026-08-02: venues/vendors CSV schema changed — single `location` column
-  (decimal pair or Google Maps plus code) replaces `lat`/`lng`; see
-  CONTRACTS.md and scripts/{olc,location}.mjs.
-- 2026-08-02 (later): venues tab is LIVE from the organizers' Google Sheet
-  (URL in content/config.json); fixture venues.csv is a committed snapshot;
-  validation tests use hermetic tests/fixtures-good/config.json (the default
-  `npm run build` still fetches the sheet). Placeholder events
-  remapped onto the 9 real venues. Map regenerated with wider bbox (Jimmy
-  Lee Rec Center + Sundin). MMAF branding applied: header logo, brand
-  palette, emblem app icons. Maps links default to walking directions.
-- 2026-08-02 (August feature round, Wave 0 merged): events schema is now
-  date/start_time/end_time (end_time < start_time = past-midnight, valid;
-  equal = error), kinds music|art|performance|literary|vendor|other, new
-  tickets column; sponsors use tier slugs (emerald..quartz, caps 1/5) with
-  optional location, no tier_order column; settings gained donation_url/
-  donation_label. CONTRACTS.md rewritten (routes incl. #/vendors, diamond
-  pin/transit contract, a11y section, new test hooks). Fixture venue id
-  refreshed to ginkgocoffeehouse — the live sheet had corrected the typo,
-  which was failing every live-sheet build (and CI) until this merge.
-  BACKLOG.md tracks the round; Wave 1 (4 parallel UI agents) next.
-- RESOLVED 2026-08-02: custom domain https://go.midwaymusicandart.org/ is the
-  live URL (github.io 301s to it). Initial cert provisioning was stuck
-  (GitHub health check showed eligible-but-unissued for ~4h); Anthony's
-  remove/re-add of the domain retriggered it. Enforce HTTPS is ON. Offline +
-  installability re-verified on the custom domain. A transient CDN 503
-  during cutover exposed the first-visit module-graph fragility — fixed with
-  the boot guard in index.html (auto-reload with backoff, Playwright-tested).
-- 2026-08-02 (August feature round complete, Waves 0–2 merged): schema
-  migration (Wave 0); schedule UX, map redesign with transit/sponsor pins,
-  vendors list view + Support donate button, PWA install/persist storage
-  (Wave 1, four parallel worktree agents); accessibility hardening + cleanup
-  + this docs pass (Wave 2) — route-change focus/announcement, sheet focus
-  management (`aria-labelledby`, focus-into/restore-on-close), day switcher
-  demoted from an incomplete tablist to a plain button group (see
-  CONTRACTS.md Accessibility contract), `prefers-reduced-motion` honored,
-  keyboard-pannable map; dead `openVendorSheet`/`findVendor` removed.
-  `npm test` green: 26 unit + 9 Playwright (6 existing + 3 new a11y-focused).
-  BACKLOG.md can be archived once its remaining checklist — all human QA, not
-  code — is done: iPhone airplane-mode pass, install-button check on a real
-  iPhone and Android Chrome, splash-screen render check, transit-stop
-  accuracy vs. Metro Transit's published stop lists, and the featured-vs-
-  generic sponsor-pin design review at the next demo.
-- 2026-08-08 (QA round, BUGS.md): app renamed to "Midway Music & Arts Fest"
-  (manifest `short_name` MMAF); icons rebuilt from the primary brand lockup and
-  a separate "M"-only PNG favicon added because Safari renders SVG favicons as
-  a gray placeholder; events gained `age_limit` (blank|18+|21+); ticket icons
-  replaced with the organizers' artwork as an inline `<symbol>` sprite; row
-  labels stack vertically; schedule kind filter removed (grouping stays);
-  the page (not `#view`) is now the scroll container so the logo header scrolls
-  away while control bars pin; starred rows linger dimmed for 6s before
-  removal; transit pins gained a detail sheet; the map was rebuilt at 6x4 miles
-  centered on Hamline Park with a dense core / sparse surround, a separate
-  square home view, and everything rescaled for phone legibility. Screenshot
-  harness added at `tools/shoot.mjs` (renders routes to PNGs for eyeballing).
-  `npm test` green: 27 unit + 9 Playwright.
-- RESOLVED 2026-08-08: the live sheet's `mamasmarket&deli` venue id was failing
-  every build (and CI, and deploy). Rather than widen the id charset, build.mjs
-  now **normalizes** ids instead of rejecting them, applying the same slugify
-  to `events.venue_id` so both tabs agree however each was typed. It is a
-  deliberate no-op for already-valid ids, so starred events and shared
-  `#/event/<id>` links can't be invalidated by it. Only an id that slugifies to
-  nothing, or two that collide, still fail. See CONTRACTS.md "Ids are
-  normalized, not rejected".
-- **Sheet data bugs found 2026-08-08** (organizers to fix, not code):
-  - Mosaic on a Stick carries Hamline Park's address *and* plus code verbatim
-    (`1564 Lafond Ave` / `XR5M+X8`), so its pin lands exactly on the park's and
-    hides it. One of the two is wrong.
-  - Vig Guitars and Fluid Ink Tattoos are ~14 m apart, so their pins overlap.
-    As the venue list grows (9 → 14 this week) the map needs a pin-collision
-    strategy — offset, or cluster-and-expand-on-zoom.
-- `content/fixtures/venues.csv` is now 5 venues behind the live sheet. Harmless
-  (it's only a snapshot, and tests build from it deliberately), but worth a
-  refresh next time the fixtures are touched.
+### 2026-08-02 — August feature round
+
+Schema migration first: events moved to `date`/`start_time`/`end_time` (an
+`end_time` earlier than `start_time` means past midnight and is valid; equal
+times are an error), kinds became
+`music|art|performance|literary|vendor|other`, and a `tickets` column arrived.
+Sponsors moved to tier slugs (`emerald`–`quartz`, capped at 1 and 5) with an
+optional location and no `tier_order` column. Then four parallel worktree
+agents delivered schedule UX, the map redesign with transit and sponsor pins,
+the vendors list view with the Support donate button, and the PWA
+install/persist-storage work — followed by an accessibility hardening pass
+covering route-change focus and announcement, sheet focus management,
+`prefers-reduced-motion`, and a keyboard-pannable map.
+
+The venues tab went live from the organizers' Google Sheet the same day, and
+venue/vendor positions moved to a single `location` column accepting either a
+decimal pair or a Google Maps plus code. The custom domain
+`go.midwaymusicandart.org` was cut over; certificate provisioning stalled for
+about four hours until removing and re-adding the domain retriggered it. A
+transient CDN 503 during the cutover exposed how fragile a first, uncached
+visit is — one failed module fetch kills the whole static module graph — which
+is why `index.html` carries a boot guard that reloads with backoff.
+
+### 2026-08-01 — POC complete and live
+
+Repo made public, Pages enabled, deploy workflow green, live URL verified with
+the service worker active and an offline reload rendering schedule, map and
+pins.
+
+## Standing mechanics
+
+Deploys propagate through a service-worker version bump — `sw.js` is generated
+with a hash of the site's bytes, so unchanged sources must produce a
+byte-identical `content.json`, and `npm test` asserts that. `content.json`
+additionally gets per-request stale-while-revalidate.
+
+Append `?t=2026-10-03T15:00` to any URL to override the clock, so "On now" has
+content outside the festival weekend. `gh` is authenticated as `amanfredi`, and
+pushing to `origin main` is verified working.

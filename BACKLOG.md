@@ -1,149 +1,141 @@
-# Feature backlog — August 2026 round
+# Backlog — open work, open decisions, deferred ideas
 
-**Status 2026-08-02: Waves 0–2 all merged and deployed.** What remains here:
-the human QA checklist below, the TBD section, and one open decision (Web
-Share button on event/venue detail — recommended in the PWA research, awaiting
-Anthony's yes/no).
+Everything forward-looking lives here. PROGRESS.md is the state journal: what
+happened and why. Nothing should appear in both.
 
-Working plan for the current implementation round, from decisions settled with
-Anthony on 2026-08-02. PROGRESS.md stays the state journal; this file tracks
-what's being built now and what's consciously deferred. Delete or archive it
-when the round lands.
+Items are not prioritized against each other. The festival is October 2–4,
+2026; nothing here blocks the site working today.
 
-## Decisions (binding for this round)
+## Decisions that need Anthony
 
-### Events schema
-- Replace `start`/`end` columns with `date` (`YYYY-MM-DD`), `start_time`,
-  `end_time` (24h `HH:MM`). An event lives on one calendar date.
-- Convention: `end_time` ≤ `start_time` means the event ends past midnight
-  (end is on the following day). Validation accepts it; docs explain it.
-- `content.json` keeps emitting derived `start`/`end` (`YYYY-MM-DDTHH:MM`)
-  strings — runtime shape unchanged, UI code untouched by the schema swap.
-- Kinds become `music | art | performance | literary | vendor | other`
-  (replaces `music|art|family|community`). Optional, default `music`.
-- New optional `tickets` column, exact values (sheet dropdown enforces):
-  `General Admission` (default when blank) · `General Admission (limited
-  capacity)` · `Free Ticket Required` · `Paid Ticket Required`.
-  The two "Required" values get ticket-stub icons (FREE / $) on event rows
-  next to the kind badge; event detail shows the full tickets text. The other
-  two values get no list icon.
+**Map library — keep hand-rolling, or adopt MapLibre GL JS?** Current answer is
+not yet, but the case has grown. DEFINITION.md lists "no map engine" as a
+non-goal and treats zero runtime dependencies plus offline as the point;
+MapLibre requires WebGL, which fails in iOS Lockdown Mode and on low-end
+phones where a static SVG always works, and adds roughly 230 KB gzipped.
+Leaflet is a worse fit still: offline raster tiles for this area run to tens of
+megabytes. Against that, zoom-dependent labelling, feature filtering by zoom
+and label collision are exactly what an engine gives for free, and the last
+round hand-rolled all three — plus the reported iOS lag below is evidence that
+a large static SVG has its own cost. This decision should be made together with
+the commissioned hand-drawn map, which the current georeferencing design
+(`geo.js` plus control points) is built to support and a vector engine would
+complicate.
 
-### Sponsor tiers
-`tier` becomes a fixed enum (CSV carries the slug; display labels live in the
-app). `tier_order` column is dropped — order is intrinsic to tier.
+**`map.svg` weight.** 1.87 MB raw, about 690 KB gzipped, all of it precached
+for offline use — by far the largest thing a first-time visitor downloads.
+Raising the `simplify()` tolerance from 2 m to 4 m was measured and saved only
+19 KB gzipped, so it was reverted: the size is in the sheer number of ways, not
+per-way precision. The remaining levers are a smaller extent or dropping
+`tertiary` from the fetched highway tags.
 
-| slug | display | limit | map pin | sponsors page |
-|---|---|---|---|---|
-| `emerald` | Emerald Tier (Presenting Partner) | 1 | Featured Destination | dedicated top spot, largest logo |
-| `ruby` | Ruby Tier (Leading Partner) | 5 | Featured Destination *(logo-pin format TBD)* | second-largest logos |
-| `sapphire` | Sapphire Tier (Supporting Partner) | — | Featured Destination | third-largest logos |
-| `topaz` | Topaz Tier (Community Partner) | — | Sponsor (generic) | smallest logos |
-| `quartz` | Quartz Tier (Neighborhood Supporter) | — | none | name + link only, no logo |
+**Sponsor presentation, pending real sponsors.** The featured-vs-generic
+sponsor pin distinction wants a design review once someone can see it against
+real logos. Emerald tier's "special treatment / custom branding" is undefined
+because no emerald sponsor exists yet, and the ruby logo-pin map format is
+likewise unspecified.
 
-- New optional `location` column (same formats as venues). A sponsor gets a
-  pin iff its tier maps AND it has a location; missing location on a pin tier
-  = no pin, no error (some sponsors have no in-map address).
-- `logo` required for emerald–topaz, optional and unused for quartz.
-- Build validates: known slug, ≤1 emerald, ≤5 ruby — readable errors.
-- Emerald "special treatment / custom branding": TBD until one exists.
+## Map
 
-### Map
-- Item types: **Venue** (brand blue `#10577b`), **Transit** (brand green
-  `#298d4e`), **Sponsor** (brand red `#a11f22`). All pins and legend icons are
-  diamonds. Venues keep their numbers inside the diamond; transit diamonds
-  carry the line letter (G / A / B).
-- Featured Destination vs generic Sponsor pins both use brand red; the visual
-  distinction (e.g. filled + larger vs outlined) is the map agent's design
-  call, reviewed at the next demo.
-- Vendor pins removed from the map entirely.
-- Transit stops: Green Line LRT, A Line BRT, B Line BRT stops inside the map
-  bbox, sourced from OSM via `tools/make-map.mjs` into a committed data file.
-  Accuracy is provisional — see QA checklist below.
+The largest open item is **overlapping pins**. With 14 venues, several within
+about 15 m of each other, pins stack and the one underneath cannot be reached.
+Paint order is defined (transit, then featured destination, then sponsor, then
+venue) but that only decides which pin wins, not how to reach the loser. Needs
+an offset or a cluster-and-expand-on-zoom treatment; the venue key list below
+the map is the workaround meanwhile.
 
-### Vendors & Support
-- Vendors stay a content type but move from map pins to a new list view:
-  route `#/vendors`, nav tab "Vendors" between Starred and Support, rendering
-  vendor name/type/description from the sheet. No starring of vendors.
-- Sponsors tab renamed **Support** in the nav (route stays `#/sponsors`).
-- Donation button at the top of the Support view, driven by new settings keys
-  `donation_url` and `donation_label` (label defaults to "Donate"; empty url =
-  no button). Current url (verified live 2026-08-02):
-  https://www.zeffy.com/en-US/donation-form/midway-music-and-arts
-- Nav grows to 6 tabs — verify layout/labels still work at 320 px width.
+Two related interaction gaps: **clicking a pin should highlight it**, and
+**clicking a venue card in the key list below the map should highlight its pin
+and recenter the map on it**, as though the pin itself had been tapped. Today
+the card opens the detail sheet without any connection to the map.
 
-### Schedule UX
-- Star toggle on every event row (schedule, now, starred views): rows
-  restructure from a bare `<a>` to a container holding the link plus a sibling
-  star `<button aria-pressed>` (44 px target) — a button nested inside a link
-  is broken for screen readers and touch.
-- Filter chips by kind: All + the six kinds.
-- "By category" added as a third grouping mode next to by-time/by-venue.
-- Six kinds need six badge tints, WCAG AA.
+**Scroll and zoom lag noticeably on a recent iPhone.** Observed, not yet
+diagnosed. The likely cause is the size and node count of the inlined SVG, in
+which case it bears directly on the map-library decision above; that hypothesis
+is unverified.
 
-### PWA platform
-- Call `navigator.storage.persist()` at startup (best-effort, no UI on deny).
-  Research finding (2026-08-02): persist() protects against disk-pressure
-  eviction on Chrome/Android, but does **not** exempt a non-installed iOS
-  Safari site from the 7-day ITP storage wipe (open WebKit bug 209563).
-  Home-screen install is what exempts iOS storage (webkit.org/tracking-
-  prevention/, verified). Known-limitations copy must not present persist()
-  as the iOS mitigation — install is.
-- Install button: `beforeinstallprompt` flow on Chromium; inline "Add to Home
-  Screen" instructions on iOS Safari (no external link — offline-first);
-  hidden entirely when already running standalone.
-- Generate `apple-touch-startup-image` splash set via `tools/make-icons.mjs`.
-- Document as a known limitation: installed app and browser tab have isolated
-  storage on iOS (independent starred lists); not worth fixing.
+**Street labels are placed once for the whole map**, with collision detection,
+then counter-scaled and hidden by level of detail as the view widens. Placement
+itself is not zoom-dependent — positions are fixed — so a close view can land
+between labels. A real map engine re-places labels per zoom.
 
-### Accessibility
-- Hardening pass over existing gaps (survey 2026-08-02): no focus management
-  on route change or sheet open/close, incomplete tablist pattern on day tabs,
-  star state invisible to screen readers in list views, no
-  `prefers-reduced-motion` (infinite pulse animation), map pan/zoom is
-  pointer-only.
-- Binding a11y criteria get a section in CONTRACTS.md; every UI agent's prompt
-  carries them as acceptance criteria.
+Smaller: the OSM station dots and names baked into `map.svg` sit underneath the
+transit pins, a mild redundancy that could be suppressed in `make-map.mjs` or
+left as a zoomed-in detail. And bus routes 67 and 72 could be drawn as **route
+lines rather than stop pins** — adding 40-plus stop pins was rejected as
+clutter, but a line conveys "the bus goes along here" at a fraction of the
+visual cost.
 
-### Scope bookkeeping
-- DEFINITION.md's "no search/filtering in v1" non-goal is overridden by
-  Anthony (2026-08-02); update DEFINITION.md in the docs pass.
-- No fixed demo deadline; waves run in order without scope cuts.
+Finally, a **map-design pass against the accessibility guide** in `reference/`
+(`Accessibility - map-design-guide (updated)_tcm38-565153.pdf`). Scale, density
+and labelling have been retuned by eye across two QA rounds; the guide covers
+contrast, symbol size and legend conventions systematically. Worth doing before
+commissioning hand-drawn artwork.
 
-## Waves
+## App
 
-- **Wave 0 — contracts + schema (one agent, merges first).** CONTRACTS.md
-  updated in full (CSV schemas, routes, test hooks, legend, a11y section) so
-  Wave 1 agents build against one truth. `build.mjs` parsing/validation,
-  fixtures regenerated (six kinds, tickets column, five sponsor tiers incl.
-  emerald/ruby/quartz examples, ≥1 past-midnight event), new bad-fixture cases
-  (bad tickets value, bad tier slug, emerald limit exceeded), settings keys.
-  `npm test` green.
-- **Wave 1 — four parallel worktree agents** (after Wave 0 merges; merge
-  serially, rebasing — shared `app.css` will conflict additively):
-  1A Schedule UX · 1B Map · 1C Vendors + Support · 1D PWA platform.
-- **Wave 2 — a11y hardening + docs** (after Wave 1, same views get touched):
-  a11y fixes above; DEFINITION.md, README.md, PROGRESS.md updates.
-- **Anytime, parallel:** PWA feature-candidates research doc (survey
-  whatpwacando.today against the zero-deps/offline invariants; also verify
-  per-browser whether `storage.persist()` covers localStorage). Doc only.
+An **accessibility review against WCAG 2.2** is outstanding, updating the
+Accessibility contract in CONTRACTS.md if it turns up gaps. The reference copy
+is in `reference/`.
 
-## QA / verification (human)
+An **in-depth code and test review** — the codebase has grown through several
+fast QA rounds, and no one has read it end to end since.
 
-- [ ] Transit stops: verify OSM-derived stop names/positions against Metro
-      Transit's published Green Line / A Line / B Line stop lists.
-- [ ] iPhone airplane-mode pass after any SW/caching change (README procedure).
-- [ ] Install button on a real iPhone (instructions sheet) and Android Chrome
+**Web Share API** for sharing a link to anything with a URL: events already
+have one (`#/event/<id>`), venues do not yet. Research from 2026-08-02 flagged
+this as the strongest candidate from a PWA feature survey — iOS Safari 12.2+,
+roughly five lines — and it supersedes the earlier "Web Share button on
+event/venue detail" note, which was the same idea.
+
+**QA on Android**, and an **agent review from a user's perspective**, possibly
+using Claude for Chrome.
+
+## Content and data
+
+The organizers need to fix two things in the venues sheet. **Mosaic on a Stick
+carries Hamline Park's address and plus code verbatim** (`1564 Lafond Ave` /
+`XR5M+X8`), so its pin lands exactly on the park's and hides it — one of the two
+entries is wrong. **Vig Guitars and Fluid Ink Tattoos are about 14 m apart**,
+which is genuine data but makes the overlapping-pin problem above concrete.
+
+`content/fixtures/venues.csv` is a few venues behind the live sheet. Harmless —
+it is only a snapshot, and the tests build from it deliberately — but worth
+refreshing next time the fixtures are touched.
+
+Events, vendors, sponsors and settings are still placeholder fixtures. Each
+becomes real with a one-line change in `content/config.json` pointing at a
+published sheet tab.
+
+## Needs a real device
+
+None of these can be checked from the screenshot harness or the test suite.
+
+- [ ] iPhone airplane-mode pass after any service-worker or caching change
+      (procedure in README).
+- [ ] Header scroll behavior on a phone. The page is now the scroll container;
+      momentum scrolling, rubber-banding and the pinned control bar under real
+      browser chrome need eyes on a device.
+- [ ] Sticky control bar against the iOS status bar when installed.
+      `.schedule-controls` pins at `top: var(--safe-top)`, which *should*
+      evaluate to 0 given `apple-mobile-web-app-status-bar-style: default`.
+      Unverified; if it does tuck under, the fix is an opaque fixed filler of
+      height `var(--safe-top)`.
+- [ ] Transit letter missing on iOS. Selby & Dale rendered without its "B" on
+      iPhone while showing correctly in macOS Safari. Overlap was ruled out
+      (nearest pin 652 m away) and the `<text>` markup has since been hardened,
+      but the cause was never reproduced — and that stop now falls outside the
+      1.5-mile pin radius, so it no longer renders at all. Check a different
+      single-letter pin, such as Hamline Avenue.
+- [ ] Install button on a real iPhone (instruction sheet) and Android Chrome
       (native prompt).
 - [ ] Splash screens render on iOS launch.
-- [ ] Nav fits at 320 px with 6 tabs.
-- [ ] Featured-vs-generic sponsor pin design review at next demo.
+- [ ] Nav fits and reads at 320 px with six tabs.
+- [ ] Transit stop names and positions verified against Metro Transit's
+      published Green Line / A Line / B Line stop lists.
 
-## TBD / deferred (not forgotten)
+## Deferred, not forgotten
 
-- Emerald custom branding treatment — no emerald sponsor exists yet.
-- Ruby logo-pin map format.
-- Feature candidates from whatpwacando.today — research done 2026-08-02.
-  Recommend: Web Share button on event/venue detail (iOS Safari 12.2+, ~5
-  lines, deep links already exist). Possible: View Transitions (pure polish),
-  Wake Lock (opt-in toggle only — fights battery). Rejected: everything else,
-  incl. manifest `shortcuts` (iOS ignores the field). Pending Anthony's pick.
+From the 2026-08-02 PWA feature survey: **View Transitions** are pure polish,
+and **Wake Lock** would need to be an opt-in toggle since it fights battery
+life. Everything else surveyed was rejected, including manifest `shortcuts`,
+which iOS ignores.

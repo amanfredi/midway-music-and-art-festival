@@ -16,24 +16,42 @@ import { openVenueSheet, openSponsorSheet, openTransitSheet } from './sheet.js';
 const HOME_VIEW_M = 3000; // side of the square home view, in meters
 const MIN_VIEW_M = 350; // closest zoom: about a block and a half across
 
+// Transit pins are limited to stops within this distance of the festival
+// center. Widening the map to reach both downtowns pulled in 64 stops, most of
+// them nowhere near the festival and unreadable as a wall of pins. 2414 m
+// (1.5 miles) keeps 15 — including Raymond Avenue, the stop this round was
+// asked to add — and the Green Line's route is still drawn across the whole
+// map, so the line to downtown remains visible without pinning every station.
+const TRANSIT_PIN_RADIUS_M = 2414;
+
 // Pin sizes are in map units (1 unit = 1 meter, per CONTRACTS.md), not CSS
-// pixels, so their on-screen size depends on how much map is in view. These
-// are tuned for the home view on a phone, where the pins were previously too
-// small to read or tap; they share the SCALE factor used for street widths and
-// labels in tools/make-map.mjs.
+// pixels. They are authored at home-view scale and then counter-scaled as the
+// user zooms (see updatePinScale), so a pin holds a constant *on-screen* size
+// at every zoom level -- the behavior of every real map. Sizing them in fixed
+// map units instead meant a pin swallowed the screen when zoomed in and
+// vanished when zoomed out (QA, 2026-08-09).
 //
-// All three pin types (CONTRACTS.md pin table) are diamonds, sized per type:
-// venue and "Featured Destination" sponsors are the visually dominant pins;
-// transit and generic sponsors are a step down. Vendor pins are gone
-// entirely -- vendors moved to the #/vendors list view.
+// Venue pins are the dominant symbol; everything else is a step down and all
+// non-venue pins are the same size. Vendor pins are gone entirely -- vendors
+// moved to the #/vendors list view.
+// Hit targets are diamonds, not circles, so the tappable area is the shape the
+// user sees rather than a halo around it (QA, 2026-08-09). They used to be
+// ~1.7x the pin and circular, which swallowed taps meant for the map or a
+// neighboring pin.
+//
+// The radii are a little larger than the pin's (~1.26x) to offset geometry: a
+// diamond of radius r has area 2r², a circle has πr², so matching the old
+// radius exactly would have cut the tappable area by ~36%. At these values a
+// venue's target is still ~26 CSS px across at home view on a phone. Since
+// pins counter-scale with zoom, so does the hit area.
 const VENUE_PIN_R = 115;
-const VENUE_HIT_R = 190;
+const VENUE_HIT_R = 145;
 const TRANSIT_PIN_R = 92;
-const TRANSIT_HIT_R = 155;
-const SPONSOR_FEATURED_R = 130;
-const SPONSOR_FEATURED_HIT_R = 210;
+const TRANSIT_HIT_R = 118;
+const SPONSOR_FEATURED_R = 92;
+const SPONSOR_FEATURED_HIT_R = 118;
 const SPONSOR_GENERIC_R = 92;
-const SPONSOR_GENERIC_HIT_R = 155;
+const SPONSOR_GENERIC_HIT_R = 118;
 const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_DIST = 24;
 const TAP_MOVE_THRESHOLD = 10;
@@ -54,16 +72,28 @@ function diamondPoints(r) {
  * transfer point served by two lines) stack the letters on separate lines
  * rather than e.g. a "G/A" slash -- more legible at pin size. Design call,
  * see CONTRACTS.md / the map agent's final report for the reasoning.
+ *
+ * Coordinates are explicit (x="0" y="0") and vertical centering uses
+ * `dominant-baseline` from CSS rather than an em-relative `dy` on the <text>.
+ * The old form leaned on an implicit origin plus `dy="0.35em"` resolving
+ * against a CSS-supplied font-size, which is exactly the combination WebKit
+ * has historically been inconsistent about -- and a transit letter was
+ * reported missing on iOS while rendering correctly in macOS Safari
+ * (QA, 2026-08-09; overlap was ruled out, nearest pin was 652 m away).
  */
 function transitLabelMarkup(lines) {
   if (lines.length === 1) {
-    return `<text class="pin__label" dy="0.35em">${TRANSIT_LINE_LETTER[lines[0]]}</text>`;
+    return `<text class="pin__label" x="0" y="0">${TRANSIT_LINE_LETTER[lines[0]]}</text>`;
   }
-  const lineHeightEm = 1.05;
+  // Stacked: first tspan lifted half a line above center, each subsequent one
+  // a full line below the previous. Offsets are in map units, not em, so they
+  // don't depend on how the engine resolves font-relative lengths.
+  const lineHeight = 78;
+  const firstOffset = -((lines.length - 1) * lineHeight) / 2;
   const tspans = lines
-    .map((l, i) => `<tspan x="0" dy="${i === 0 ? -((lines.length - 1) * lineHeightEm) / 2 + 0.32 : lineHeightEm}em">${TRANSIT_LINE_LETTER[l]}</tspan>`)
+    .map((l, i) => `<tspan x="0" dy="${i === 0 ? firstOffset : lineHeight}">${TRANSIT_LINE_LETTER[l]}</tspan>`)
     .join('');
-  return `<text class="pin__label pin__label--stacked">${tspans}</text>`;
+  return `<text class="pin__label pin__label--stacked" x="0" y="0">${tspans}</text>`;
 }
 
 /**
@@ -81,20 +111,58 @@ function setupInteraction(svg, full, home, onActivatePin) {
   let multiTouch = false;
   let lastTap = null; // {time, x, y}
 
-  // The view is square (the map frame is square, so this avoids letterboxing);
-  // zooming out therefore stops when the square would exceed the shorter side
-  // of the map. Panning east-west covers the rest of the 6-mile width.
-  const maxViewW = Math.min(full.w, full.h);
+  // Zooming out runs all the way to the map's full width, so the whole extent
+  // -- both downtowns -- can be seen at once. Past the point where the square
+  // view is taller than the map, the map is centered in it and the frame's
+  // background (which matches the map's own paper color) fills above and
+  // below, reading as margin rather than as a hole.
+  const maxViewW = full.w;
+
+  // Pins and map labels are authored at home-view scale; counter-scaling them
+  // by how far the view has zoomed keeps them a constant size on screen, the
+  // way symbols and type behave on any real map. Without this, zooming in blew
+  // street names up to span a block while zooming out made pins vanish.
+  // Cached so panning (which doesn't change scale) doesn't touch every node.
+  const scalables = svg.querySelectorAll('.pin__scale, .map-label__scale');
+  let appliedScale = null;
+  let appliedLod = null;
+
+  // Level of detail: how much of the map's labelling survives at this zoom.
+  // The thresholds are view widths in meters. Wide views keep only the spine
+  // names; each step in adds arterials, then their repeats, then station
+  // names. See the lod rules in tools/make-map.mjs.
+  function lodForView(viewW) {
+    if (viewW > 7000) return 0;
+    if (viewW > 3600) return 1;
+    if (viewW > 1600) return 2;
+    return 3;
+  }
+
+  function updateOverlayScale() {
+    const scale = view.w / HOME_VIEW_M;
+    const lod = lodForView(view.w);
+    if (lod !== appliedLod) {
+      appliedLod = lod;
+      svg.dataset.lod = String(lod);
+    }
+    if (appliedScale !== null && Math.abs(scale - appliedScale) < 0.001) return;
+    appliedScale = scale;
+    const transform = `scale(${scale.toFixed(4)})`;
+    for (const g of scalables) g.setAttribute('transform', transform);
+  }
 
   function apply() {
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    updateOverlayScale();
   }
 
   function clampPan() {
     const maxX = full.x + full.w - view.w;
     const maxY = full.y + full.h - view.h;
-    view.x = view.w >= full.w ? full.x : Math.min(Math.max(view.x, full.x), maxX);
-    view.y = view.h >= full.h ? full.y : Math.min(Math.max(view.y, full.y), maxY);
+    // Once the view is larger than the map on an axis there is nothing left to
+    // pan to, so center the map on that axis instead of pinning it to an edge.
+    view.x = view.w >= full.w ? full.x + (full.w - view.w) / 2 : Math.min(Math.max(view.x, full.x), maxX);
+    view.y = view.h >= full.h ? full.y + (full.h - view.h) / 2 : Math.min(Math.max(view.y, full.y), maxY);
   }
 
   function zoomBy(factor, focalX, focalY) {
@@ -234,8 +302,8 @@ function setupInteraction(svg, full, home, onActivatePin) {
   svg.addEventListener('pointercancel', onPointerUp);
   svg.addEventListener('keydown', onKeyDown);
 
-  // The SVG ships with the full 6x4-mile viewBox; narrow it to the home view
-  // before first paint so the map never flashes fully zoomed out.
+  // The SVG ships with the full extent as its viewBox; narrow it to the home
+  // view before first paint so the map never flashes fully zoomed out.
   clampPan();
   apply();
 
@@ -278,7 +346,7 @@ export async function renderMap(container, content) {
              list still has an accessible name. -->
         <h2 class="map-legend__title sr-only">Legend</h2>
         <ul class="map-legend__list">
-          <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon><text x="16" y="16" dy="0.35em" text-anchor="middle">1</text></svg> Venue</li>
+          <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Venue</li>
           <li><svg class="legend-icon legend-icon--transit" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Transit</li>
           <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
           <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
@@ -345,6 +413,14 @@ export async function renderMap(container, content) {
     return () => {};
   }
 
+  // The map extent is anchored on the two downtowns, so its middle is NOT the
+  // festival's middle. The generator emits home_center (Hamline Park's
+  // projected position) alongside the control points; the viewBox center is
+  // only a fallback for an older calibration file. Needed here, before the
+  // pins, because transit pins are filtered by distance from it.
+  const vb0 = svg.viewBox.baseVal;
+  const homeCenter = calibration.home_center ?? { x: vb0.x + vb0.width / 2, y: vb0.y + vb0.height / 2 };
+
   const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
   // Sponsor pins exist only for tiers emerald/ruby/sapphire ("Featured
   // Destination") and topaz ("Sponsor") -- quartz never gets a pin -- and
@@ -353,25 +429,42 @@ export async function renderMap(container, content) {
     (s) => (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') && Number.isFinite(s.lat) && Number.isFinite(s.lng)
   );
 
-  const pinsMarkup = [];
+  // SVG paints in document order, so the array a pin lands in decides what
+  // covers what where pins collide. Requested priority, lowest first:
+  // transit < featured destination < sponsor < venue (QA, 2026-08-09).
+  const transitPins = [];
+  const featuredPins = [];
+  const genericSponsorPins = [];
+  const venuePins = [];
+
+  // Every pin nests a .pin__scale group inside the positioned .pin group. The
+  // outer one places the pin; the inner one carries the zoom counter-scale, so
+  // resizing all pins is one attribute write per pin and never disturbs their
+  // coordinates.
   venues.forEach((v, i) => {
     const { x, y } = projector.project(v.lat, v.lng);
-    pinsMarkup.push(`
+    venuePins.push(`
       <g class="pin pin--venue" data-testid="venue-pin" data-venue-id="${esc(v.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="Venue ${i + 1}: ${esc(v.name)}">
-        <circle class="pin__hit" r="${VENUE_HIT_R}"></circle>
-        <polygon class="pin__diamond" points="${diamondPoints(VENUE_PIN_R)}"></polygon>
-        <text class="pin__label" dy="0.35em">${i + 1}</text>
+        <g class="pin__scale">
+          <polygon class="pin__hit" points="${diamondPoints(VENUE_HIT_R)}"></polygon>
+          <polygon class="pin__diamond" points="${diamondPoints(VENUE_PIN_R)}"></polygon>
+          <text class="pin__label" x="0" y="0">${i + 1}</text>
+        </g>
       </g>`);
   });
   transitStops.forEach((s) => {
     if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng) || !Array.isArray(s.lines) || s.lines.length === 0) return;
     const { x, y } = projector.project(s.lat, s.lng);
+    // Only stops near the festival get a pin — see TRANSIT_PIN_RADIUS_M.
+    if (Math.hypot(x - homeCenter.x, y - homeCenter.y) > TRANSIT_PIN_RADIUS_M) return;
     const lineNames = s.lines.map((l) => TRANSIT_LINE_NAME[l] || l).join(', ');
-    pinsMarkup.push(`
+    transitPins.push(`
       <g class="pin pin--transit" data-testid="transit-pin" data-transit-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="${esc(s.name)}: ${esc(lineNames)}">
-        <circle class="pin__hit" r="${TRANSIT_HIT_R}"></circle>
-        <polygon class="pin__diamond" points="${diamondPoints(TRANSIT_PIN_R)}"></polygon>
-        ${transitLabelMarkup(s.lines)}
+        <g class="pin__scale">
+          <polygon class="pin__hit" points="${diamondPoints(TRANSIT_HIT_R)}"></polygon>
+          <polygon class="pin__diamond" points="${diamondPoints(TRANSIT_PIN_R)}"></polygon>
+          ${transitLabelMarkup(s.lines)}
+        </g>
       </g>`);
   });
   sponsors.forEach((s) => {
@@ -380,13 +473,35 @@ export async function renderMap(container, content) {
     const hitR = featured ? SPONSOR_FEATURED_HIT_R : SPONSOR_GENERIC_HIT_R;
     const kind = featured ? 'Featured Destination' : 'Sponsor';
     const { x, y } = projector.project(s.lat, s.lng);
-    pinsMarkup.push(`
+    (featured ? featuredPins : genericSponsorPins).push(`
       <g class="pin pin--sponsor-${featured ? 'featured' : 'generic'}" data-testid="sponsor-pin" data-sponsor-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="${kind}: ${esc(s.name)}">
-        <circle class="pin__hit" r="${hitR}"></circle>
-        <polygon class="pin__diamond" points="${diamondPoints(r)}"></polygon>
+        <g class="pin__scale">
+          <polygon class="pin__hit" points="${diamondPoints(hitR)}"></polygon>
+          <polygon class="pin__diamond" points="${diamondPoints(r)}"></polygon>
+        </g>
       </g>`);
   });
-  svg.insertAdjacentHTML('beforeend', pinsMarkup.join(''));
+  svg.insertAdjacentHTML(
+    'beforeend',
+    [...transitPins, ...featuredPins, ...genericSponsorPins, ...venuePins].join('')
+  );
+
+  // The "you are here" dot is created up front (idle, so invisible) rather
+  // than on first fix, for two reasons: it lands last in document order so it
+  // draws over every pin, and it exists before setupInteraction collects the
+  // nodes it counter-scales, so the dot holds a constant on-screen size like
+  // everything else instead of ballooning when zoomed in.
+  if (youAreHereEnabled) {
+    svg.insertAdjacentHTML(
+      'beforeend',
+      `<g class="you-are-here you-are-here--idle" data-testid="you-are-here">
+         <g class="pin__scale">
+           <circle class="you-are-here__pulse" r="192"></circle>
+           <circle class="you-are-here__core" r="71"></circle>
+         </g>
+       </g>`
+    );
+  }
 
   const transitById = new Map(transitStops.map((s) => [s.id, s]));
 
@@ -409,7 +524,15 @@ export async function renderMap(container, content) {
 
   const keyList = container.querySelector('#venue-key-list');
   keyList.innerHTML = venues
-    .map((v, i) => `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}"><span class="venue-key-btn__num">${i + 1}</span> ${esc(v.name)}</button></li>`)
+    // Diamond, not a circle: this numbered badge is the key to the map pins,
+    // so it should be the same shape as the thing it refers to (QA, 2026-08-09).
+    .map(
+      (v, i) => `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}">
+        <svg class="venue-key-btn__pin" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <polygon points="16,1 31,16 16,31 1,16"></polygon>
+          <text x="16" y="16">${i + 1}</text>
+        </svg>${esc(v.name)}</button></li>`
+    )
     .join('');
   keyList.querySelectorAll('.venue-key-btn').forEach((btn) => {
     btn.addEventListener('click', () => openVenueSheet(btn.dataset.venueId));
@@ -417,13 +540,9 @@ export async function renderMap(container, content) {
 
   const vb = svg.viewBox.baseVal;
   const full = { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
-  // The bbox is built symmetrically around Hamline Park (tools/make-map.mjs),
-  // so the SVG's own center is the festival's center; the home view is a
-  // square of HOME_VIEW_M around it. The frame's aspect ratio is fixed square
-  // in CSS, so no aspectRatio is set from the SVG here.
   const home = {
-    x: full.x + full.w / 2 - HOME_VIEW_M / 2,
-    y: full.y + full.h / 2 - HOME_VIEW_M / 2,
+    x: homeCenter.x - HOME_VIEW_M / 2,
+    y: homeCenter.y - HOME_VIEW_M / 2,
     w: HOME_VIEW_M,
     h: HOME_VIEW_M,
   };
@@ -446,16 +565,14 @@ export async function renderMap(container, content) {
           locateBtn.disabled = false;
           const { latitude, longitude } = pos.coords;
           const { x, y } = projector.project(latitude, longitude);
-          if (x < original.x || x > original.x + original.w || y < original.y || y > original.y + original.h) {
+          if (x < full.x || x > full.x + full.w || y < full.y || y > full.y + full.h) {
             showToast("You're outside the map area.");
             return;
           }
-          let dot = svg.querySelector('.you-are-here');
-          if (!dot) {
-            svg.insertAdjacentHTML('beforeend', `<g class="you-are-here"><circle class="you-are-here__pulse" r="192"></circle><circle class="you-are-here__core" r="71"></circle></g>`);
-            dot = svg.querySelector('.you-are-here');
-          }
+          const dot = svg.querySelector('.you-are-here');
+          if (!dot) return;
           dot.setAttribute('transform', `translate(${x} ${y})`);
+          dot.classList.remove('you-are-here--idle');
         },
         (err) => {
           locateBtn.disabled = false;

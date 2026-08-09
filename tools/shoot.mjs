@@ -79,8 +79,18 @@ const shots = [];
 try {
   await waitForServer(`http://localhost:${PORT}/index.html`);
   const browser = await chromium.launch();
+  // --geo 44.9585,-93.1645 mocks a position so the locate button can be
+  // exercised (pair it with --click '#locate-btn').
+  const geo = arg('geo', '');
+  const geoOpts = geo
+    ? (() => {
+        const [latitude, longitude] = geo.split(',').map(Number);
+        return { permissions: ['geolocation'], geolocation: { latitude, longitude } };
+      })()
+    : {};
+
   for (const name of viewportNames) {
-    const context = await browser.newContext(ALL_VIEWPORTS[name]);
+    const context = await browser.newContext({ ...ALL_VIEWPORTS[name], ...geoOpts });
     // Seed starred events so #/starred has something to show. addInitScript
     // runs before any page script, so the store sees them on first render.
     const stars = arg('stars', '');

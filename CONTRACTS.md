@@ -182,25 +182,50 @@ it has no `location`, and numbers when it does.
 
 - `site/assets/map.svg`: stylized-but-true-scale street map. `viewBox="0 0 W H"`
   where 1 SVG unit = 1 meter, plain local equirectangular projection
-  (x ∝ lng·cos(lat₀), y ∝ −lat). Bbox is centered on Hamline Park
-  (44.9599375, -93.1666875) and spans **6 miles east–west by 4 miles
-  north–south**: lng [-93.227980, -93.105395], lat [44.931024, 44.988851].
-  Streets drawn from real OSM centerlines. Two density tiers: residential
-  streets are drawn only inside a 2.4 × 1.8 mile **core** around the same
-  center; outside it only arterials, spines and motorways appear. Only
-  arterials and the two spines (Snelling, University) are labeled. Green Line
-  stations marked. No pins baked in — the UI overlays pins at runtime. Root
-  `<svg>` must have `id="circuit-map"`.
+  (x ∝ lng·cos(lat₀), y ∝ −lat). Extent: a **10-mile square centered on Hamline
+  Park** — lng [-93.268842, -93.064533], lat [44.887653, 45.032222]. Square and
+  generously margined on purpose: a way is fetched whenever it intersects the
+  bbox and Overpass returns its *whole* geometry, so a tight boundary left the
+  edges visibly torn (some features running past it, others stopping dead).
+- Base map is **neutral gray**. The only color in it is the Mississippi (a
+  faint blue-gray) and the two METRO light-rail lines; everything else is
+  reserved for the pins overlaid on top. Streets come from real OSM
+  centerlines, **arterials and above only** — residential and unclassified
+  streets are not fetched at all. No pins baked in — the UI overlays pins at
+  runtime. Root `<svg>` must have `id="circuit-map"`.
+- **Light rail comes from OSM route relations**, never from `railway=light_rail`
+  ways: the ways include maintenance yards and switching leads, which rendered
+  as a hatched blob next to the Franklin Avenue yard. Relations also identify
+  the line, so Green (`#2f7d4f`) and Blue (`#2b5fa8`) draw in their own colors,
+  as one thick solid stroke rather than two thin dashed ones (each direction is
+  a separate way, so thin dashes read as two railways).
+- **Level of detail.** Every map label carries a `lod0`–`lod3` class and the UI
+  sets `data-lod` on the root as the view widens, hiding anything above it.
+  Roughly: spines always; arterials one step in; repeats of the same street and
+  station names further in. Street names repeat about every 900 m. Without
+  this, a 10-mile view carried 400+ names.
 - **Home view vs. full extent.** The map never opens at the full extent. It
-  opens at, and resets to, a square ~3000 m "home view" centered on the SVG's
-  center; the full viewBox is only the limit for panning and zooming out.
-  Zoom-out stops when the square view reaches the map's shorter (north–south)
-  side — panning east–west covers the rest of the 6-mile width. The map frame
-  is a fixed square, capped at 560px wide, so its aspect ratio is deliberately
-  *not* the SVG's.
+  opens at, and resets to, a square ~3000 m "home view" centered on
+  `home_center` from the calibration file — Hamline Park, which is *not* the
+  middle of the viewBox. Zoom-out runs to the full width, so both downtowns can
+  be seen at once; past the point where the square view is taller than the map,
+  the map is centered and the frame background (which must match the SVG's own
+  paper fill) reads as margin above and below. The map frame is a fixed square
+  capped at 560px wide, so its aspect ratio is deliberately *not* the SVG's.
+- **Pins and map labels hold a constant on-screen size.** Both are authored at
+  home-view scale inside a `.pin__scale` / `.map-label__scale` group, which the
+  UI counter-scales by `view.w / 3000` on every zoom. Sizing them in fixed map
+  units instead made pins swallow the screen when zoomed in and street names
+  span a block.
+- Transit pins are limited to stops within **1.5 miles** of `home_center`. The
+  extent reaches both downtowns and `transit.json` carries 64 stops; pinning
+  all of them buried the festival. The Green Line's route is still drawn across
+  the full map, so the line remains legible without a pin at every station.
 - `site/assets/map-calibration.json`:
-  `{ "svg_viewbox": [0, 0, W, H], "control_points": [ { "lat": …, "lng": …, "x": …, "y": … }, … ] }`
-  — 3+ non-collinear points, exact under the projection used to draw the SVG.
+  `{ "svg_viewbox": [0, 0, W, H], "home_center": { "x": …, "y": … }, "control_points": [ { "lat": …, "lng": …, "x": …, "y": … }, … ] }`
+  — 3+ non-collinear control points, exact under the projection used to draw
+  the SVG. `home_center` is the festival's center in SVG coordinates (the UI
+  falls back to the viewBox center if it's absent).
 - `site/assets/transit.json` (committed source, not generated):
   `{ "stops": [ { "id": "…", "name": "…", "lines": ["green"|"a"|"b"], "lat": …, "lng": … }, … ] }`.
   One or more `lines` per stop (a stop can serve more than one route).
@@ -213,9 +238,22 @@ it has no `location`, and numbers when it does.
 
   | type | color | shape detail |
   |---|---|---|
-  | Venue | blue `#10577b` | diamond with the venue's number inside |
+  | Venue | blue `#10577b` | diamond with the venue's number inside; the largest pin |
   | Transit | green `#298d4e` | diamond with the line letter inside (`G`/`A`/`B`) |
-  | Sponsor | red `#a11f22` | diamond; filled+larger for "Featured Destination", outlined for generic "Sponsor" (exact visual distinction is the map agent's call) |
+  | Sponsor | red `#a11f22` | diamond; filled for "Featured Destination", outlined for generic "Sponsor" |
+
+  Diamonds are **unstroked** — no white keyline. Venue pins are the only
+  oversized symbol; transit, featured-destination and generic sponsor pins are
+  all the same size. The venue key list below the map repeats the venue pin's
+  diamond (not a circle), and the legend's venue swatch carries no number.
+  Hit targets are **diamonds too**, not circles — the tappable area is the
+  shape the user sees rather than a halo around it. They sit at ~1.26× the
+  pin's radius: a diamond has area 2r² against a circle's πr², so matching the
+  visible radius exactly would have cut the tappable area by ~36%. Well below
+  the ~1.7× circles they replaced, which swallowed taps meant for the map.
+
+  Where pins overlap, paint order is lowest-to-highest: transit, featured
+  destination, sponsor, venue.
 
   Vendor pins are removed from the map entirely (vendors moved to the
   `#/vendors` list view — see UI contract). Sponsor pins exist **only** for
@@ -246,8 +284,16 @@ CDNs, no analytics.
   "Support" is the existing `#/sponsors` route relabeled in the nav only —
   the route itself is unchanged. Verify the 6-tab bar still fits and reads at
   320px width.
-- `#/vendors`: list view of vendor name/type/description from the vendors
-  sheet (no map pins, no starring — vendors aren't events).
+- `#/vendors`: list view of vendor name/description from the vendors sheet,
+  grouped under a heading per type (no per-card type badge — it only repeated
+  the heading), no map pins, no starring (vendors aren't events).
+- Event rows are two columns: a text column (time, title, venue) beside a label
+  column (kind badge, ticket icon, age limit). The labels are a *sibling* of
+  the text, not a line above it — as a top line, a two-label stack pushed the
+  title and venue down, so rows misaligned against each other.
+- Event detail repeats the row's own symbols next to plain-language text —
+  ticket icon + `tickets` value, age badge + "Must be age N or older" — so the
+  glyph learned in the schedule is explained on the detail page.
 - `#/sponsors` ("Support" in the nav): a donate button/link at the top of the
   view, driven by `settings.donation_url`/`settings.donation_label`; renders
   nothing when `donation_url` is empty.

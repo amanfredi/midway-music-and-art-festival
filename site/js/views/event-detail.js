@@ -3,6 +3,15 @@ import { parseEventTimes, formatDayLabel, formatTime } from '../time.js';
 import { findVenue, isStarred, toggleStar } from '../store.js';
 import { navigate, getLastListRoute } from '../router.js';
 import { openVenueSheet } from './sheet.js';
+import { ticketIconHtml, ageBadgeHtml } from './event-row.js';
+
+// Age limits read as a sentence here rather than as a bare badge: the detail
+// view has room, and "21+" alone leaves a reader guessing whether it's a
+// minimum or a recommendation.
+const AGE_LIMIT_TEXT = {
+  '18+': 'Must be age 18 or older',
+  '21+': 'Must be age 21 or older',
+};
 
 export function renderEventDetail(container, content, eventId) {
   const event = content.events.find((e) => e.id === eventId);
@@ -26,7 +35,10 @@ export function renderEventDetail(container, content, eventId) {
       <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
       <h1 class="event-detail__title">${esc(event.title)}</h1>
       <p class="event-detail__time">${esc(formatDayLabel(start))} &middot; ${esc(formatTime(start))}&ndash;${esc(formatTime(end))}</p>
-      <p class="event-detail__tickets">${esc(event.tickets)}</p>
+      <p class="event-detail__fact">${ticketIconHtml(event.tickets)}<span>${esc(event.tickets)}</span></p>
+      ${AGE_LIMIT_TEXT[event.age_limit]
+        ? `<p class="event-detail__fact">${ageBadgeHtml(event.age_limit)}<span>${esc(AGE_LIMIT_TEXT[event.age_limit])}</span></p>`
+        : ''}
       <p class="event-detail__venue">
         ${venue ? `<button type="button" class="link-btn" id="venue-link">${esc(venue.name)}</button><br><span class="event-detail__address">${esc(venue.address)}</span>` : '<span>Venue TBA</span>'}
       </p>

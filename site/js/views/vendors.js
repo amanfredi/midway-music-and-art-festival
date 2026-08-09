@@ -9,11 +9,12 @@ import { esc } from '../util.js';
 const TYPE_LABELS = { food: 'Food', art: 'Art & Craft', retail: 'Retail' };
 const TYPE_ORDER = ['food', 'art', 'retail'];
 
+// No type badge on the card: the cards are already grouped under a heading
+// that names the type, so the badge only repeated it (QA, 2026-08-09).
 function vendorCardHtml(v) {
   return `
     <div class="vendor-card">
       <h3 class="vendor-card__name">${esc(v.name)}</h3>
-      <span class="badge badge--vendor-${esc(v.type)}">${esc(v.type)}</span>
       ${v.description ? `<p class="vendor-card__description">${esc(v.description)}</p>` : ''}
     </div>`;
 }

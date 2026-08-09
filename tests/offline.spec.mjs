@@ -48,11 +48,16 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   expect(venueCount).toBeGreaterThan(0);
   expect(await page.locator('[data-testid="venue-pin"]').count()).toBe(venueCount);
 
-  // one transit pin per stop in the committed transit.json (offline: served
-  // from precache) — asserted while still on the map view
+  // Transit pins are a *subset* of the committed transit.json (offline: served
+  // from precache): the map now spans both downtowns, so only stops within
+  // TRANSIT_PIN_RADIUS_M of the festival get a pin. Asserted while still on
+  // the map view. What matters offline is that the file was cached and pins
+  // rendered from it — not the exact count.
   const transitStopCount = await page.evaluate(async () => (await (await fetch('assets/transit.json')).json()).stops.length);
   expect(transitStopCount).toBeGreaterThan(0);
-  expect(await page.locator('[data-testid="transit-pin"]').count()).toBe(transitStopCount);
+  const transitPinCount = await page.locator('[data-testid="transit-pin"]').count();
+  expect(transitPinCount).toBeGreaterThan(0);
+  expect(transitPinCount).toBeLessThanOrEqual(transitStopCount);
 
   // vendors render offline
   await page.goto('/' + T + '#/vendors');

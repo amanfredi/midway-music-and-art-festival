@@ -372,12 +372,20 @@ img {
   gap: 0.5rem;
 }
 
+/* Two columns: the text column (time, title, venue) and the label column.
+   They are siblings rather than the labels living on a "top line" above the
+   title, because a label *stack* on a top line pushed the title and venue
+   down by however tall the stack happened to be — so rows with two labels had
+   their titles sitting a line lower than rows with one (QA, 2026-08-09).
+   Side by side, the text column starts at the same place regardless of how
+   many labels the event carries. */
 .event-row__link {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
   background: var(--color-surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
@@ -387,18 +395,12 @@ img {
   min-height: 44px;
 }
 
-/* Time + kind badge/ticket icon share a top line (space-between) so the
-   title below gets the link's *full* width. A 3-column grid (time | title |
-   badge), matching the row's pre-star-button layout, measured out to a
-   ~78px title column on a 390px viewport once the sibling star button's
-   44px + gap came out of the budget — not enough room for titles like
-   "Community Garden Tour" without mid-word wraps. Stacking instead gives
-   the title the whole card width. -- */
-.event-row__top {
+.event-row__body {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .event-row__time {
@@ -415,12 +417,6 @@ img {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #a05f00; /* darker than --color-accent-dark: small text needs 4.5:1 on the white card */
-}
-
-.event-row__main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }
 
 .event-row__title {
@@ -549,10 +545,17 @@ img {
   font-weight: 600;
 }
 
-.event-detail__tickets {
+/* One fact per line, each led by the same icon or badge the list rows use, so
+   the symbol a person learned in the schedule is the one that explains itself
+   here (QA, 2026-08-09). */
+.event-detail__fact {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
   color: var(--color-text-muted);
   font-size: 0.9rem;
   font-weight: 600;
+  margin-bottom: 0.35rem;
 }
 
 .event-detail__venue {
@@ -751,7 +754,17 @@ img {
   width: 100%;
   aspect-ratio: 1 / 1;
   touch-action: none;
-  background: #f4ecd8;
+  /* The map is a drag surface, so a drag must pan it — not sweep a text
+     selection across every street name it crosses (QA, 2026-08-09). Scoped to
+     the map itself: the legend, attribution and venue list below stay
+     selectable. -webkit- prefix for Safari, which still needs it. */
+  user-select: none;
+  -webkit-user-select: none;
+  /* Must match the map SVG's own paper fill (PAPER in tools/make-map.mjs).
+     The map is wider than it is tall, so at full zoom-out the square frame
+     shows this above and below it — matching colors make that read as margin
+     rather than as the map having fallen off its background. */
+  background: #eeeeec;
 }
 
 .map-svg-wrap svg {
@@ -835,14 +848,6 @@ img {
   fill: var(--pin-venue);
 }
 
-.legend-icon--venue text {
-  fill: #fff;
-  font-family: -apple-system, sans-serif;
-  font-weight: 700;
-  font-size: 15px;
-  text-anchor: middle;
-}
-
 .legend-icon--transit polygon {
   fill: var(--pin-transit);
   /* No letter here (unlike the real pins): a single example letter would
@@ -892,18 +897,23 @@ img {
   text-align: left;
 }
 
-.venue-key-btn__num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
+/* Diamond, matching the map pin it keys to — see map.js. */
+.venue-key-btn__pin {
+  width: 28px;
+  height: 28px;
   flex: none;
+}
+
+.venue-key-btn__pin polygon {
+  fill: var(--pin-venue);
+}
+
+.venue-key-btn__pin text {
+  fill: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
 }
 
 /* pins live inside the inlined map SVG; coordinates are in map units
@@ -914,18 +924,31 @@ img {
 /* pointer-events: all so the (necessarily transparent) larger hit target is
    still tappable — a transparent SVG fill alone is not reliably hit-tested. */
 .pin__hit { fill: transparent; pointer-events: all; }
-/* Stroke and glyph sizes below are in map units too, and were rescaled with
-   the pin radii in map.js when the map extent grew (QA, 2026-08-08). They keep
-   the same proportions to the diamond as before, so the pins look identical —
-   just larger on screen. */
-.pin__diamond { stroke: #fff; stroke-width: 16; }
+/* Glyph sizes below are in map units. Diamonds are unstroked: the white
+   keyline read as a halo around the symbol rather than part of it, and it is
+   no longer needed to separate pins from the map now that the base map is
+   grayscale (QA, 2026-08-09). Generic sponsor pins re-add a stroke below,
+   where the outline *is* the symbol. */
+.pin__diamond { stroke: none; }
 /* White glyph text on any of the three brand fills clears WCAG AA's 3:1
    large-text threshold (glyphs are bold and 30px+ -- well above the 18.66px
    bold/24px regular cutoff); transit green is the tightest at ~4.2:1 white-
    on-fill, still short of the 4.5:1 *small*-text threshold, which is why
-   there's no glyph text this size anywhere it isn't bold+large. */
-.pin__label { fill: #fff; font-family: -apple-system, sans-serif; font-weight: 700; font-size: 120px; text-anchor: middle; }
-.pin__label--stacked { font-size: 82px; }
+   there's no glyph text this size anywhere it isn't bold+large.
+   dominant-baseline replaces the old dy="0.35em" on each <text>: one less
+   font-relative length for a rendering engine to disagree about. */
+.pin__label {
+  fill: #fff;
+  font-family: -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 105px;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+/* Transit letters sit in the smaller diamond, so they get their own size —
+   at the shared size the wider caps touched or overran the diamond edge. */
+.pin--transit .pin__label { font-size: 88px; }
+.pin__label--stacked { font-size: 64px; }
 
 .pin--venue .pin__diamond { fill: var(--pin-venue); }
 .pin--transit .pin__diamond { fill: var(--pin-transit); }
@@ -934,6 +957,8 @@ img {
    the featured/generic visual distinction called for in CONTRACTS.md. */
 .pin--sponsor-generic .pin__diamond { fill: var(--color-surface); stroke: var(--pin-sponsor); stroke-width: 27; }
 
+/* Present from first render but not shown until a fix arrives — see map.js. */
+.you-are-here--idle { display: none; }
 .you-are-here__core { fill: #2f6fa0; stroke: #fff; stroke-width: 16; }
 .you-are-here__pulse {
   fill: rgba(47, 111, 160, 0.35);

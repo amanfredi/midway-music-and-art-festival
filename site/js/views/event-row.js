@@ -19,7 +19,7 @@ const TICKET_ICONS = {
   'Paid Ticket Required': { id: 'icon-ticket-paid', label: 'Paid ticket required' },
 };
 
-function ticketIconHtml(tickets) {
+export function ticketIconHtml(tickets) {
   const info = TICKET_ICONS[tickets];
   if (!info) return '';
   return `<svg class="ticket-icon" role="img" aria-label="${esc(info.label)}" focusable="false"><use href="#${info.id}"></use></svg>`;
@@ -28,7 +28,7 @@ function ticketIconHtml(tickets) {
 // events.csv `age_limit` is blank for the overwhelming majority of events;
 // only "18+"/"21+" render. Announced as a phrase rather than leaving a screen
 // reader to interpret "21+".
-function ageBadgeHtml(ageLimit) {
+export function ageBadgeHtml(ageLimit) {
   if (ageLimit !== '18+' && ageLimit !== '21+') return '';
   const years = ageLimit.slice(0, 2);
   return `<span class="badge badge--age" role="img" aria-label="Ages ${years} and up">${esc(ageLimit)}</span>`;
@@ -47,17 +47,15 @@ export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null
   return `
     <div class="event-row" data-testid="event-row">
       <a class="event-row__link" href="#/event/${esc(event.id)}">
-        <span class="event-row__top">
+        <span class="event-row__body">
           <span class="event-row__time">${dayPrefix}${esc(formatTime(start))}&ndash;${esc(formatTime(end))}</span>
-          <span class="event-row__meta">
-            <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
-            ${ticketIconHtml(event.tickets)}
-            ${ageBadgeHtml(event.age_limit)}
-          </span>
-        </span>
-        <span class="event-row__main">
           <span class="event-row__title">${title}</span>
           ${showVenue && venue ? `<span class="event-row__venue">${esc(venue.name)}</span>` : ''}
+        </span>
+        <span class="event-row__meta">
+          <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
+          ${ticketIconHtml(event.tickets)}
+          ${ageBadgeHtml(event.age_limit)}
         </span>
       </a>
       <button

@@ -2,11 +2,276 @@
   "version": 0.6,
   "generator": "Overpass API 0.7.62.11 87bfad18",
   "osm3s": {
-    "timestamp_osm_base": "2026-08-09T00:35:47Z",
+    "timestamp_osm_base": "2026-08-09T03:31:24Z",
     "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
   },
   "elements": [
 
+{
+  "type": "node",
+  "id": 1819181065,
+  "lat": 44.9749861,
+  "lon": -93.2598737,
+  "tags": {
+    "light_rail": "yes",
+    "name": "US Bank Stadium",
+    "name:en": "US Bank Stadium",
+    "name:zh": "美国银行运动场",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "old_name": "Downtown East",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5303423",
+    "wikipedia": "en:U.S. Bank Stadium station"
+  }
+},
+{
+  "type": "node",
+  "id": 1819181070,
+  "lat": 44.9768155,
+  "lon": -93.2658495,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Government Plaza",
+    "name:en": "Government Plaza",
+    "name:zh": "政府广场",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5589035",
+    "wikipedia": "en:Government Plaza station"
+  }
+},
+{
+  "type": "node",
+  "id": 1819182327,
+  "lat": 44.9683955,
+  "lon": -93.2510323,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Cedar-Riverside",
+    "name:en": "Cedar-Riverside",
+    "name:zh": "雪松-河滨",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5056564",
+    "wikipedia": "en:Cedar–Riverside station"
+  }
+},
+{
+  "type": "node",
+  "id": 1819182328,
+  "lat": 44.9625301,
+  "lon": -93.2470061,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Franklin Avenue",
+    "name:en": "Franklin Avenue",
+    "name:zh": "富兰克林大道",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5491262",
+    "wikipedia": "en:Franklin Avenue station (Metro Transit)"
+  }
+},
+{
+  "type": "node",
+  "id": 1819190084,
+  "lat": 44.8931640,
+  "lon": -93.1981070,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Fort Snelling",
+    "name:en": "Fort Snelling",
+    "name:zh": "斯内灵堡",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wikidata": "Q5472059",
+    "wikipedia": "en:Fort Snelling station"
+  }
+},
+{
+  "type": "node",
+  "id": 1819190085,
+  "lat": 44.9483483,
+  "lon": -93.2388449,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Lake Street/Midtown",
+    "name:en": "Lake Street/Midtown",
+    "name:zh": "湖街/中城",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q6477857",
+    "wikipedia": "en:Lake Street/Midtown station"
+  }
+},
+{
+  "type": "node",
+  "id": 1819190087,
+  "lat": 44.9028805,
+  "lon": -93.2023157,
+  "tags": {
+    "light_rail": "yes",
+    "name": "VA Medical Center",
+    "name:en": "VA Medical Center",
+    "name:zh": "退伍军人医疗中心",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7906570",
+    "wikipedia": "en:VA Medical Center station (Metro Transit)"
+  }
+},
+{
+  "type": "node",
+  "id": 1819190088,
+  "lat": 44.9346222,
+  "lon": -93.2294240,
+  "tags": {
+    "light_rail": "yes",
+    "name": "38th Street",
+    "name:en": "38th Street",
+    "name:zh": "38街",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q4636047",
+    "wikipedia": "en:38th Street station (Metro Transit)"
+  }
+},
+{
+  "type": "node",
+  "id": 1819190089,
+  "lat": 44.9207482,
+  "lon": -93.2198839,
+  "tags": {
+    "light_rail": "yes",
+    "name": "46th Street",
+    "name:en": "46th Street",
+    "name:zh": "46街",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q4638400",
+    "wikipedia": "en:46th Street station (Metro Transit)"
+  }
+},
+{
+  "type": "node",
+  "id": 1819190090,
+  "lat": 44.9122824,
+  "lon": -93.2099905,
+  "tags": {
+    "light_rail": "yes",
+    "name": "50th Street/Minnehaha Park",
+    "name:en": "50th Street/Minnehaha Park",
+    "name:zh": "50街/明尼哈哈公园",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "start_date": "2004-06-26",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q4639970",
+    "wikipedia": "en:50th Street/Minnehaha Park station"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631271,
+  "lat": 44.9557251,
+  "lon": -93.1051011,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Capitol/Rice Street",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5035831"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631272,
+  "lat": 44.9461853,
+  "lon": -93.0922402,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Central Station",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5060238"
+  }
+},
 {
   "type": "node",
   "id": 2913631273,
@@ -127,6 +392,45 @@
 },
 {
   "type": "node",
+  "id": 2913631279,
+  "lat": 44.9540171,
+  "lon": -93.0974771,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Robert Street",
+    "name:etymology:wikidata": "Q16875099",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7350121"
+  }
+},
+{
+  "type": "node",
+  "id": 2913631281,
+  "lat": 44.9736726,
+  "lon": -93.2310986,
+  "tags": {
+    "light_rail": "yes",
+    "name": "East Bank",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q5327783"
+  }
+},
+{
+  "type": "node",
   "id": 2913631282,
   "lat": 44.9747673,
   "lon": -93.2228415,
@@ -208,6 +512,26 @@
 },
 {
   "type": "node",
+  "id": 2913631290,
+  "lat": 44.9506026,
+  "lon": -93.0975125,
+  "tags": {
+    "light_rail": "yes",
+    "name": "10th Street",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q4547160",
+    "wikipedia": "en:10th Street station (Metro Transit)"
+  }
+},
+{
+  "type": "node",
   "id": 4065219555,
   "lat": 44.9556870,
   "lon": -93.1670158,
@@ -223,6 +547,46 @@
     "station": "light_rail",
     "wheelchair": "yes",
     "wikidata": "Q7547646"
+  }
+},
+{
+  "type": "node",
+  "id": 4254534424,
+  "lat": 44.9719278,
+  "lon": -93.2463486,
+  "tags": {
+    "light_rail": "yes",
+    "name": "West Bank",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q7984379",
+    "wikipedia": "en:West Bank station"
+  }
+},
+{
+  "type": "node",
+  "id": 4305375753,
+  "lat": 44.9482106,
+  "lon": -93.0867360,
+  "tags": {
+    "light_rail": "yes",
+    "name": "Union Depot",
+    "network": "Metro Transit",
+    "network:wikidata": "Q3307442",
+    "operator": "Metro Transit",
+    "operator:wikidata": "Q3307442",
+    "public_transport": "station",
+    "railway": "station",
+    "station": "light_rail",
+    "wheelchair": "yes",
+    "wikidata": "Q1587587",
+    "wikipedia": "en:Saint Paul Union Depot"
   }
 },
 {

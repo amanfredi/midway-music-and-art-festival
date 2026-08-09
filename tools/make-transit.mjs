@@ -31,10 +31,9 @@ const CACHE_PATH = path.join(__dirname, 'osm-transit-cache.json');
 const TRANSIT_OUT = path.join(ROOT, 'site/assets/transit.json');
 
 // Must match CONTRACTS.md's Map + geo contract bbox and tools/make-map.mjs's
-// BBOX exactly -- this is the same map, just a different data layer. Derived
-// the same way there: Hamline Park +/- 3 miles east-west, +/- 2 miles
-// north-south (QA, 2026-08-08).
-const BBOX = { south: 44.931024, west: -93.22798, north: 44.988851, east: -93.105395 };
+// BBOX exactly -- this is the same map, just a different data layer.
+// A 10-mile square centered on Hamline Park (QA, 2026-08-09).
+const BBOX = { south: 44.887653, west: -93.268842, north: 45.032222, east: -93.064533 };
 
 // ---------------------------------------------------------------------------
 // Overpass query: Green Line LRT stations (single node per station, already

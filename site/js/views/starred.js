@@ -5,8 +5,8 @@ import { installButtonHtml, bindInstallButton, onInstallStateChange } from '../p
 
 // How long an un-starred row lingers, dimmed, before it actually leaves the
 // list. Long enough to notice a mis-tap and undo it, short enough that the
-// list still reads as "currently starred" (QA, 2026-08-08).
-const UNDO_GRACE_MS = 6000;
+// list still reads as "currently starred" (QA, 2026-08-09).
+const UNDO_GRACE_MS = 3000;
 
 // Deliberately not iOS-specific: this view renders on Android and desktop too,
 // and eviction-after-disuse is a general browser storage behavior rather than

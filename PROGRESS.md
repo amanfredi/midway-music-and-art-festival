@@ -40,27 +40,59 @@ Google Sheet creation when real content exists, Aug 8–9 organizer demo.
   artwork — a hand-drawn map is still on the table, and `geo.js` was built so
   that swapping artwork means new control points only.
 
+### Open items from the 2026-08-09 QA round
+
+- [] **Overlapping venue pins.** With 14 venues (and several within ~15 m of
+  each other) pins stack and the one underneath is unreachable. Paint order is
+  now defined (transit → featured → sponsor → venue), but that only decides
+  *which* pin wins, not how to reach the loser. Needs an offset or
+  cluster-and-expand-on-zoom treatment. The venue key list below the map is the
+  workaround in the meantime.
+- [] **Transit letter missing on iOS.** Selby & Dale rendered without its "B"
+  on iPhone while showing correctly in macOS Safari. Overlap was ruled out
+  (nearest pin 652 m away). The `<text>` markup has since been hardened —
+  explicit `x`/`y`, `dominant-baseline` instead of an em-relative `dy`, and
+  fixed offsets instead of em units for stacked letters — but the cause was
+  never reproduced, and that stop now falls outside the 1.5-mile pin radius so
+  it no longer renders at all. Re-check on iOS.
+- [] **Street labels at deep zoom.** Labels are placed once for the whole map
+  with collision detection, then counter-scaled, and hidden by level of detail
+  as the view widens. Placement is still not zoom-*dependent* — the positions
+  are fixed — so a close view can land between labels. A real map engine
+  re-places labels per zoom; see the MapLibre note below.
+
 ### Open decisions from the 2026-08-08 QA round (Anthony's call)
 
 Shipped as-is; each is a deliberate default that can be changed cheaply.
 
-- [] **Transit pin density.** Widening the map bbox took transit pins from 10
-  to 34, out as far as Stadium Village and Selby & Arundel. They're accurate,
-  but far more than the one stop (Raymond Ave) that was actually requested.
-  Keep the full set as context, or filter to a radius around the core?
-  One-line change in `map.js` where `transitStops` is filtered.
-- [] **Zoom-out limit.** Zoom-out currently stops when the square view reaches
-  the map's north–south extent, so ~4 of the 6 miles are visible at once and
-  you pan east–west for the rest (`maxViewW` in `map.js#setupInteraction`).
-  The alternative shows the full 6-mile width with empty bands top and bottom,
-  which reads as broken. Panning was chosen; revisit if it feels cramped.
-- [] **`map.svg` weight.** 197KB → 507KB, all of it precached for offline. The
-  core/sparse-surround split already avoided the naive ~1.3MB. If this matters,
-  the next lever is the `simplify()` tolerance in `tools/make-map.mjs` (currently
-  2 m), which trades geometry fidelity for bytes.
-- [] Minor: the OSM station dots and names baked into `map.svg` now sit
-  underneath the much larger transit pins — mild visual redundancy. Either
-  suppress the baked dots in `make-map.mjs` or leave them as a zoomed-in detail.
+- RESOLVED 2026-08-09: **transit pin density** — pins are now limited to stops
+  within 1.5 miles of the festival (15 of 64), which still includes Raymond
+  Avenue. `TRANSIT_PIN_RADIUS_M` in `map.js`.
+- RESOLVED 2026-08-09: **zoom-out limit** — zoom-out now runs to the map's full
+  width so both downtowns are visible at once; the square frame letterboxes
+  with a background matching the map's paper color.
+- [] **`map.svg` weight.** Now **1.87 MB raw / ~690 KB gzipped** at the 10-mile
+  square, all precached for offline. Raising `simplify()` from 2 m to 4 m was
+  measured and only saved 19 KB gzipped, so it was reverted — the size is in
+  the sheer number of ways, not in per-way precision. The real levers left are
+  a smaller extent or dropping `tertiary` from the fetched highway tags.
+  Related: **whether to keep hand-rolling the renderer at all** — see the
+  MapLibre/Leaflet note below.
+- [] **Map library (MapLibre GL JS / Leaflet)?** Raised 2026-08-09. Current
+  answer: not yet. DEFINITION.md lists "no map engine" as a non-goal and
+  zero-runtime-dependency/offline as the point; MapLibre needs WebGL (fails in
+  iOS Lockdown Mode and on low-end phones, where a static SVG always works) and
+  adds ~230 KB gzipped; Leaflet is a worse fit still, since offline raster
+  tiles for this area run to tens of MB. But zoom-dependent labelling, feature
+  filtering by zoom and label collision are exactly what a real engine gives
+  for free, and this round hand-rolled all three. Revisit after the festival if
+  street-level navigation becomes a first-class feature rather than
+  orientation; that decision should also settle the commissioned hand-drawn
+  map, which the current georeferencing design (geo.js + control points) is
+  built to support and a vector engine would complicate.
+- [] Minor: the OSM station dots and names baked into `map.svg` sit underneath
+  the transit pins — mild visual redundancy. Either suppress the baked dots in
+  `make-map.mjs` or leave them as a zoomed-in detail.
 
 ### Needs a real device (can't be checked from the harness)
 

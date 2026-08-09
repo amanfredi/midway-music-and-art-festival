@@ -1,6 +1,125 @@
 {
   "stops": [
     {
+      "id": "10th-street",
+      "name": "10th Street",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.950603,
+      "lng": -93.097512
+    },
+    {
+      "id": "38th-street",
+      "name": "38th Street",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.934622,
+      "lng": -93.229424
+    },
+    {
+      "id": "46th-st-station-and-gate-a",
+      "name": "46th St Station & Gate A",
+      "lines": [
+        "green",
+        "a"
+      ],
+      "lat": 44.921043,
+      "lng": -93.220209
+    },
+    {
+      "id": "46th-street-and-46th-avenue",
+      "name": "46th Street & 46th Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.919741,
+      "lng": -93.207988
+    },
+    {
+      "id": "46th-street-and-minnehaha-avenue",
+      "name": "46th Street & Minnehaha Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.919691,
+      "lng": -93.215219
+    },
+    {
+      "id": "50th-street-minnehaha-park",
+      "name": "50th Street/Minnehaha Park",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.912282,
+      "lng": -93.20999
+    },
+    {
+      "id": "5th-street-and-cedar-station",
+      "name": "5th Street & Cedar Station",
+      "lines": [
+        "green",
+        "b"
+      ],
+      "lat": 44.946333,
+      "lng": -93.092429
+    },
+    {
+      "id": "5th-street-and-robert-station",
+      "name": "5th Street & Robert Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.947516,
+      "lng": -93.09052
+    },
+    {
+      "id": "6th-street-and-jackson-station",
+      "name": "6th Street & Jackson Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948805,
+      "lng": -93.090571
+    },
+    {
+      "id": "6th-street-and-minnesota-station",
+      "name": "6th Street & Minnesota Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.947472,
+      "lng": -93.093357
+    },
+    {
+      "id": "6th-street-and-washington-station",
+      "name": "6th Street & Washington Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.946168,
+      "lng": -93.097266
+    },
+    {
+      "id": "capitol-rice-street",
+      "name": "Capitol/Rice Street",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.955725,
+      "lng": -93.105101
+    },
+    {
+      "id": "cedar-riverside",
+      "name": "Cedar-Riverside",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.968396,
+      "lng": -93.251032
+    },
+    {
       "id": "dale-street",
       "name": "Dale Street",
       "lines": [
@@ -10,6 +129,15 @@
       "lng": -93.126309
     },
     {
+      "id": "east-bank",
+      "name": "East Bank",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.973673,
+      "lng": -93.231099
+    },
+    {
       "id": "fairview-avenue",
       "name": "Fairview Avenue",
       "lines": [
@@ -17,6 +145,87 @@
       ],
       "lat": 44.956418,
       "lng": -93.178769
+    },
+    {
+      "id": "ford-and-finn-station",
+      "name": "Ford & Finn Station",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.918025,
+      "lng": -93.190298
+    },
+    {
+      "id": "ford-and-woodlawn-station",
+      "name": "Ford & Woodlawn Station",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.917902,
+      "lng": -93.196364
+    },
+    {
+      "id": "ford-parkway-and-fairview-avenue",
+      "name": "Ford Parkway & Fairview Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.917968,
+      "lng": -93.177206
+    },
+    {
+      "id": "ford-parkway-and-finn-street",
+      "name": "Ford Parkway & Finn Street",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.917827,
+      "lng": -93.188999
+    },
+    {
+      "id": "ford-parkway-and-kenneth-street",
+      "name": "Ford Parkway & Kenneth Street",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.917926,
+      "lng": -93.184859
+    },
+    {
+      "id": "fort-snelling",
+      "name": "Fort Snelling",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.893164,
+      "lng": -93.198107
+    },
+    {
+      "id": "franklin-avenue",
+      "name": "Franklin Avenue",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.96253,
+      "lng": -93.247006
+    },
+    {
+      "id": "gate-a",
+      "name": "Gate A",
+      "lines": [
+        "a"
+      ],
+      "lat": 45.01262,
+      "lng": -93.168539
+    },
+    {
+      "id": "government-plaza",
+      "name": "Government Plaza",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.976816,
+      "lng": -93.265849
     },
     {
       "id": "hamline-avenue",
@@ -62,6 +271,52 @@
       ],
       "lat": 44.948357,
       "lng": -93.209897
+    },
+    {
+      "id": "lake-and-bloomington-station",
+      "name": "Lake & Bloomington Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948371,
+      "lng": -93.25248
+    },
+    {
+      "id": "lake-and-cedar-station",
+      "name": "Lake & Cedar Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948463,
+      "lng": -93.247674
+    },
+    {
+      "id": "lake-and-chicago-station",
+      "name": "Lake & Chicago Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948361,
+      "lng": -93.263075
+    },
+    {
+      "id": "lake-and-minnehaha-station",
+      "name": "Lake & Minnehaha Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.948384,
+      "lng": -93.233848
+    },
+    {
+      "id": "lake-street-midtown-station",
+      "name": "Lake Street / Midtown Station",
+      "lines": [
+        "green",
+        "b"
+      ],
+      "lat": 44.948367,
+      "lng": -93.239185
     },
     {
       "id": "lexington-parkway",
@@ -127,6 +382,24 @@
       "lng": -93.195472
     },
     {
+      "id": "rice-park-station",
+      "name": "Rice Park Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.945072,
+      "lng": -93.096957
+    },
+    {
+      "id": "robert-street",
+      "name": "Robert Street",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.954017,
+      "lng": -93.097477
+    },
+    {
       "id": "selby-and-arundel-station",
       "name": "Selby & Arundel Station",
       "lines": [
@@ -181,6 +454,15 @@
       "lng": -93.11592
     },
     {
+      "id": "smith-and-kellogg-station",
+      "name": "Smith & Kellogg Station",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.945991,
+      "lng": -93.103051
+    },
+    {
       "id": "snelling-and-como-station",
       "name": "Snelling & Como Station",
       "lines": [
@@ -209,6 +491,24 @@
       "lng": -93.166494
     },
     {
+      "id": "snelling-avenue-and-county-road-b",
+      "name": "Snelling Avenue & County Road B",
+      "lines": [
+        "a"
+      ],
+      "lat": 45.004478,
+      "lng": -93.16621
+    },
+    {
+      "id": "snelling-avenue-and-county-road-b",
+      "name": "Snelling Avenue & County Road B",
+      "lines": [
+        "a"
+      ],
+      "lat": 45.005814,
+      "lng": -93.166717
+    },
+    {
       "id": "snelling-avenue-and-grand-avenue",
       "name": "Snelling Avenue & Grand Avenue",
       "lines": [
@@ -227,6 +527,15 @@
       "lng": -93.167066
     },
     {
+      "id": "snelling-avenue-and-highland-parkway",
+      "name": "Snelling Avenue & Highland Parkway",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.919996,
+      "lng": -93.167043
+    },
+    {
       "id": "snelling-avenue-and-hoyt-avenue",
       "name": "Snelling Avenue & Hoyt Avenue",
       "lines": [
@@ -234,6 +543,24 @@
       ],
       "lat": 44.987898,
       "lng": -93.167177
+    },
+    {
+      "id": "snelling-avenue-and-larpenteur-avenue",
+      "name": "Snelling Avenue & Larpenteur Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.991325,
+      "lng": -93.166897
+    },
+    {
+      "id": "snelling-avenue-and-larpenteur-avenue",
+      "name": "Snelling Avenue & Larpenteur Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.99217,
+      "lng": -93.166402
     },
     {
       "id": "snelling-avenue-and-minnehaha-avenue",
@@ -252,6 +579,15 @@
       ],
       "lat": 44.986104,
       "lng": -93.16684
+    },
+    {
+      "id": "snelling-avenue-and-randolph-avenue",
+      "name": "Snelling Avenue & Randolph Avenue",
+      "lines": [
+        "a"
+      ],
+      "lat": 44.92699,
+      "lng": -93.167047
     },
     {
       "id": "snelling-avenue-and-saint-clair-avenue",
@@ -282,6 +618,43 @@
       "lng": -93.222841
     },
     {
+      "id": "union-depot-and-wacouta-station",
+      "name": "Union Depot & Wacouta Station",
+      "lines": [
+        "green",
+        "b"
+      ],
+      "lat": 44.948338,
+      "lng": -93.086903
+    },
+    {
+      "id": "union-depot-station-and-terminal",
+      "name": "Union Depot Station & Terminal",
+      "lines": [
+        "b"
+      ],
+      "lat": 44.947242,
+      "lng": -93.085318
+    },
+    {
+      "id": "us-bank-stadium",
+      "name": "US Bank Stadium",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.974986,
+      "lng": -93.259874
+    },
+    {
+      "id": "va-medical-center",
+      "name": "VA Medical Center",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.902881,
+      "lng": -93.202316
+    },
+    {
       "id": "victoria-street",
       "name": "Victoria Street",
       "lines": [
@@ -289,6 +662,15 @@
       ],
       "lat": 44.95574,
       "lng": -93.136498
+    },
+    {
+      "id": "west-bank",
+      "name": "West Bank",
+      "lines": [
+        "green"
+      ],
+      "lat": 44.971928,
+      "lng": -93.246349
     },
     {
       "id": "western-avenue",

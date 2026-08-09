@@ -40,9 +40,18 @@ test('Snelling & University intersection projects inside the viewBox and matches
   // Independently recompute via the raw equirectangular formula the
   // calibration's bbox-corner control points were themselves derived from,
   // so this checks the fitted transform against ground truth, not itself.
-  // Must match tools/make-map.mjs BBOX and CONTRACTS.md's Map + geo contract:
-  // Hamline Park +/- 3 miles east-west, +/- 2 miles north-south.
-  const BBOX = { south: 44.931024, west: -93.22798, north: 44.988851, east: -93.105395 };
+  //
+  // The bbox is derived from the control points rather than restated here: a
+  // hardcoded copy silently became wrong every time the map extent changed,
+  // which is a test that fails for the wrong reason. Reading the corners keeps
+  // the check independent of geo.js's least-squares fit -- the arithmetic
+  // below is the projection formula, not the thing under test.
+  const BBOX = {
+    south: Math.min(...controlPoints.map((p) => p.lat)),
+    north: Math.max(...controlPoints.map((p) => p.lat)),
+    west: Math.min(...controlPoints.map((p) => p.lng)),
+    east: Math.max(...controlPoints.map((p) => p.lng)),
+  };
   const lat0 = (BBOX.south + BBOX.north) / 2;
   const mPerDegLat = 111320;
   const mPerDegLng = mPerDegLat * Math.cos((lat0 * Math.PI) / 180);

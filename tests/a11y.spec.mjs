@@ -61,6 +61,90 @@ test('a transit pin opens a sheet naming the lines that serve the stop', async (
   await expect(pin).toBeFocused();
 });
 
+test('a pin\'s tappable area is the diamond itself, not a circle or box around it', async ({ page }) => {
+  await page.goto('/' + T + '#/map');
+  await expect(page.locator('#circuit-map')).toBeVisible();
+
+  const pin = page.locator('[data-testid="venue-pin"]').first();
+  const box = await pin.boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  // Half-width of the pin's bounding box == the diamond's half-diagonal.
+  const r = box.width / 2;
+
+  // Dead centre opens the sheet.
+  await page.mouse.click(cx, cy);
+  await expect(page.locator('.sheet[role="dialog"]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.sheet[role="dialog"]')).toBeHidden();
+
+  // A point on the 45° diagonal at 0.85r from centre: inside the old circular
+  // hit area (which reached r in every direction), outside the diamond (whose
+  // edge is only r/√2 ≈ 0.707r away diagonally). Nothing should open.
+  const diag = (0.85 * r) / Math.SQRT2;
+  await page.mouse.click(cx + diag, cy - diag);
+  await expect(page.locator('.sheet[role="dialog"]')).toBeHidden();
+});
+
+test('dragging the map pans it without sweeping a text selection across the labels', async ({ page }) => {
+  await page.goto('/' + T + '#/map');
+  const svg = page.locator('#circuit-map');
+  await expect(svg).toBeVisible();
+
+  const box = await svg.boundingBox();
+  const startX = box.x + box.width * 0.7;
+  const startY = box.y + box.height * 0.7;
+
+  const before = await svg.getAttribute('viewBox');
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Several steps so the browser sees a real drag, not a jump.
+  await page.mouse.move(startX - 120, startY - 90, { steps: 12 });
+  await page.mouse.up();
+
+  // It panned...
+  expect(await svg.getAttribute('viewBox')).not.toBe(before);
+  // ...and selected nothing on the way.
+  expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
+});
+
+// Regression: this silently stopped working when a variable was renamed during
+// a map rework. The failure was a ReferenceError inside the geolocation success
+// callback, so nothing rendered and nothing obvious surfaced — exactly the kind
+// of break a screenshot pass can't catch, since the button is never pressed.
+test('the locate button drops a "you are here" dot at the reported position', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 44.9599, longitude: -93.1667 }); // Hamline Park
+
+  await page.goto('/' + T + '#/map');
+  await expect(page.locator('#circuit-map')).toBeVisible();
+
+  const dot = page.locator('[data-testid="you-are-here"]');
+  await expect(dot).toBeHidden();
+
+  await page.click('#locate-btn');
+  await expect(dot).toBeVisible();
+
+  // Positioned at the festival center, which is where the home view is centered.
+  const transform = await dot.getAttribute('transform');
+  const [x, y] = transform.match(/-?[\d.]+/g).map(Number);
+  const home = await page.evaluate(async () => (await (await fetch('assets/map-calibration.json')).json()).home_center);
+  expect(Math.abs(x - home.x)).toBeLessThan(50);
+  expect(Math.abs(y - home.y)).toBeLessThan(50);
+});
+
+test('a location outside the map area reports it instead of dropping a dot', async ({ page, context }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 45.5, longitude: -122.6 }); // Portland, OR — far outside
+
+  await page.goto('/' + T + '#/map');
+  await expect(page.locator('#circuit-map')).toBeVisible();
+  await page.click('#locate-btn');
+
+  await expect(page.locator('#toast-root')).toContainText(/outside the map area/i);
+  await expect(page.locator('[data-testid="you-are-here"]')).toBeHidden();
+});
+
 test('the map opens at the home view, not the full extent, and can pan in every direction', async ({ page }) => {
   await page.goto('/' + T + '#/map');
   const svg = page.locator('#circuit-map');

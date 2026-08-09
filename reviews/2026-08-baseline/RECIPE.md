@@ -7,17 +7,20 @@ screenshots.
 
 ## State at capture
 
-Screenshots were taken against the build outputs already on disk (they are
+Screenshots were taken against a fresh `npm run build` (build outputs are
 gitignored, so the commit hash alone does not pin them):
 
-- `site/data/content.json` — version `033d5bee822c`, 9 venues / 60 events /
+- `site/data/content.json` — version `d32b9e94e182`, 14 venues / 60 events /
   15 vendors / 11 sponsors,
-  sha256 `4218bffce071ce96daee4d4449e020e40925378db5f812a5913da0db55debfbd`
-- `site/sw.js` —
+  sha256 `6e3f8de2145bee615f04511c6b770ef26f81fafa67d86550e7ec64a5fe210429`
+- `site/sw.js` — version `ea2244cf7eec`,
   sha256 `8283f384a0c3ae621bad20a5c24e1c13cfcbcf64b21d855330fb0c5b29309749`
 
-Venues come from the live Google Sheet, so a fresh `npm run build` may produce
+Venues come from the live Google Sheet, so a later `npm run build` may produce
 different content (and therefore different screenshots) as the sheet evolves.
+Beware: running `npm test` leaves `site/data/content.json` rebuilt from the
+committed fixtures (9 venues), not the live sheet — run `npm run build` before
+capturing screenshots meant to match the deployed site.
 
 All shots use the demo clock `?t=2026-10-03T15:00` (festival Saturday, 3 PM).
 Viewports: phone 393×852 (touch), desktop 1440×900, narrow 320×700 (touch).

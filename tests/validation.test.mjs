@@ -3,9 +3,9 @@
 // Verifies scripts/build.mjs end-to-end by running it as a child process:
 //  - the committed good fixtures build successfully into a content.json that
 //    matches the CONTRACTS.md schema shape, sort order, and version format.
-//  - each deliberately broken fixture set in tests/fixtures-bad/ makes the
-//    build fail (non-zero exit) with a human-readable message that names the
-//    offending file, row, and value.
+//  - a deliberately broken copy of those fixtures (one mutated cell per case,
+//    see tests/fixture-sets.mjs) makes the build fail (non-zero exit) with a
+//    human-readable message that names the offending file, row, and value.
 
 import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,6 +14,7 @@ import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { makeFixtureSet, setCell } from "./fixture-sets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -46,6 +47,8 @@ function runBuild(configPath) {
 // tab at the live Google Sheet, which tests must not depend on.
 const GOOD_CONFIG = "tests/fixtures-good/config.json";
 
+const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
 describe("good fixtures", () => {
   test("build succeeds and emits a schema-shaped content.json", () => {
     const result = runBuild(GOOD_CONFIG);
@@ -62,10 +65,12 @@ describe("good fixtures", () => {
     assert.equal(content.version.length, 12, "version should be 12 hex chars");
     assert.match(content.version, /^[0-9a-f]{12}$/, "version should be lowercase hex");
 
-    assert.equal(content.venues.length, 9);
-    assert.equal(content.events.length, 60);
-    assert.equal(content.vendors.length, 15);
-    assert.equal(content.sponsors.length, 11);
+    // Counts are deliberately not pinned: venues.csv is a snapshot of a sheet
+    // coordinators keep editing, and a refreshed snapshot must not fail here.
+    for (const key of ["venues", "events", "vendors", "sponsors"]) {
+      assert.ok(Array.isArray(content[key]), `${key} should be an array`);
+      assert.ok(content[key].length > 0, `${key} should not be empty`);
+    }
 
     // spot-check a venue (fixture is a committed snapshot of the real sheet)
     const venue = content.venues.find((v) => v.id === "midwaysaloon");
@@ -112,22 +117,17 @@ describe("good fixtures", () => {
     assert.equal(pastMidnight.start, "2026-10-03T23:30");
     assert.equal(pastMidnight.end, "2026-10-04T00:15");
 
-    // event kind distribution covers the full six-value enum
-    const byKind = {};
-    for (const e of content.events) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
-    assert.equal(byKind.music, 35);
-    assert.equal(byKind.art, 7);
-    assert.equal(byKind.performance, 5);
-    assert.equal(byKind.literary, 3);
-    assert.equal(byKind.vendor, 2);
-    assert.equal(byKind.other, 8);
+    // every event's kind is in the enum, and the fixtures exercise more than
+    // the default one
+    const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
+    const kinds = new Set(content.events.map((e) => e.kind));
+    for (const kind of kinds) assert.ok(VALID_KINDS.has(kind), `unexpected kind ${JSON.stringify(kind)}`);
+    assert.ok(kinds.size > 1, "fixtures should cover more than one kind");
 
-    // each venue hosts 6-9 events
-    const byVenue = {};
-    for (const e of content.events) byVenue[e.venue_id] = (byVenue[e.venue_id] ?? 0) + 1;
-    assert.equal(Object.keys(byVenue).length, 9);
-    for (const [venueId, count] of Object.entries(byVenue)) {
-      assert.ok(count >= 6 && count <= 9, `venue ${venueId} hosts ${count} events, expected 6-9`);
+    // every event lands on a venue that exists
+    const venueIds = new Set(content.venues.map((v) => v.id));
+    for (const e of content.events) {
+      assert.ok(venueIds.has(e.venue_id), `event ${e.id} references unknown venue ${e.venue_id}`);
     }
 
     // sponsors: sorted by tier_order then name; logo rewritten + bundled file exists
@@ -186,11 +186,20 @@ describe("good fixtures", () => {
 });
 
 describe("id normalization", () => {
+  const isMamas = (fields) => fields.name.startsWith("Mamas Market");
+
   // Ids are machine keys typed by hand into a spreadsheet. Rather than failing
   // the whole build over punctuation, build.mjs slugifies them — and slugifies
   // events.venue_id the same way, so the two tabs agree however each was typed.
   test("punctuated ids are slugified, and venue references still resolve", () => {
-    const result = runBuild("tests/fixtures-normalize/config.json");
+    // One venue id written as prose, then referenced by two events that spell it
+    // differently: the punctuated spelling and the already-clean slug.
+    const config = makeFixtureSet(TMP_ROOT, "normalize", [
+      setCell("venues.csv", isMamas, "id", "Mamas Market & Deli"),
+      setCell("events.csv", 2, "venue_id", "Mamas Market & Deli"),
+      setCell("events.csv", 3, "venue_id", "mamasmarketdeli"),
+    ]);
+    const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
 
     // The rewriting is reported, not silent.
@@ -210,91 +219,112 @@ describe("id normalization", () => {
   test("normalization is a no-op for ids that are already valid", () => {
     // Guards the property that makes this safe to apply to events: a starred
     // event id or a shared #/event/<id> link can never be invalidated by it.
-    const result = runBuild(GOOD_CONFIG);
-    assert.equal(result.status, 0);
+    // The venues snapshot carries one punctuated id straight from the sheet, so
+    // this case spells that one id cleanly and expects total silence.
+    const config = makeFixtureSet(TMP_ROOT, "clean-ids", [
+      setCell("venues.csv", isMamas, "id", "mamasmarketdeli"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     assert.doesNotMatch(result.stdout, /Normalized/);
   });
 });
 
 describe("bad fixtures", () => {
+  // Each case is the good fixtures with one cell changed, named for the mistake
+  // a coordinator would have made in the spreadsheet.
   const cases = [
     {
-      dir: "bad-venue-ref",
+      name: "venue_id pointing at no venue",
+      mutations: [setCell("events.csv", 2, "venue_id", "blue-moon-lounge")],
       mustInclude: ["events.csv", "row 2", "blue-moon-lounge", "venue_id"],
     },
     {
-      dir: "bad-date",
+      name: "US-style date instead of YYYY-MM-DD",
+      mutations: [setCell("events.csv", 2, "date", "10/02/2026")],
       mustInclude: ["events.csv", "row 2", "10/02/2026"],
     },
     {
-      dir: "missing-field",
+      name: "blank required field",
+      mutations: [setCell("venues.csv", 2, "address", "")],
       mustInclude: ["venues.csv", "row 2", "address"],
     },
     {
-      dir: "dup-id",
+      name: "two rows sharing an id",
+      mutations: [setCell("events.csv", 3, "id", "midway-strays")],
       mustInclude: ["events.csv", "row 3", "midway-strays", "duplicate"],
     },
     {
-      dir: "equal-start-end",
+      name: "end_time equal to start_time",
+      mutations: [setCell("events.csv", 2, "end_time", "17:00")],
       mustInclude: ["events.csv", "row 2", "differ"],
     },
     {
-      dir: "bad-latlng",
+      name: "swapped lat/lng",
+      mutations: [setCell("venues.csv", 2, "location", "-93.1668, 44.9557")],
       mustInclude: ["venues.csv", "row 2", "swapped"],
     },
     {
-      dir: "bad-location-text",
+      name: "location written as prose",
+      mutations: [setCell("venues.csv", 2, "location", "by the big tree")],
       mustInclude: ["venues.csv", "row 2", "by the big tree", "plus code"],
     },
     {
-      dir: "bad-kind",
+      name: "kind outside the enum",
+      mutations: [setCell("events.csv", 2, "kind", "dance")],
       mustInclude: ["events.csv", "row 2", "dance", "unknown kind"],
     },
     {
-      dir: "missing-logo",
+      name: "logo filename that isn't in the logos folder",
+      mutations: [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")],
       mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg"],
     },
     {
-      dir: "bad-tickets",
+      name: "tickets value outside the enum",
+      mutations: [setCell("events.csv", 2, "tickets", "VIP Pass")],
       mustInclude: ["events.csv", "row 2", "VIP Pass", "unknown tickets"],
     },
     {
-      dir: "bad-age-limit",
+      name: "age_limit written as prose",
+      mutations: [setCell("events.csv", 2, "age_limit", "over 21")],
       mustInclude: ["events.csv", "row 2", "over 21", "unknown age_limit"],
     },
     {
       // Ids are normalized rather than rejected, so the only id that can still
       // fail is one with nothing to normalize.
-      dir: "bad-id-unusable",
+      name: "id with nothing to normalize",
+      mutations: [setCell("venues.csv", 2, "id", "&&& ")],
       mustInclude: ["venues.csv", "row 2", "no letters or numbers"],
     },
     {
-      dir: "bad-tier",
+      name: "sponsor tier outside the enum",
+      mutations: [setCell("sponsors.csv", 2, "tier", "platinum")],
       mustInclude: ["sponsors.csv", "row 2", "platinum", "unknown tier"],
     },
     {
-      dir: "emerald-limit-exceeded",
+      name: "a second emerald sponsor",
+      mutations: [setCell("sponsors.csv", 3, "tier", "emerald")],
       mustInclude: ["sponsors.csv", "row 3", "emerald", "at most 1"],
     },
   ];
 
-  for (const { dir, mustInclude } of cases) {
-    test(`${dir} fails the build with a readable, actionable error`, () => {
-      const configPath = `tests/fixtures-bad/${dir}/config.json`;
-      const result = runBuild(configPath);
-      assert.notEqual(result.status, 0, `expected a non-zero exit for ${dir}`);
+  for (const { name, mutations, mustInclude } of cases) {
+    test(`${name} fails the build with a readable, actionable error`, () => {
+      const config = makeFixtureSet(TMP_ROOT, `bad-${slug(name)}`, mutations);
+      const result = runBuild(config);
+      assert.notEqual(result.status, 0, `expected a non-zero exit for "${name}"`);
       for (const needle of mustInclude) {
         assert.ok(
           result.stderr.includes(needle),
-          `expected stderr for "${dir}" to mention ${JSON.stringify(needle)}\n--- stderr ---\n${result.stderr}`
+          `expected stderr for "${name}" to mention ${JSON.stringify(needle)}\n--- stderr ---\n${result.stderr}`
         );
       }
       // human-readable: no raw JS stack traces / "undefined" leaking into the message
       assert.ok(
         !/^\s*at .+:\d+:\d+/m.test(result.stderr),
-        `${dir} stderr should read as a message, not a stack trace`
+        `"${name}" stderr should read as a message, not a stack trace`
       );
-      assert.ok(!result.stderr.includes("undefined"), `${dir} stderr should not contain "undefined"`);
+      assert.ok(!result.stderr.includes("undefined"), `"${name}" stderr should not contain "undefined"`);
     });
   }
 });

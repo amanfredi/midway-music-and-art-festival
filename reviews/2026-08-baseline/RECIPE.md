@@ -1,13 +1,18 @@
 # Screenshot baseline — August 2026 code review
 
 Originally captured 2026-08-09 at commit `4dce690`, before any refactoring
-from the code-and-test review; **recaptured 2026-08-09 after the review's
-follow-up fixes landed** (see PROGRESS.md), so this baseline reflects the
-post-fix app. Only six shots changed in the recapture: the venue detail sheet
-gained a website link (`map-sheet-open-*`), the install sheet's dialog-backdrop
-compositing moved sub-perceptually (`install-sheet-*`), and `map-phone` carries
-a pre-existing 6 px environment diff. The pre-fix images are in git history at
-commit `5ff3399`.
+from the code-and-test review; recaptured 2026-08-09 after the review's
+follow-up fixes landed (six shots changed — venue sheet website link,
+sub-perceptual install-sheet backdrop compositing, a pre-existing 6 px
+`map-phone` environment diff; pre-fix images at commit `5ff3399`).
+**Recaptured again 2026-08-10 after the WCAG 2.2 AA audit fixes landed**
+(see `reviews/2026-08-wcag-aa-audit.md`), so this baseline reflects the
+post-audit app. Fifteen shots changed, all attributable to the fixes since
+the live-sheet content was byte-identical between captures: all nine `map*`
+shots (legend gained METRO Green/Blue Line entries; the unreadable baked-in
+attribution text was dropped) and `schedule-*`/`starred-*` at every viewport
+(darkened saved-row star, event times allowed to wrap). Pre-WCAG-fix images
+are in git history at commit `553fe3d`.
 
 ## State at capture
 
@@ -17,8 +22,10 @@ gitignored, so the commit hash alone does not pin them):
 - `site/data/content.json` — version `d32b9e94e182`, 14 venues / 60 events /
   15 vendors / 11 sponsors,
   sha256 `9f220a62ad53ca977f0d6006ee4b3e5029af0689a44f0e4230cb091c3a2bc19c`
-- `site/sw.js` — version `4ecf10850a43`,
-  sha256 `62e1fb1c85a7bc0b1ecc0af72452a431c672b0f23d4822cb9409556c9b70af64`
+  (unchanged from the 2026-08-09 capture — the sheet did not move between
+  captures, so every 2026-08-10 shot diff comes from the fixes)
+- `site/sw.js` — version `7da58efd1624`,
+  sha256 `3dc80f0e5307cf4d5215afab587dc9091faa68581eacb0677b9bcf4231cef8b4`
 
 Venues come from the live Google Sheet, so a later `npm run build` may produce
 different content (and therefore different screenshots) as the sheet evolves.

@@ -5,5 +5,10 @@ site/assets/sponsors/
 test-results/
 playwright-report/
 .DS_Store
-reference/
+# Bulk source material (the WCAG spec, vendor PDFs) stays out of the repo;
+# distillations of it written for this project are tracked. Must exclude the
+# directory's *contents*, not the directory — git never descends into an
+# excluded directory, which would make the negation below inert.
+reference/*
+!reference/*.md
 .screenshots/

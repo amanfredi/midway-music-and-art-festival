@@ -91,7 +91,9 @@ if (process.argv.includes('--write')) {
   if (!html.includes(START)) {
     throw new Error(`marker ${START} not found in site/index.html — add it first`);
   }
-  const next = html.replace(new RegExp(`${escapeRe(START)}[\\s\\S]*?${escapeRe(END)}`), sprite);
+  // Function replacement: a `$&` in the icon source would otherwise be expanded
+  // into the sprite by String.replace.
+  const next = html.replace(new RegExp(`${escapeRe(START)}[\\s\\S]*?${escapeRe(END)}`), () => sprite);
   await writeFile(INDEX, next);
   console.error('wrote sprite into site/index.html');
 } else {

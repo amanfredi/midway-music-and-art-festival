@@ -43,9 +43,13 @@ const version = hash.digest('hex').slice(0, 12);
 
 const urls = files.map((f) => './' + f.split(sep).join('/'));
 const template = await readFile(join(ROOT, 'scripts', 'sw.template.js'), 'utf8');
+// Function replacements: as a string, `$&` and friends inside a filename would
+// be expanded by String.replace, and a precache entry for a file that doesn't
+// exist makes cache.addAll reject — the worker never activates and offline
+// stops working site-wide while the online site looks fine.
 const sw = template
-  .replace('__VERSION__', version)
-  .replace('__PRECACHE__', JSON.stringify(urls, null, 2));
+  .replace('__VERSION__', () => version)
+  .replace('__PRECACHE__', () => JSON.stringify(urls, null, 2));
 
 await writeFile(join(SITE, 'sw.js'), sw);
 console.log(`sw.js generated: version ${version}, ${urls.length} precached files`);

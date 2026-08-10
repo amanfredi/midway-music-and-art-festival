@@ -337,10 +337,10 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   (`aria-live="polite"`, `role="status"`) announces the destination view's
   name (matching its nav label, e.g. "Support" not "sponsors") on every route
   change.
-- **No `role="tablist"` anywhere in the app.** The schedule's day switcher,
-  group-by toggle, and kind filter are all plain button groups
+- **No `role="tablist"` anywhere in the app.** The schedule's day switcher
+  and group-by toggle are plain button groups
   (`role="group"`, `aria-pressed`/`is-active` reflecting the selected
-  button) — day, group-by, and kind together determine the schedule list's
+  button) — day and group-by together determine the schedule list's
   contents, so no single one of them owns an independent set of exclusive
   panels the way real tabs require; a full ARIA tabs pattern
   (`aria-controls`, a tabpanel, roving tabindex) would misrepresent that
@@ -365,7 +365,6 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - `[data-testid="schedule-list"]` on the schedule list; each event row `[data-testid="event-row"]`
 - `[data-testid="star-toggle"]` on the star button in event detail (attribute `aria-pressed` reflects state)
 - `[data-testid="row-star-toggle"]` on the star button within an event row (schedule/now/starred lists); attribute `aria-pressed` reflects state
-- `[data-testid="kind-filter"]` on the kind-filter control
 - `[data-testid="starred-list"]` on the starred-events view container
 - `[data-testid="vendor-list"]` on the vendors view container
 - `[data-testid="sponsor-list"]` on the sponsors ("Support") view container

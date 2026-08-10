@@ -9,16 +9,19 @@ Items are not prioritized against each other. The festival is October 2–4,
 ## Decisions that need Anthony
 
 **Map library — keep hand-rolling, or adopt MapLibre GL JS?** Current answer is
-not yet, but the case has grown.
-MapLibre requires WebGL, which fails in iOS Lockdown Mode and on low-end
-phones where a static SVG always works, and adds roughly 230 KB gzipped.
-Against that, zoom-dependent labelling, feature filtering by zoom
-and label collision are exactly what an engine gives for free, and the last
-round hand-rolled all three — plus the reported iOS lag below is evidence that
-a large static SVG has its own cost. This decision should be made together with
-the commissioned hand-drawn map, which the current georeferencing design
-(`geo.js` plus control points) is built to support and a vector engine would
-complicate.
+still not yet; the August 2026 review firmed up the numbers (details in
+`reviews/2026-08-code-and-test-review.md`). MapLibre 6 is WebGL2-only and
+costs ~289 KB gzipped self-hosted all-in (ESM entry + shared chunk + worker +
+CSS, measured 2026-08-09); the last WebGL1 line (5.24.0) is no smaller and a
+dead end. Whether current iOS Lockdown Mode still disables WebGL is unverified
+(iOS-16-era sourcing); low-end phones where a static SVG always works are a
+concern regardless. The strongest argument *for*: `ImageSource` accepts four
+corner coordinates for a georeferenced raster, so the commissioned hand-drawn
+artwork could ride the engine, retiring the overlapping-pin and per-zoom-label
+items for free — though it would complicate the georeferencing design
+(`geo.js` plus control points) the map strategy is built around. Decide
+together with the artwork commission, and only after the on-device lag profile
+below.
 
 **`map.svg` weight.** 1.87 MB raw, about 690 KB gzipped, all of it precached
 for offline use — by far the largest thing a first-time visitor downloads.
@@ -32,6 +35,85 @@ sponsor pin distinction wants a design review once someone can see it against
 real logos. Emerald tier's "special treatment / custom branding" is undefined
 because no emerald sponsor exists yet, and the ruby logo-pin map format is
 likewise unspecified.
+
+## Code and test review follow-ups (August 2026)
+
+The in-depth code and test review is done — full report with finding IDs and
+`file:line` evidence in `reviews/2026-08-code-and-test-review.md`. Decisions
+taken 2026-08-09: sponsor SVGs are **validated and rejected** at build time
+(not sanitized or rasterized), the detail sheet moves to **native
+`<dialog>.showModal()`**, and **`venues.url` gets rendered** in the venue
+sheet via the new `safeHref()`.
+
+Security / integrity — do before any tab beyond venues goes live:
+
+- [ ] Content-type allow-list + size cap on fetched sponsor logos; reject SVGs
+      containing script-capable constructs (F1, P1)
+- [ ] Confine the local-logo path to the logos dir; reject `..`/separators (F2, P1)
+- [ ] Validate expected column headers; flag case/whitespace-only matches
+      (F3, P1 — live on the venues sheet today)
+- [ ] Fail the build on a zero-row source; reject `text/html` bodies (F4, P1)
+- [ ] `safeHref()` scheme allow-list at every external-link sink, mirrored as
+      build validation (F5, P2)
+- [ ] Function replacement for `__PRECACHE__` so a `$&` filename can't break
+      offline (F6, P2)
+- [ ] Name bundled logos from the sponsor id to avoid collisions (F7, P2)
+- [ ] Validate settings keys and enumerated values, trim keys (F22, P2);
+      enforce `https:` sources; sanitize sheet values in build logs (P3)
+
+Test coverage — the bugs that would ship green:
+
+- [ ] Assert exact on-now/up-next sets at boundary `?t=` values (F8, P1)
+- [ ] Real-clock smoke test of the pre-festival landing view (F9, P1)
+- [ ] Schedule day-switch + group-by smoke test (F10, P2)
+- [ ] Banner re-show on `banner_id` change (F11, P2)
+- [ ] SW update-over-install test; assert `sw.js` version changes on content
+      change and is stable otherwise (F12, P2)
+- [ ] Pin the `mfc:starred` key name; double-tap zoom test (P3)
+
+Accessibility:
+
+- [ ] `aria-pressed` on the group-by toggle (F13, P2 — contract violation)
+- [ ] Stop the 60 s full redraw of the Now view; skip when nothing changed (F14, P2)
+- [ ] Native `<dialog>` for the sheet: focus trap, inertness, scroll lock (F15, P2)
+- [ ] Roving tabindex over map pins; double-`<h1>` per route; nested toast
+      live regions; `undefined` transit letter (P3)
+
+Correctness / robustness:
+
+- [ ] Render-cancellation token in `renderMap`; re-query DOM after the await (F16, P2)
+- [ ] Timeout + retries on the build's content fetch (F17, P2)
+- [ ] `mapsDirectionsHref()` with finite-coord guard at all four sites (F18, P2)
+- [ ] rAF-batch pan `viewBox` writes; cache the map SVG parse (from the lag
+      analysis)
+
+Test infrastructure / CI:
+
+- [ ] `--out` flag on `build.mjs`; `npm test` builds from fixtures so tests run
+      offline and leave `site/` alone; deploy keeps the live build (F19+F20, P2)
+- [ ] Cache Playwright browsers in CI keyed on the lockfile (F21, P2)
+- [ ] Generate `fixtures-bad/*` from the good fixtures with one documented
+      mutation each; drop exact-count/histogram asserts; refresh the 9→14
+      venue snapshot in `content/fixtures/venues.csv` (P2/P3)
+
+App / content:
+
+- [ ] Render `venues.url` in the venue sheet via `safeHref()` (F23, P3)
+- [ ] Remove the dead `onContentUpdate` fan-out in `store.js` (F25, P3)
+- [ ] `groupBy()`/`groupSection()` helpers; collapse the triplicated group CSS
+      (~80–100 lines, no dependency) (reuse, P3)
+
+Deferred — uncertain or bigger than a follow-up:
+
+- Snapshot fallback so an emergency code deploy can ship while the Google
+  Sheet is unreachable (F17's second half); needs a design for marking
+  staleness loudly.
+- Content-only publish path that reuses the last tested code instead of
+  re-running the whole toolchain (F21's second half).
+- Genuine multi-touch pinch test (arguably not worth paying for before
+  October).
+- On-device iOS Safari map profile, then — only if rasterization is the wall —
+  a MapLibre `ImageSource` prototype (see the map-library decision above).
 
 ## Map
 
@@ -50,9 +132,14 @@ the card opens the detail sheet without any connection to the map.
 A further refinement of the venue/map interaction might involve having the venue info card pop up as a map tooltip, rather than a separate card at the bottom of the screen.
 
 **Scroll and zoom lag noticeably on a recent iPhone.** Observed, not yet
-diagnosed. The likely cause is the size and node count of the inlined SVG, in
-which case it bears directly on the map-library decision above; that hypothesis
-is unverified.
+diagnosed. The August 2026 review bounded it by reading: `map.svg` is only
+1,416 elements, so the node-count half of the old hypothesis is unsupported —
+the weight sits in ten very large path `d` attributes, and the likely
+aggravators are unthrottled per-pointer-event `viewBox` writes and a full
+re-fetch/re-parse of the 1.87 MB SVG on every visit to `#/map` (both fixed as
+review follow-ups). What remains is an **on-device iOS Safari profile**: if it
+shows SVG rasterization itself is the wall, the MapLibre `ImageSource` path
+becomes the serious option and the map-library decision above flips.
 
 **Street labels are placed once for the whole map**, with collision detection,
 then counter-scaled and hidden by level of detail as the view widens. Placement
@@ -76,11 +163,11 @@ commissioning hand-drawn artwork.
 
 An **accessibility review against WCAG 2.2** is outstanding, updating the
 Accessibility contract in CONTRACTS.md if it turns up gaps. The reference copy
-is in `reference/`.
-
-An **in-depth code and test review** — the codebase has grown through several
-fast QA rounds, and no one has read it end to end since. In particular, focus on
-whether the key user-facing features have appropriate test coverage, if the code makes appropriate use of reusable components rather than copy/pasting similar patterns, and if adopting any 3rd party libraries or frameworks could reduce the volume of code to maintain in this repository and still keep the desired offline-only functionality (e.g. by bundling the library at build time). The current app state should be documented by screenshots before any refactoring, so that any resulting changes can be easily identified. This is defined and in progress, see definitions/code-and-test-review.md.
+is in `reference/`. Sequence it after the August 2026 review's a11y fixes (the
+group-by `aria-pressed`, the native-`<dialog>` sheet) have landed, so it audits
+a surface that isn't mid-change; that review's a11y findings and hand-rolled
+surface inventory (`reviews/2026-08-code-and-test-review.md`) are the audit's
+input, not its replacement.
 
 **Web Share API** for sharing a link to anything with a URL: events already
 have one (`#/event/<id>`), venues do not yet. Research from 2026-08-02 flagged
@@ -100,10 +187,6 @@ There are two data quirks in the venues sheet that expose limitations with the c
 `XR5M+X8`), so its pin lands exactly on the park's and hides it. The store is actually located within the park, so the addresses are accurate.
 **Vig Guitars and Fluid Ink Tattoos are about 14 m apart**,
 This also causes overlapping pins.
-
-`content/fixtures/venues.csv` is a few venues behind the live sheet. Harmless —
-it is only a snapshot, and the tests build from it deliberately — but worth
-refreshing next time the fixtures are touched.
 
 Events, vendors, sponsors and settings are still placeholder fixtures. Each
 becomes real with a one-line change in `content/config.json` pointing at a

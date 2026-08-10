@@ -756,16 +756,27 @@ function wirePinTaps(map, { venues, transitById, content, maxZoom }) {
       [e.point.x - TAP_SLOP_PX, e.point.y - TAP_SLOP_PX],
       [e.point.x + TAP_SLOP_PX, e.point.y + TAP_SLOP_PX],
     ];
-    for (const layer of PIN_LAYERS) {
-      const hits = map.queryRenderedFeatures(box, { layers: [layer] });
-      if (!hits.length) continue;
-      const f = hits[0];
-      if (layer === 'venue-pin') openVenueSheet(f.properties.id);
-      else if (layer === 'venue-cluster') expandCluster(map, f, { venueById, maxZoom });
-      else if (layer === 'transit-pin') openTransit(f.properties.id);
-      else openSponsorSheet(f.properties.id);
-      return;
+
+    // Nearest pin wins, and paint order only breaks ties. Resolving by layer
+    // priority first looks equivalent but isn't: with a slop box this wide, a
+    // venue pin 10 px away beat the transit pin directly under the finger.
+    let best = null;
+    for (let i = 0; i < PIN_LAYERS.length; i++) {
+      const layer = PIN_LAYERS[i];
+      for (const f of map.queryRenderedFeatures(box, { layers: [layer] })) {
+        const p = map.project(f.geometry.coordinates);
+        const d = Math.hypot(p.x - e.point.x, p.y - e.point.y);
+        if (!best || d < best.d - 0.5 || (Math.abs(d - best.d) <= 0.5 && i < best.rank)) {
+          best = { layer, feature: f, d, rank: i };
+        }
+      }
     }
+    if (!best) return;
+
+    if (best.layer === 'venue-pin') openVenueSheet(best.feature.properties.id);
+    else if (best.layer === 'venue-cluster') expandCluster(map, best.feature, { venueById, maxZoom });
+    else if (best.layer === 'transit-pin') openTransit(best.feature.properties.id);
+    else openSponsorSheet(best.feature.properties.id);
   });
 
   // Desktop affordance for the side-by-side comparison; harmless on touch.

@@ -200,6 +200,115 @@ for (const mode of ['vector', 'raster', 'hybrid']) {
   await page.close();
 }
 
+// Interaction parity: the behaviors the SVG map hand-rolled, which either the
+// engine now supplies or the view had to keep supplying itself.
+{
+  const context = await browser.newContext({
+    viewport: { width: 420, height: 900 },
+    permissions: ['geolocation'],
+    geolocation: { latitude: 44.9599, longitude: -93.1667 },
+  });
+  const page = await context.newPage();
+  await page.goto(`${BASE}#/map`);
+  await page.waitForFunction(() => window.__spikeMap, null, { timeout: 30000 });
+  await page.evaluate(() => new Promise((r) => window.__spikeMap.once('idle', () => setTimeout(r, 700))));
+
+  // Tapping a venue pin opens that venue's sheet. The zoom is walked outward
+  // until an unclustered venue pin is actually on screen -- close in, the only
+  // venue near the home center is the coincident pair, which is a cluster.
+  const tapped = await page.evaluate(async () => {
+    const m = window.__spikeMap;
+    for (let z = m.getMaxZoom() - 1; z > m.getMinZoom(); z -= 0.5) {
+      m.jumpTo({ zoom: z });
+      await new Promise((r) => m.once('idle', () => setTimeout(r, 250)));
+      const rect = m.getCanvas().getBoundingClientRect();
+      // queryRenderedFeatures answers for symbols in a buffer beyond the
+      // viewport edge, so a pin it returns is not necessarily one you can tap.
+      const f = m.queryRenderedFeatures({ layers: ['venue-pin'] }).find((cand) => {
+        const p = m.project(cand.geometry.coordinates);
+        return p.x > 20 && p.y > 20 && p.x < rect.width - 20 && p.y < rect.height - 20;
+      });
+      if (!f) continue;
+      const p = m.project(f.geometry.coordinates);
+      return { name: f.properties.name, x: rect.left + p.x, y: rect.top + p.y, zoom: z };
+    }
+    return null;
+  });
+  if (tapped) {
+    await page.mouse.click(tapped.x, tapped.y);
+    const title = await page
+      .locator('dialog.sheet #sheet-title')
+      .textContent({ timeout: 5000 })
+      .catch(() => null);
+    check('[interaction] tapping a venue pin opens that venue sheet', title === tapped.name, `tapped ${tapped.name}, sheet said ${title}`);
+    await page.keyboard.press('Escape');
+  } else {
+    check('[interaction] tapping a venue pin opens that venue sheet', false, 'no venue pin found to tap');
+  }
+
+  // Tapping a transit pin opens the transit sheet naming its lines.
+  const transit = await page.evaluate(() => {
+    const m = window.__spikeMap;
+    m.jumpTo({ center: m.getCenter(), zoom: m.getMinZoom() + 2.4 });
+    return new Promise((resolve) =>
+      m.once('idle', () =>
+        setTimeout(() => {
+          const f = m.queryRenderedFeatures({ layers: ['transit-pin'] })[0];
+          if (!f) return resolve(null);
+          const p = m.project(f.geometry.coordinates);
+          const rect = m.getCanvas().getBoundingClientRect();
+          resolve({ x: rect.left + p.x, y: rect.top + p.y });
+        }, 300)
+      )
+    );
+  });
+  if (transit) {
+    await page.mouse.click(transit.x, transit.y);
+    const body = await page
+      .locator('dialog.sheet')
+      .textContent({ timeout: 5000 })
+      .catch(() => null);
+    check(
+      '[interaction] tapping a transit pin opens a sheet naming its lines',
+      !!body && /METRO (Green|A|B) Line/.test(body) && (body.match(/google\.com\/maps/g) ?? []).length <= 1,
+      body ? body.replace(/\s+/g, ' ').slice(0, 70) : 'no sheet'
+    );
+    await page.keyboard.press('Escape');
+  } else {
+    check('[interaction] tapping a transit pin opens a sheet naming its lines', false, 'no transit pin found');
+  }
+
+  // Arrow keys pan the map once the canvas has focus (the engine's own
+  // KeyboardHandler, replacing the hand-rolled arrow-key panning). Driven with
+  // real key events, since MapLibre ignores untrusted synthetic ones.
+  const before = await page.evaluate(async () => {
+    const m = window.__spikeMap;
+    m.jumpTo({ center: m.getCenter(), zoom: m.getMinZoom() + 2 });
+    await new Promise((r) => m.once('idle', r));
+    m.getCanvas().focus();
+    return { focused: document.activeElement === m.getCanvas(), center: m.getCenter().toArray() };
+  });
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(1200);
+  const after = await page.evaluate(() => window.__spikeMap.getCenter().toArray());
+  check(
+    '[interaction] map canvas is focusable and arrow keys pan it',
+    before.focused && Math.abs(after[0] - before.center[0]) > 1e-6,
+    `focused ${before.focused}, lng ${before.center[0].toFixed(5)} -> ${after[0].toFixed(5)}`
+  );
+
+  // The locate button drops the you-are-here marker at the reported position.
+  await page.locator('#locate-btn').click();
+  const dot = await page
+    .locator('[data-testid="you-are-here"]')
+    .waitFor({ state: 'attached', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+  check('[interaction] locate button drops a you-are-here marker', dot, dot ? 'marker attached' : 'no marker');
+
+  await context.close();
+}
+
 // The mode switch lives in the page query string, which is also where the demo
 // clock lives. They have to compose, or evaluating the map during the festival
 // weekend means giving up "On now".

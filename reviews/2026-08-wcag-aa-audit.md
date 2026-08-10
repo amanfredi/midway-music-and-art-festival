@@ -592,3 +592,25 @@ merges with the existing F14 follow-up), legend swatch scaling / venue-pin
 forced-colors active-state marker (advisory), duplicate-location build
 validation (content pipeline #2), per-route `document.title` (2.4.2
 improvement).
+
+## Corrections (2026-08-10, implementation stage)
+
+Recorded after the fixes landed; the dispositions above are otherwise
+unchanged.
+
+- **F2 (1.4.12) was misattributed.** The 76 px document overflow measured
+  under the text-spacing overrides was the F1 group toggle amplified by
+  letter-spacing — the F1 fix removed that symptom on its own. The real F2
+  defect is the time string overflowing *its own column* by 3–52 px and
+  painting over the kind badge beside it. The pinned test therefore compares
+  each element's overflow before/after the overrides rather than watching
+  document width, which is also closer to what 1.4.12 asks.
+- **"At normal spacing the time never wraps anyway" is wrong.** Two fixture
+  rows wrap at 320 px, measured with and without the fix. The fix landed
+  regardless — a wrapped time range reads fine, an obscured badge doesn't —
+  and it is the one visual change in the batch (screenshot baseline
+  recaptured accordingly).
+- **A cited CONTRACTS.md line did not exist at audit time.** The report cites
+  a "no two-dimensional scrolling at 320 px" contract line; CONTRACTS.md said
+  only "WCAG AA contrast everywhere" and left the rest implicit. The contract
+  was expanded in commit 236d9df, which added that line among others.

@@ -1,9 +1,13 @@
 # Screenshot baseline — August 2026 code review
 
-Captured 2026-08-09 at commit `4dce690`, before any refactoring from the
-code-and-test review (definitions/code-and-test-review.md). Purpose: a visual
-reference so changes landed after this date are identifiable by diffing
-screenshots.
+Originally captured 2026-08-09 at commit `4dce690`, before any refactoring
+from the code-and-test review; **recaptured 2026-08-09 after the review's
+follow-up fixes landed** (see PROGRESS.md), so this baseline reflects the
+post-fix app. Only six shots changed in the recapture: the venue detail sheet
+gained a website link (`map-sheet-open-*`), the install sheet's dialog-backdrop
+compositing moved sub-perceptually (`install-sheet-*`), and `map-phone` carries
+a pre-existing 6 px environment diff. The pre-fix images are in git history at
+commit `5ff3399`.
 
 ## State at capture
 
@@ -12,15 +16,15 @@ gitignored, so the commit hash alone does not pin them):
 
 - `site/data/content.json` — version `d32b9e94e182`, 14 venues / 60 events /
   15 vendors / 11 sponsors,
-  sha256 `6e3f8de2145bee615f04511c6b770ef26f81fafa67d86550e7ec64a5fe210429`
-- `site/sw.js` — version `ea2244cf7eec`,
-  sha256 `8283f384a0c3ae621bad20a5c24e1c13cfcbcf64b21d855330fb0c5b29309749`
+  sha256 `9f220a62ad53ca977f0d6006ee4b3e5029af0689a44f0e4230cb091c3a2bc19c`
+- `site/sw.js` — version `4ecf10850a43`,
+  sha256 `62e1fb1c85a7bc0b1ecc0af72452a431c672b0f23d4822cb9409556c9b70af64`
 
 Venues come from the live Google Sheet, so a later `npm run build` may produce
 different content (and therefore different screenshots) as the sheet evolves.
-Beware: running `npm test` leaves `site/data/content.json` rebuilt from the
-committed fixtures (9 venues), not the live sheet — run `npm run build` before
-capturing screenshots meant to match the deployed site.
+Beware: running `npm test` leaves `site/` rebuilt from the committed fixtures,
+not the live sheet — run `npm run build` before capturing screenshots meant to
+match the deployed site.
 
 All shots use the demo clock `?t=2026-10-03T15:00` (festival Saturday, 3 PM).
 Viewports: phone 393×852 (touch), desktop 1440×900, narrow 320×700 (touch).

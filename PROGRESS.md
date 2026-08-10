@@ -7,13 +7,14 @@ binding interfaces in CONTRACTS.md; scope and non-goals in DEFINITION.md.
 ## Status
 
 Live and working at https://go.midwaymusicandart.org/ (the github.io URL 301s
-to it). Every push to `main` deploys; the last deploy and the full suite —
-30 unit + 15 Playwright — were green.
+to it). Every push to `main` deploys; the full suite — 67 unit + 30
+Playwright — is green. `npm test` runs offline from fixtures; only the deploy
+workflow builds from the live sheet.
 
 **Only the venues tab is real content.** It is live from the organizers' Google
 Sheet (URL in `content/config.json`), currently 14 venues.
-`content/fixtures/venues.csv` is a committed snapshot of it and now runs a few
-venues behind. Events, vendors, sponsors and settings are still **placeholder
+`content/fixtures/venues.csv` is a committed snapshot of it (refreshed
+2026-08-09). Events, vendors, sponsors and settings are still **placeholder
 fixtures** — invented names, invented schedule. The dismissible banner on the
 site says so. Swapping each to a sheet tab is a one-line change in
 `content/config.json` once real content exists.
@@ -24,6 +25,72 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-08-09 — review follow-ups: build hardening, app fixes, test coverage
+
+The August review's follow-ups (`reviews/2026-08-code-and-test-review.md`)
+landed in three agent waves, merged in order: build/CI integrity, app fixes,
+then test coverage written against the merged result.
+
+**The build now distrusts its inputs.** Column headers are validated — a
+renamed or space-padded header is a build error naming both spellings, where
+it previously blanked that field on the live site with a green build. An
+empty tab, or an HTML body where CSV should be, fails the build. Settings keys
+and values are validated against the known set. URL fields follow the same
+normalize-don't-reject rule ids already used: bare domains are completed to
+`https://` with a logged rewrite (two live venue urls rely on this today);
+`javascript:`/`data:` schemes are errors. Sponsor logos are capped at 512 KB,
+content-type checked, rejected if an SVG contains script-capable constructs,
+confined to the logos dir, and named by sponsor id. The content fetch retries
+transient errors under a timeout, and sw.js generation is immune to `$&` in
+filenames.
+
+**`npm test` is hermetic now** — `build.mjs` grew `--config`/`--out` flags,
+tests build `site/` from fixtures and run fully offline, and the old
+mixed-tree hazard (fixture content under a live-sheet sw.js) is gone; only the
+deploy workflow touches the live sheet. The 14 copied `fixtures-bad/` dirs
+became a generator (`tests/fixture-sets.mjs`) applying one documented mutation
+each. GitHub Actions are pinned to commit SHAs with Dependabot-style version
+comments (verified against the tags independently), and CI caches Playwright
+browsers.
+
+**App:** external links pass through a `safeHref()` scheme allow-list, and
+`venues.url` — previously silently ignored — renders in the venue sheet. The
+detail sheet is a native `<dialog>.showModal()` with a real focus trap, inert
+background, and a `:has()`-based scroll lock (Chromium still scrolls behind a
+modal dialog without it). Group-by buttons carry `aria-pressed` per the
+contract. The Now view skips its 60 s redraw when the on-now/up-next sets are
+unchanged, so focus survives the tick. `renderMap` cancels superseded renders,
+caches the parsed SVG (one fetch across visits instead of one per visit), and
+batches pan writes to rAF (30 pointer events → 1 viewBox write). One
+`mapsDirectionsHref()` replaced four hand-built Maps URLs. Map pins are a
+single roving tab stop (arrows move between pins when a pin has focus; the
+svg keeps arrow-key panning). Each route has exactly one `h1`. A
+`groupBy`/`groupSection` pair replaced six copies of the grouping idiom and
+three near-identical CSS blocks.
+
+**Tests: 45 → 97** (67 unit + 30 Playwright). The Now view's on-now/up-next
+sets are asserted exactly at boundary instants: a shared 13:45 end/start
+boundary proves end-exclusivity and start-inclusivity in one stroke, 16:59 vs
+17:00 pins both sides of the two-hour up-next window including the per-venue
+fallback, and 00:05/00:15 prove the past-midnight convention across a date
+boundary. A real-clock test asserts the landing view in whichever era today
+falls (with faked-clock companions for all three eras, so the post-festival
+branch is proven before October). Also covered: day/group-by switching with
+`aria-pressed`, banner re-show on a changed `banner_id`, a two-build
+service-worker update-over-install test, the `mfc:starred` key pinned by
+assertion, and double-tap zoom. The boot-retry spec got timeout headroom after
+flaking twice under parallel-suite machine load.
+
+The screenshot baseline in `reviews/2026-08-baseline/` was recaptured
+post-fix; six shots changed, all explained (venue sheet website link,
+sub-perceptual dialog-backdrop compositing, one pre-existing 6 px map-phone
+environment diff).
+
+Surfaced during the work and now in BACKLOG: a plausible dropped
+`content-updated` message on boot (the urgent-banner path — hypothesis,
+unconfirmed), missing test hooks for the Now lists and schedule controls, and
+`serve.mjs` lacking a `--root` flag.
 
 ### 2026-08-09 — second QA round
 

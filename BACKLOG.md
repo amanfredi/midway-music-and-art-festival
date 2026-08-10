@@ -38,76 +38,28 @@ likewise unspecified.
 
 ## Code and test review follow-ups (August 2026)
 
-The in-depth code and test review is done — full report with finding IDs and
-`file:line` evidence in `reviews/2026-08-code-and-test-review.md`. Decisions
-taken 2026-08-09: sponsor SVGs are **validated and rejected** at build time
-(not sanitized or rasterized), the detail sheet moves to **native
-`<dialog>.showModal()`**, and **`venues.url` gets rendered** in the venue
-sheet via the new `safeHref()`.
+The August review's follow-ups landed 2026-08-09 in three waves — build/CI
+integrity, app fixes, test coverage. PROGRESS.md has the summary; the full
+report with finding IDs is `reviews/2026-08-code-and-test-review.md`. What
+remains:
 
-Security / integrity — do before any tab beyond venues goes live:
-
-- [ ] Content-type allow-list + size cap on fetched sponsor logos; reject SVGs
-      containing script-capable constructs (F1, P1)
-- [ ] Confine the local-logo path to the logos dir; reject `..`/separators (F2, P1)
-- [ ] Validate expected column headers; flag case/whitespace-only matches
-      (F3, P1 — live on the venues sheet today)
-- [ ] Fail the build on a zero-row source; reject `text/html` bodies (F4, P1)
-- [ ] `safeHref()` scheme allow-list at every external-link sink, mirrored as
-      build validation (F5, P2)
-- [ ] Function replacement for `__PRECACHE__` so a `$&` filename can't break
-      offline (F6, P2)
-- [ ] Name bundled logos from the sponsor id to avoid collisions (F7, P2)
-- [ ] Validate settings keys and enumerated values, trim keys (F22, P2);
-      enforce `https:` sources; sanitize sheet values in build logs (P3)
-
-Test coverage — the bugs that would ship green:
-
-- [ ] Assert exact on-now/up-next sets at boundary `?t=` values (F8, P1)
-- [ ] Real-clock smoke test of the pre-festival landing view (F9, P1)
-- [ ] Schedule day-switch + group-by smoke test (F10, P2)
-- [ ] Banner re-show on `banner_id` change (F11, P2)
-- [ ] SW update-over-install test; assert `sw.js` version changes on content
-      change and is stable otherwise (F12, P2)
-- [ ] Pin the `mfc:starred` key name; double-tap zoom test (P3)
-
-Accessibility:
-
-- [ ] `aria-pressed` on the group-by toggle (F13, P2 — contract violation)
-- [ ] Stop the 60 s full redraw of the Now view; skip when nothing changed (F14, P2)
-- [ ] Native `<dialog>` for the sheet: focus trap, inertness, scroll lock (F15, P2)
-- [ ] Roving tabindex over map pins; double-`<h1>` per route; nested toast
-      live regions; `undefined` transit letter (P3)
-
-Correctness / robustness:
-
-- [ ] Render-cancellation token in `renderMap`; re-query DOM after the await (F16, P2)
-- [ ] Timeout + retries on the build's content fetch (F17, P2)
-- [ ] `mapsDirectionsHref()` with finite-coord guard at all four sites (F18, P2)
-- [ ] rAF-batch pan `viewBox` writes; cache the map SVG parse (from the lag
-      analysis)
-
-Test infrastructure / CI:
-
-- [ ] `--out` flag on `build.mjs`; `npm test` builds from fixtures so tests run
-      offline and leave `site/` alone; deploy keeps the live build (F19+F20, P2)
-- [ ] Cache Playwright browsers in CI keyed on the lockfile (F21, P2)
-- [ ] Generate `fixtures-bad/*` from the good fixtures with one documented
-      mutation each; drop exact-count/histogram asserts; refresh the 9→14
-      venue snapshot in `content/fixtures/venues.csv` (P2/P3)
-- [ ] Pin every remote GitHub Action to its latest release by full commit SHA,
-      human-readable version as a trailing comment in the Dependabot-supported
-      format (not from the review; added 2026-08-09)
+- [ ] **A `content-updated` message can be dropped by a booting page**
+      (hypothesis, surfaced by the SW-update test work): `app.js` attaches its
+      service-worker message listener only after `loadContent()` resolves, so
+      a revalidation that finishes first posts to no listener and an open page
+      stays stale until reload. The symptom was observed in the test; the
+      mechanism is unverified. Candidate fix: attach the listener before
+      awaiting content. This is the urgent-banner path — confirm before
+      festival weekend.
 - [ ] Set up Dependabot version updates (`.github/dependabot.yml`) so the
-      SHA-pinned actions — and the lone npm devDependency — get bump PRs
-      (not from the review; added 2026-08-09)
-
-App / content:
-
-- [ ] Render `venues.url` in the venue sheet via `safeHref()` (F23, P3)
-- [ ] Remove the dead `onContentUpdate` fan-out in `store.js` (F25, P3)
-- [ ] `groupBy()`/`groupSection()` helpers; collapse the triplicated group CSS
-      (~80–100 lines, no dependency) (reuse, P3)
+      SHA-pinned actions — and the lone npm devDependency — get bump PRs.
+- [ ] Test-hook gaps: the Now view's on-now/up-next lists have no container
+      testids (the spec walks sibling headings to tell them apart); the
+      schedule specs lean on `.day-tab[data-day]`, `.toggle-btn[data-group]`,
+      and `.event-group__title`, which are absent from CONTRACTS.md's
+      test-hook list, so nothing stops a rename.
+- [ ] `serve.mjs --root` flag, so the SW-update spec can reuse it instead of
+      carrying its own ~25-line static server.
 
 Deferred — uncertain or bigger than a follow-up:
 
@@ -194,6 +146,11 @@ There are two data quirks in the venues sheet that expose limitations with the c
 **Vig Guitars and Fluid Ink Tattoos are about 14 m apart**,
 This also causes overlapping pins.
 
+Two live venue `url` cells are schemeless (`hamline.edu/sundin-music-hall`,
+`blackgarnetbooks.com`). The build completes them to `https://` with a logged
+rewrite, so this is cosmetic — worth adding the scheme in the sheet whenever
+it's next touched.
+
 Events, vendors, sponsors and settings are still placeholder fixtures. Each
 becomes real with a one-line change in `content/config.json` pointing at a
 published sheet tab.
@@ -204,6 +161,11 @@ None of these can be checked from the screenshot harness or the test suite.
 
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
       (procedure in README).
+- [ ] The detail sheet as a native `<dialog>` on iOS Safari (new 2026-08-09):
+      backdrop rendering, the `:has()`-based scroll lock, focus restore.
+- [ ] Re-measure the reported map scroll/zoom lag now that pan writes are
+      rAF-batched and the SVG parse is cached (see the profile item under
+      Map).
 - [ ] Header scroll behavior on a phone. The page is now the scroll container;
       momentum scrolling, rubber-banding and the pinned control bar under real
       browser chrome need eyes on a device.

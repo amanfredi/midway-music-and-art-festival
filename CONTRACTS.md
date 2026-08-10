@@ -330,9 +330,11 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 ## Accessibility contract (binding)
 
 - **Focus management**: focus moves to `#view` on route change, and into the
-  sheet (the `.sheet` dialog element itself, `tabindex="-1"`) on open, back to
+  sheet (the `.sheet` element itself, `tabindex="-1"`) on open, back to
   whatever triggered it on close. The sheet carries `aria-labelledby="sheet-title"`
-  pointing at its title heading.
+  pointing at its title heading. It is a native `<dialog>` opened with
+  `showModal()` — that, not hand-rolled code, is what supplies the focus trap
+  and background inertness.
 - **Route-change announcement**: a visually-hidden `#route-announcer`
   (`aria-live="polite"`, `role="status"`) announces the destination view's
   name (matching its nav label, e.g. "Support" not "sponsors") on every route
@@ -355,7 +357,11 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - **Keyboard map panning**: the inlined map `<svg>` is focusable
   (`tabindex="0"`, `role="group"`) and arrow keys pan it (relative-to-viewport
   step, same clamping as drag-panning); its `aria-label` states this. Pins
-  keep their own `role="button"`/Enter-Space activation on top.
+  keep their own `role="button"`/Enter-Space activation on top, and are one
+  tab stop for the whole set (roving `tabindex`): arrow keys move between the
+  pins currently in view, and pins panned off screen leave the tab order. So
+  arrows pan when the map itself has focus and move between pins when a pin
+  does.
 - **WCAG AA contrast** everywhere, including the six kind-badge tints and any
   new pin/legend colors.
 

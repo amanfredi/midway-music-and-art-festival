@@ -214,6 +214,47 @@ test('the map opens at the home view, not the full extent, and can pan in every 
   expect((await parseVb())[2]).toBeGreaterThan(w0);
 });
 
+// WCAG relative luminance, so the assertion below states the ratio the
+// criterion names rather than pinning a hex value that says nothing about
+// whether the star is actually visible.
+function contrastRatio(a, b) {
+  const luminance = (rgb) => {
+    const [r, g, b2] = rgb.map((c) => {
+      const v = c / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b2;
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// The star's own background is transparent, so the ground it is read against
+// is whichever ancestor actually paints one.
+const starColors = (page) =>
+  page.locator('[data-testid="row-star-toggle"]').first().evaluate((el) => {
+    const parse = (c) => c.match(/[\d.]+/g).slice(0, 3).map(Number);
+    let ground = el;
+    while (ground && getComputedStyle(ground).backgroundColor.startsWith('rgba(0, 0, 0, 0')) ground = ground.parentElement;
+    return { star: parse(getComputedStyle(el).color), ground: parse(getComputedStyle(ground).backgroundColor) };
+  });
+
+test('the star reads against its card whether the event is saved or not', async ({ page }) => {
+  await page.goto('/' + T + '#/schedule');
+  await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
+  const star = page.locator('[data-testid="row-star-toggle"]').first();
+
+  await expect(star).toHaveAttribute('aria-pressed', 'false');
+  const unsaved = await starColors(page);
+  expect(contrastRatio(unsaved.star, unsaved.ground), 'unsaved star').toBeGreaterThanOrEqual(3);
+
+  await star.click();
+  await expect(star).toHaveAttribute('aria-pressed', 'true');
+  const saved = await starColors(page);
+  // The saved state is the one the eye has to find on a screenful of rows.
+  expect(contrastRatio(saved.star, saved.ground), 'saved star').toBeGreaterThanOrEqual(3);
+});
+
 // The map view is where this reproduces — its venue key list is the longest
 // run of focusables below the fold — but the mechanism is generic: the tab
 // bar is fixed over the bottom of every route.

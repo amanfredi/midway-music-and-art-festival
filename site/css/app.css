@@ -474,7 +474,10 @@ img {
 }
 
 .event-row__star-btn[aria-pressed="true"] {
-  color: var(--color-accent);
+  /* Same gold family as --color-accent, dark enough that the filled star is
+     the row's most findable mark rather than its faintest (--color-accent
+     itself reads at under 2:1 on the page). */
+  color: var(--color-accent-dark);
 }
 
 /* Second tier of the sticky stack: pins directly below whichever control bar

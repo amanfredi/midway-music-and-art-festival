@@ -187,18 +187,25 @@ async function fetchWithTimeout(url) {
  */
 async function fetchSourceWithRetries(key, url) {
   let lastErr;
+  let lastRes = null;
   for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
     if (attempt > 0) {
       console.warn(`  source "${key}": retry ${attempt}/${FETCH_RETRIES}...`);
       await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
     }
     try {
-      return await fetchWithTimeout(url);
+      const res = await fetchWithTimeout(url);
+      // 5xx and 429 are the sheet being briefly unavailable; a 4xx means the
+      // link is wrong or no longer published, which retrying cannot fix.
+      if (res.status < 500 && res.status !== 429) return res;
+      lastRes = res;
+      console.warn(`  source "${key}": attempt ${attempt + 1} returned HTTP ${res.status}`);
     } catch (err) {
       lastErr = err;
       console.warn(`  source "${key}": attempt ${attempt + 1} failed: ${err.message}`);
     }
   }
+  if (lastRes) return lastRes;
   throw lastErr;
 }
 

@@ -82,13 +82,15 @@ function runBuildAsync(configPath) {
 async function withLocalServer(routes, run) {
   const server = createServer((req, res) => {
     const route = routes[req.url];
-    if (!route) {
+    // A route may be a function, so a case can answer differently per request.
+    const answer = typeof route === "function" ? route() : route;
+    if (!answer) {
       res.writeHead(404, { "content-type": "text/plain" });
       res.end("not found");
       return;
     }
-    res.writeHead(200, { "content-type": route.type });
-    res.end(route.body);
+    res.writeHead(answer.status ?? 200, { "content-type": answer.type });
+    res.end(answer.body);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -461,6 +463,46 @@ describe("source shape and headers", () => {
       const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
       assert.ok(content.venues.length > 0);
     });
+  });
+
+  test("a transient server error on a source is retried, not fatal", async () => {
+    // One bad minute at Google used to fail the whole deploy, including a
+    // code-only deploy, since every deploy path rebuilds content.
+    const venuesCsv = readFileSync(path.join(REPO_ROOT, "content/fixtures/venues.csv"), "utf8");
+    let calls = 0;
+    await withLocalServer(
+      {
+        "/venues.csv": () =>
+          ++calls === 1 ? { status: 500, type: "text/plain", body: "try again" } : { type: "text/csv", body: venuesCsv },
+      },
+      async (origin) => {
+        const config = makeFixtureSet(TMP_ROOT, "flaky-source", [], { venues: `${origin}/venues.csv` });
+        const result = await runBuildAsync(config);
+        assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+        assert.equal(calls, 2, "the source should have been fetched again after the 500");
+      }
+    );
+  });
+
+  test("a 404 on a source is not retried", async () => {
+    // An unpublished or mistyped link is permanent; retrying only delays the
+    // message.
+    let calls = 0;
+    await withLocalServer(
+      {
+        "/venues.csv": () => {
+          calls++;
+          return { status: 404, type: "text/plain", body: "gone" };
+        },
+      },
+      async (origin) => {
+        const config = makeFixtureSet(TMP_ROOT, "missing-source", [], { venues: `${origin}/venues.csv` });
+        const result = await runBuildAsync(config);
+        assert.notEqual(result.status, 0, "a 404 source should fail the build");
+        assert.match(result.stderr, /HTTP 404/);
+        assert.equal(calls, 1, "a 404 should be reported on the first try");
+      }
+    );
   });
 
   test("an http:// source that isn't loopback is rejected", () => {

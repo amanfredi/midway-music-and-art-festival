@@ -26,6 +26,43 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-09 — the revalidation that never worked, and the last follow-ups
+
+The four remaining review follow-ups landed as a fourth wave: the
+content-update fix, Dependabot version updates (`.github/dependabot.yml`,
+weekly, actions + npm), test-hook gaps closed (`data-testid` containers on the
+Now view's two lists; the schedule's existing `data-day`/`data-group`
+attributes and `.event-group__title` bound in CONTRACTS.md), and a `--root`
+flag on `serve.mjs` so the SW-update spec spawns the real server instead of
+carrying its own.
+
+The headline: **stale-while-revalidate had never revalidated.** The BACKLOG
+hypothesis (message posted before the page's listener attaches gets dropped)
+was real but never reached — the worker threw first, every time. The fetch
+handler passed the same `Response` to both `respondWith` (which consumes the
+body to serve the page) and `revalidateContent`, whose later `clone()` threw
+`Response body is already used` into a bare `catch` labeled "offline". So
+`cache.put` never ran, `content-updated` was never posted, and content only
+ever reached a phone via the next worker version's precache — a reload. Fixed
+on both sides: the worker clones before handing the response over (these hunks
+were authored and applied by Anthony — a tf-plugin guard content-sniffed the
+template's line-1 banner as "generated file" and blocked agent edits; the
+banner now lives in `build-sw.mjs` and is prepended to the generated `sw.js`,
+where it is true), and `app.js` attaches its message listener at module
+evaluation with a booted-promise gate. A four-way on/off matrix showed the
+worker fix alone repaired the behavior on localhost by a 0.2 ms accident of
+timing; the listener fix makes the ordering structural, which is what a real
+phone parsing a larger content.json needs. The SW-update spec now asserts the
+in-place refresh on the load that performs the update and was proven to fail
+against both the shipped and half-fixed states.
+
+Suite unchanged in shape (67 unit + 30 Playwright, green twice; the changed
+sw-update spec 3× more). Twelve pre/post screenshot pairs byte-identical, so
+the Now-view container hooks changed no pixels. The manual iPhone pass is
+required before trusting day-of banners: airplane-mode reload, then the
+in-place banner refresh on an open tab (both now on the device checklist in
+BACKLOG).
+
 ### 2026-08-09 — review follow-ups: build hardening, app fixes, test coverage
 
 The August review's follow-ups (`reviews/2026-08-code-and-test-review.md`)

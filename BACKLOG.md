@@ -38,21 +38,18 @@ likewise unspecified.
 
 ## Code and test review follow-ups (August 2026)
 
-The August review's follow-ups landed 2026-08-09 in three waves — build/CI
-integrity, app fixes, test coverage. PROGRESS.md has the summary; the full
-report with finding IDs is `reviews/2026-08-code-and-test-review.md`. All four
-remaining items are now done; nothing here is open.
+The August review's follow-ups all landed 2026-08-09 (four waves — build/CI
+integrity, app fixes, test coverage, then the remaining four items including
+the content-revalidation fix). PROGRESS.md is the record; the full report with
+finding IDs is `reviews/2026-08-code-and-test-review.md`. One new item
+surfaced by the final wave:
 
-Still worth knowing about the last of them: the dropped-`content-updated`
-hypothesis was **wrong about the mechanism**. The listener really was attached
-too late, and a message posted before a listener exists really is dropped
-rather than queued — but that was never reached, because the worker threw
-first. It passed the same `Response` to `respondWith` and to
-`revalidateContent`, and serving a response consumes its body, so the later
-`clone()` threw into a bare `catch`. Stale-while-revalidate had therefore never
-revalidated at all: content only ever reached a phone through the next
-version's precache. Both halves are fixed and the SW-update spec now asserts
-the in-place refresh on the load that performs the update.
+- [ ] **Narrow the bare `catch` blocks on the content path.**
+      `revalidateContent`'s catch exists for offline but swallowed a
+      `TypeError` for the feature's whole life (see the 2026-08-09 PROGRESS
+      entry); `store.js#refreshContent` has the same shape. Catch network
+      failures specifically, or at least don't treat every throw as
+      "offline".
 
 Deferred — uncertain or bigger than a follow-up:
 
@@ -156,6 +153,11 @@ None of these can be checked from the screenshot harness or the test suite.
       (procedure in README).
 - [ ] The detail sheet as a native `<dialog>` on iOS Safari (new 2026-08-09):
       backdrop rendering, the `:has()`-based scroll lock, focus restore.
+- [ ] In-place content refresh on a real phone (new 2026-08-09, after the
+      revalidation fix): with a tab already open, publish a banner change and
+      confirm it appears without touching the tab; then confirm a worker
+      version bump still leaves exactly one `circuit-map-*` cache. The
+      clone-throw was observed in Chromium only — Safari unverified.
 - [ ] Re-measure the reported map scroll/zoom lag now that pan writes are
       rAF-batched and the SVG parse is cached (see the profile item under
       Map).

@@ -398,7 +398,16 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 ## Test hooks (UI must provide, offline test depends on them)
 
 - `[data-testid="now-view"]` on the on-now/up-next landing view container
+- `[data-testid="on-now-list"]` and `[data-testid="up-next-list"]` on the two
+  lists inside it (present on the during-the-festival branch only; each wraps
+  either its groups or its empty state)
 - `[data-testid="schedule-list"]` on the schedule list; each event row `[data-testid="event-row"]`
+- Schedule controls, by the attributes the renderer already keys on:
+  `.day-switcher .day-tab[data-day="<YYYY-MM-DD>"]` and
+  `.group-toggle .toggle-btn[data-group="time|venue|category"]`, each with
+  `aria-pressed` reflecting selection
+- `.event-group__title` on the heading of a group of event rows, in every
+  grouped list (the schedule's three groupings, the Now view's per-venue lists)
 - `[data-testid="star-toggle"]` on the star button in event detail (attribute `aria-pressed` reflects state)
 - `[data-testid="row-star-toggle"]` on the star button within an event row (schedule/now/starred lists); attribute `aria-pressed` reflects state
 - `[data-testid="starred-list"]` on the starred-events view container

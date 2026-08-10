@@ -7,7 +7,7 @@ binding interfaces in CONTRACTS.md; scope and non-goals in DEFINITION.md.
 ## Status
 
 Live and working at https://go.midwaymusicandart.org/ (the github.io URL 301s
-to it). Every push to `main` deploys; the full suite — 67 unit + 30
+to it). Every push to `main` deploys; the full suite — 70 unit + 58
 Playwright — is green. `npm test` runs offline from fixtures; only the deploy
 workflow builds from the live sheet.
 
@@ -25,6 +25,57 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-08-10 — WCAG 2.2 AA audit, and the cheap half of its fix list
+
+The audit is `reviews/2026-08-wcag-aa-audit.md`: all 55 Level A/AA criteria
+dispositioned — 24 pass, 10 fail, 3 wait on a real device, 18 don't apply —
+against the site profile distilled into `reference/wcag-aa-site-profile.md`,
+which is where future audits now start instead of the 512 KB spec. Nothing
+found was expensive, and nothing was inherent to the hand-rolled SVG map.
+
+Seven of the ten failures are fixed, one commit and one pinned test each. The
+schedule's group toggle no longer widens the page at 320 px — it shrink-wrapped
+its three buttons to 322 px instead of stretching into the 288 px available. An
+event row's time may now wrap, so growing letter-spacing no longer prints it
+over the kind badge beside it. `html` carries a `scroll-padding-bottom`, so the
+fixed tab bar stops swallowing controls at the moment they take focus. The
+manifest no longer locks an installed app to portrait. A saved row's star is
+`--color-accent-dark` instead of a 1.9:1 near-invisible gold. The legend names
+both rail lines, which until now differed only in hue — and the Blue Line,
+having no station pin in range to carry a letter, was unnamed anywhere on the
+page. And the attribution baked into the map artwork is gone from both the SVG
+and its generator: at 2.90:1, scaling with the map instead of holding its size,
+it rendered 1–2 px at the only zoom where it was on screen at all, while the
+HTML attribution below the frame is the one people actually read.
+
+An axe-core gate joined the suite — 11 scans over all seven routes plus an open
+sheet, a settled toast, the by-venue grouping, and a starred list with rows. It
+starts green with no exclusions. Scanning a toast mid-fade measures its text
+blended with the map behind it, which reads as a contrast failure that isn't
+one, so that scan waits for the transition to settle.
+
+Two of the report's own claims didn't survive contact. Its text-spacing finding
+was attributed to `.event-row__time`'s `nowrap` and measured as 76 px of
+document overflow, but that overflow was the group toggle amplified by
+letter-spacing; the nowrap defect is real and different — the time overflows
+its own column and paints over the labels — so the pinned test compares element
+overflow before and after the overrides rather than watching document width.
+And the report's assurance that the time "never wraps anyway" at normal spacing
+is wrong: two fixture rows take a second line at 320 px. An obscured badge is
+the worse trade, so it landed; the screenshot baseline wants recapturing.
+
+Not landed: the transit-green darkening, which moves a brand color and waits on
+Anthony's ack, and everything gated on the map conformance decision — which the
+report frames and recommends settling by bringing the map to AA, since the
+lists-as-alternate-path option relocates the work rather than avoiding it. Both
+are scoped in BACKLOG with their measurements, alongside the device checklist
+and the content-pipeline items that need organizer coordination before any
+validation can land. CONTRACTS.md's Accessibility contract absorbed what the
+audit found it too narrow to say: non-text contrast, map SVG text,
+rendered-pixel sizing for the large-text exemption, reflow and text spacing at
+320 px, focus not obscured, no orientation lock, and target size with its one
+known deviation.
 
 ### 2026-08-09 — the revalidation that never worked, and the last follow-ups
 

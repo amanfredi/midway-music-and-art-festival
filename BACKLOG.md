@@ -36,6 +36,28 @@ real logos. Emerald tier's "special treatment / custom branding" is undefined
 because no emerald sponsor exists yet, and the ruby logo-pin map format is
 likewise unspecified.
 
+**Map conformance path — bring the map itself to WCAG AA, or designate the
+list views as the conforming alternate?** The August 2026 audit
+(`reviews/2026-08-wcag-aa-audit.md`) exists to settle this, and recommends
+bringing the map to AA. Nothing it found is expensive or inherent at the AA
+bar; what remains is pan buttons and a pin hit-size floor, both below. The
+alternate-path option does not avoid that work, it relocates it: map pins are
+today the only way to reach transit-stop and sponsor sheets, so the
+designation would first require adding those to a list view. A mapping
+library changes none of the ten failures, so this decision adds no weight to
+the library question above — decide that one on artwork and performance.
+
+**Transit pin green — needs a brand ack, then it lands.** White line letters
+on `--pin-transit` `#298d4e` compute 4.19:1. The CSS comment justifies that as
+large text, but the letters render 8.4px bold at a 288px frame and 16.4px at
+the 560px cap, so the 4.5:1 small-text threshold applies at every width.
+Darkening to `#1e7a41` gives 5.36:1 against the letters and 4.60:1 against the
+paper, and lifts the pin fill's own non-text contrast from 3.61:1 as a side
+effect. The change is one token in `app.css` and the CONTRACTS.md pin-table
+row `| Transit | green #298d4e | diamond with the line letter inside |`, with
+a numeric contrast test alongside. It is ready to land and held only because
+it moves a brand color.
+
 ## Code and test review follow-ups (August 2026)
 
 The August review's follow-ups all landed 2026-08-09 (four waves — build/CI
@@ -101,21 +123,88 @@ lines rather than stop pins** — adding 40-plus stop pins was rejected as
 clutter, but a line conveys "the bus goes along here" at a fraction of the
 visual cost.
 
-Finally, a **map-design pass against the accessibility guide** in `reference/`
-(`Accessibility - map-design-guide (updated)_tcm38-565153.pdf`). Scale, density
-and labelling have been retuned by eye across two QA rounds; the guide covers
-contrast, symbol size and legend conventions systematically. Worth doing before
-commissioning hand-drawn artwork.
+The **map-design pass against the accessibility guide** ran as part of the
+August 2026 WCAG audit, and `reference/map-artwork-a11y-constraints.md` now
+carries the constraints for the commissioned artwork. What it left open is
+below, every measurement in `reviews/2026-08-wcag-aa-audit.md`. The items are
+independent of each other, and the first two are the work the map conformance
+decision above turns on.
+
+- [ ] **Pan buttons** (WCAG 2.5.7, finding F9). Panning is drag-only for
+      pointer users — zoom and reset change scale, double-tap cannot traverse,
+      and arrow keys are keyboard, which the criterion explicitly does not
+      accept as the alternative. `panBy()` already exists; the cost is fitting
+      four buttons or a d-pad onto a 288–560px frame beside the zoom stack.
+      W3C's own compliant example for this criterion is a map with pan
+      buttons, so the "dragging is essential" exception is not available.
+- [ ] **Hit-target floor for transit and sponsor pins** (WCAG 2.5.8, F4). They
+      render 22.7px at a 320px viewport against a 24px minimum, and the
+      spacing exception fails as well — the closest measured pair is 3.4px
+      apart. Venue pins are excused by the key list repeating them at 44px+;
+      transit and sponsor sheets have no entry point but the pin. Best fix:
+      clamp `.pin__hit`'s counter-scale in `updateOverlayScale` so the hit
+      area never renders below 24px while the visible diamond keeps its size.
+      Raising `TRANSIT_HIT_R`/`SPONSOR_*_HIT_R` is the one-line alternative
+      but enlarges the tap halo at every width, re-trading the swallowed-taps
+      QA decision. Entangled with the duplicate-coordinate item under Content.
+- [ ] **Station and arterial label size floors** (guide Part C #4). They render
+      6.0px and 7.4px at a 288px frame against the guide's 8px floor. Advisory
+      rather than a WCAG failure — the contrast passes — but worth doing before
+      the artwork brief locks sizes. Raise the font-size units in
+      `tools/make-map.mjs`, or gate the smallest labels behind a deeper LOD so
+      they never render below the floor.
+- [ ] **Legend swatch size** (guide Part C #1). A fixed 20px CSS swatch against
+      pins rendering 22–43px depending on frame width; matching exactly would
+      mean scaling the legend with the frame. Shapes and colors already match
+      exactly, so recording an accepted deviation is a legitimate answer here.
+- [ ] **Venue-pin hierarchy** (guide Part C #2). Venue pins are 1.25× the
+      others where the guide wants 2×. The direction has to be growing
+      `VENUE_PIN_R`, since shrinking the others worsens the hit-target item
+      above — so check overlap fallout at the home view before landing.
+- [ ] **Scale bar** (guide Part C #5). A map spanning 350 m to 16 km trips the
+      guide's conditional requirement; add it in the generator as a
+      counter-scale-exempt element. The north-arrow half is closed as
+      unnecessary: the map is north-up and never rotates.
 
 ## App
 
-An **accessibility review against WCAG 2.2** is outstanding, updating the
-Accessibility contract in CONTRACTS.md if it turns up gaps. The reference copy
-is in `reference/`. Sequence it after the August 2026 review's a11y fixes (the
-group-by `aria-pressed`, the native-`<dialog>` sheet) have landed, so it audits
-a surface that isn't mid-change; that review's a11y findings and hand-rolled
-surface inventory (`reviews/2026-08-code-and-test-review.md`) are the audit's
-input, not its replacement.
+The **WCAG 2.2 AA review** ran on 2026-08-10. All 55 A/AA criteria are
+dispositioned in `reviews/2026-08-wcag-aa-audit.md`;
+`reference/wcag-aa-site-profile.md` is the checklist future audits start from,
+and states its own re-audit triggers. The cheap fixes landed with pinned
+tests, an axe-core gate covers every route, and the Accessibility contract in
+CONTRACTS.md was corrected where the audit found it too narrow. Left open
+outside the map (which is above):
+
+- [ ] **Patch the Now view in place instead of replacing it** (WCAG 2.2.2, F10
+      — the same defect as the August code review's F14, now at higher
+      priority). The 60 s redraw is a no-op unless the on-now/up-next key
+      changed, so real updates land only at event boundaries; but when the key
+      does change, `paint()` replaces `container.innerHTML` wholesale and
+      destroys focus and screen-reader reading position mid-view. The fix is
+      patching the two lists, not adding a pause control, which would be
+      bizarre for this UI. Test: with a mocked clock crossing an event
+      boundary, focus a star button, advance 60 s, assert focus survives.
+- [ ] **Forced-colors hardening** (advisory; no criterion requires it). Under
+      Windows High Contrast the map survives — SVG keeps its author colors —
+      but the active day-tab and group-by state vanishes, because both states
+      force to white-on-black and the 7.86:1 fill flip that carried the state
+      is erased. A `@media (forced-colors: active)` rule marking `.is-active`
+      with `SelectedItem`, or an underline-style marker that survives forcing.
+- [ ] **Per-route `document.title`** (2.4.2 improvement, not a failure). One
+      title for seven routes passes under the one-document reading the audit
+      recorded; per-route titles are cheap (`app.js` already knows each route's
+      name) and would satisfy the conservative per-page reading too.
+- [ ] **Four small advisory items** the audit recorded without pricing: a
+      visible-on-focus skip link (a11yproject asks unconditionally, though
+      2.4.1 passes on landmarks and the tab bar follows `<main>`, so it buys
+      little here); "opens in a new tab" in the accessible names of the seven
+      `target="_blank"` links (AAA territory); the venue's number in the key
+      list button's accessible name, so a screen-reader user can cross-
+      reference a number a sighted companion mentions (today it is inside an
+      `aria-hidden` SVG); and `scroll-padding-top` for the schedule's sticky
+      control bar — no failure measured there, but it is the same class of bug
+      as the tab-bar one already fixed.
 
 **Web Share API** for sharing a link to anything with a URL: events already
 have one (`#/event/<id>`), venues do not yet. Research from 2026-08-02 flagged
@@ -146,6 +235,29 @@ becomes real with a one-line change in `content/config.json` pointing at a
 published sheet tab.
 
 - Should we try to translate the content to multiple languages? Limited English Proficiency languages in Saint Paul are Spanish, Hmong, Karen, and Somali.
+
+Three accessibility items from the August 2026 audit need organizer
+coordination before any build validation can land:
+
+- [ ] **Sponsor logo alt text has no authoring channel.** The build derives
+      `alt="<name> logo"`, so a logo whose meaning exceeds the sponsor's name —
+      a tagline, a co-brand — has no way to say so, and the sheet has no column
+      for it. Ask organizers whether any real logo will need more than its
+      name. If yes, add an optional `logo_alt` column (use when non-empty,
+      derive otherwise, validate non-empty-if-present so a stray space can't
+      blank it). If no, record the derived form as sufficient rather than
+      adding a required column nobody fills.
+- [ ] **Flag identical `location` values across records in build validation**,
+      warning-grade — legitimately co-located records are conceivable, just
+      rare. This cannot land before the sheet is fixed: Hamline Park and Mosaic
+      on a Stick carry identical coordinates today (above), so the validation
+      would fail the next organizer-triggered build. Sheet first, validation
+      second.
+- [ ] **Editorial check of venue and event descriptions at content freeze**
+      for non-English passages needing a `lang` attribute (WCAG 3.1.2). A
+      one-time read, not a build rule — the audit concluded validation is not
+      worth writing, since proper names are exempt and cover the realistic
+      cases.
 
 ## Needs a real device
 
@@ -183,3 +295,44 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] Nav fits and reads at 320 px with six tabs.
 - [ ] Transit stop names and positions verified against Metro Transit's
       published Green Line / A Line / B Line stop lists.
+
+### VoiceOver and zoom pass (about 15 minutes, from the WCAG audit)
+
+Three criteria stay **pending** in `reviews/2026-08-wcag-aa-audit.md` until
+this runs: 1.1.1 (is the text alternative for the map adequate?), 1.4.4
+(zoom against map type), and 4.1.3 (does VoiceOver actually speak the live
+regions?). Everything else about them is settled mechanically. Step 6 also
+confirms the orientation fix on a real installed app. Run it top to bottom,
+like the README airplane-mode pass.
+
+1. **Setup:** deploy, or serve on the LAN, and open in iOS Safari. Turn
+   VoiceOver on (Settings → Accessibility, or triple-click the side button).
+2. **[4.1.3] Route announcements:** swipe through the tab bar and activate
+   Schedule, then Map, then Support. Each should announce "<Name> view"
+   without focus jumping anywhere. Activate the same tab twice — the
+   announcement should repeat, not go silent.
+3. **[4.1.3] Banner and toast:** load with an undismissed banner; VoiceOver
+   should announce the notice text without focus moving. Then on the Map,
+   with Location Services off for Safari, tap "Show my location" — the
+   permission-denied toast should be spoken once, not twice.
+4. **[1.1.1] Is the map's text alternative adequate?** With VoiceOver on, on
+   the Map view: touch the map and you should hear its name and the arrow-key
+   hint; swipe through the pins and each venue should announce "Venue N:
+   name", each stop its name and lines. Then answer the real question using
+   only the venue key list and the sheets, never the map picture: how do I get
+   from a Green Line stop to venue 3? If the answer is "yes, comfortably",
+   1.1.1 closes as a pass. If you needed the picture, venues need
+   transit-relative information in text somewhere.
+5. **[1.4.4] Zoom and reflow judgment:** VoiceOver off. Pinch-zoom the *page*
+   to 200% on the schedule — everything should reflow or scroll readably. On
+   the map, pinch the *map*: street names hold their size by design, so judge
+   whether page zoom (pinch outside the map frame, or Safari's Page Zoom
+   setting) makes map labels comfortably readable. Then try Settings → Larger
+   Text and confirm app text grows while the site stays usable.
+6. **[1.3.4] Rotation:** Add to Home Screen, open from the icon, rotate the
+   phone. The app should follow into landscape and stay usable.
+7. **[2.2.2, optional] Now-view stability:** during a real or simulated
+   festival window, leave VoiceOver focus on a Now-view row across a minute
+   boundary where the lineup changes, and note whether reading position is
+   lost. It will be, until the in-place patch lands — this step is for
+   confirming that fix later.

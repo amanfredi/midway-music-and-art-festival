@@ -1,7 +1,12 @@
 // Accessibility hardening (Wave 2): focus management on route change and
 // sheet open/close, and keyboard map panning. Runs against the built site,
 // same as offline.spec.mjs.
+//
+// The map tests drive MapLibre through the `window.__mmafMap` test hook rather
+// than the DOM: pins are drawn into a canvas, so there is no element to locate.
+// See tests/map-helpers.mjs.
 import { test, expect } from '@playwright/test';
+import { gotoMap, waitForMapIdle, mapEval, findPin, centreOnPin, findEmptySpot, sheet, SOURCE_FEATURES_FN } from './map-helpers.mjs';
 
 const T = '?t=2026-10-03T15:00';
 
@@ -18,14 +23,13 @@ test('route change moves focus to the view container and announces the destinati
 });
 
 test('opening the venue sheet moves focus into the dialog; closing it restores focus to the trigger', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
 
   const trigger = page.locator('.venue-key-btn').first();
   await expect(trigger).toBeVisible();
   await trigger.click();
 
-  const dialog = page.locator('.sheet[role="dialog"]');
+  const dialog = sheet(page);
   await expect(dialog).toBeVisible();
   await expect(dialog).toBeFocused();
   await expect(dialog).toHaveAttribute('aria-labelledby', 'sheet-title');
@@ -37,117 +41,97 @@ test('opening the venue sheet moves focus into the dialog; closing it restores f
 });
 
 test('a transit pin opens a sheet naming the lines that serve the stop', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
 
   // Snelling & University is the transfer point: one pin, two lines, and the
   // case the single-maps-link decision was made for (CONTRACTS.md).
-  const pin = page.locator('[data-transit-id="snelling-avenue-and-university-station"]');
-  await expect(pin).toBeVisible();
-  await pin.press('Enter');
+  const point = await centreOnPin(page, 'transit-pin', 'snelling-avenue-and-university-station');
+  expect(point, 'the Snelling & University transit pin is not on the map').not.toBeNull();
+  await page.mouse.click(point.x, point.y);
 
-  const dialog = page.locator('.sheet[role="dialog"]');
+  const dialog = sheet(page);
   await expect(dialog).toBeVisible();
   await expect(page.locator('#sheet-title')).toHaveText('Snelling Avenue & University Station');
-  await expect(dialog.locator('.sheet__line-list li')).toHaveText([
-    'METRO Green Line',
-    'METRO A Line',
-  ]);
+  await expect(dialog.locator('.sheet__line-list li')).toHaveText(['METRO Green Line', 'METRO A Line']);
   // Exactly one maps link, not one per line.
   await expect(dialog.locator('a[href*="google.com/maps"]')).toHaveCount(1);
 
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
-  await expect(pin).toBeFocused();
 });
 
-test('a pin\'s tappable area is the diamond itself, not a circle or box around it', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+// The SVG map made its hit targets diamonds so the tappable area was the shape
+// you could see. Canvas pins have no such geometry: taps resolve against a small
+// box around the touch point, nearest pin first. What still has to hold is the
+// property that mattered — a tap opens the pin you aimed at, and empty map is
+// not a pin.
+test('a tap opens the pin under it, and empty map opens nothing', async ({ page }) => {
+  await gotoMap(page);
 
-  const pin = page.locator('[data-testid="venue-pin"]').first();
-  const box = await pin.boundingBox();
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  // Half-width of the pin's bounding box == the diamond's half-diagonal.
-  const r = box.width / 2;
-
-  // Dead centre opens the sheet.
-  await page.mouse.click(cx, cy);
-  await expect(page.locator('.sheet[role="dialog"]')).toBeVisible();
+  const pin = await findPin(page, 'venue-pin');
+  expect(pin, 'no venue pin found on screen').not.toBeNull();
+  await page.mouse.click(pin.x, pin.y);
+  await expect(sheet(page)).toBeVisible();
+  await expect(page.locator('#sheet-title')).toHaveText(pin.properties.name);
   await page.keyboard.press('Escape');
-  await expect(page.locator('.sheet[role="dialog"]')).toBeHidden();
+  await expect(sheet(page)).toBeHidden();
 
-  // A point on the 45° diagonal at 0.85r from centre: inside the old circular
-  // hit area (which reached r in every direction), outside the diamond (whose
-  // edge is only r/√2 ≈ 0.707r away diagonally). Nothing should open.
-  const diag = (0.85 * r) / Math.SQRT2;
-  await page.mouse.click(cx + diag, cy - diag);
-  await expect(page.locator('.sheet[role="dialog"]')).toBeHidden();
+  const empty = await findEmptySpot(page);
+  expect(empty, 'no pin-free point found on the map').not.toBeNull();
+  await page.mouse.click(empty.x, empty.y);
+  await expect(sheet(page)).toBeHidden();
 });
 
 test('dragging the map pans it without sweeping a text selection across the labels', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  const svg = page.locator('#circuit-map');
-  await expect(svg).toBeVisible();
+  await gotoMap(page);
 
-  const box = await svg.boundingBox();
+  const canvas = page.locator('#map-gl canvas');
+  const box = await canvas.boundingBox();
   const startX = box.x + box.width * 0.7;
   const startY = box.y + box.height * 0.7;
 
-  const before = await svg.getAttribute('viewBox');
+  const before = await mapEval(page, (map) => map.getCenter().toArray());
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   // Several steps so the browser sees a real drag, not a jump.
   await page.mouse.move(startX - 120, startY - 90, { steps: 12 });
   await page.mouse.up();
+  await page.waitForTimeout(400);
 
   // It panned...
-  expect(await svg.getAttribute('viewBox')).not.toBe(before);
+  const after = await mapEval(page, (map) => map.getCenter().toArray());
+  expect(Math.abs(after[0] - before[0]) + Math.abs(after[1] - before[1])).toBeGreaterThan(1e-5);
   // ...and selected nothing on the way.
   expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
 });
 
 // Genuine two-finger pinch is out of scope here (it needs real multi-touch);
-// double-tap is the other half of the same gesture handler and is reachable
-// with a mouse, so it is the half worth pinning.
-test('double-tapping the map zooms in, and double-tapping again at full zoom returns home', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  const svg = page.locator('#circuit-map');
-  await expect(svg).toBeVisible();
+// double-click is the other half of the same zoom story and is reachable with a
+// mouse, so it is the half worth pinning.
+test('double-clicking the map zooms in, and double-clicking at full zoom returns home', async ({ page }) => {
+  await gotoMap(page);
 
-  const viewWidth = async () => Number((await svg.getAttribute('viewBox')).split(/\s+/)[2]);
+  const spot = await findEmptySpot(page);
+  expect(spot, 'no pin-free point found on the map to click').not.toBeNull();
 
-  // A pin under the tap opens its sheet instead of zooming, so the tap point is
-  // found rather than hardcoded — the map's artwork and pin set both change.
-  const spot = await page.evaluate(() => {
-    const rect = document.querySelector('#circuit-map').getBoundingClientRect();
-    for (let fy = 0.1; fy < 0.95; fy += 0.1) {
-      for (let fx = 0.1; fx < 0.95; fx += 0.1) {
-        const x = rect.left + rect.width * fx;
-        const y = rect.top + rect.height * fy;
-        const el = document.elementFromPoint(x, y);
-        if (el?.closest('#circuit-map') && !el.closest('.pin')) return { x, y };
-      }
-    }
-    return null;
-  });
-  expect(spot, 'no pin-free point found on the map to tap').not.toBeNull();
-
-  const homeWidth = await viewWidth();
-  await page.mouse.click(spot.x, spot.y);
-  await page.mouse.click(spot.x, spot.y);
-  expect(await viewWidth()).toBeCloseTo(homeWidth / 2, 0);
+  const homeZoom = await mapEval(page, (map) => map.getZoom());
+  await page.mouse.dblclick(spot.x, spot.y);
+  await page.waitForTimeout(700);
+  expect(await mapEval(page, (map) => map.getZoom())).toBeGreaterThan(homeZoom + 0.5);
   // A zoom, not a pin activation.
-  await expect(page.locator('.sheet[role="dialog"]')).toBeHidden();
+  await expect(sheet(page)).toBeHidden();
 
   // Already as close as the map goes, a double-tap is the way back out —
   // otherwise the gesture strands someone zoomed in with no obvious escape.
-  for (let i = 0; i < 5; i++) await page.locator('#zoom-in').click();
-  expect(await viewWidth()).toBeLessThan(homeWidth);
-  await page.mouse.click(spot.x, spot.y);
-  await page.mouse.click(spot.x, spot.y);
-  expect(await viewWidth()).toBeCloseTo(homeWidth, 0);
+  await mapEval(page, (map) => map.jumpTo({ zoom: map.getMaxZoom() }));
+  await waitForMapIdle(page);
+  const centre = await mapEval(page, (map) => {
+    const rect = map.getCanvas().getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  });
+  await page.mouse.dblclick(centre.x, centre.y);
+  await page.waitForTimeout(900);
+  expect(await mapEval(page, (map) => map.getZoom())).toBeCloseTo(homeZoom, 1);
 });
 
 // Regression: this silently stopped working when a variable was renamed during
@@ -158,60 +142,72 @@ test('the locate button drops a "you are here" dot at the reported position', as
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 44.9599, longitude: -93.1667 }); // Hamline Park
 
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
 
   const dot = page.locator('[data-testid="you-are-here"]');
-  await expect(dot).toBeHidden();
+  await expect(dot).toHaveCount(0);
 
   await page.click('#locate-btn');
   await expect(dot).toBeVisible();
 
-  // Positioned at the festival center, which is where the home view is centered.
-  const transform = await dot.getAttribute('transform');
-  const [x, y] = transform.match(/-?[\d.]+/g).map(Number);
-  const home = await page.evaluate(async () => (await (await fetch('assets/map-calibration.json')).json()).home_center);
-  expect(Math.abs(x - home.x)).toBeLessThan(50);
-  expect(Math.abs(y - home.y)).toBeLessThan(50);
+  // The marker sits where the map projects the reported position, which at the
+  // home view is the festival centre.
+  const offset = await page.evaluate(() => {
+    const map = window.__mmafMap;
+    const el = document.querySelector('[data-testid="you-are-here"]');
+    const rect = el.getBoundingClientRect();
+    const canvas = map.getCanvas().getBoundingClientRect();
+    const expected = map.project([-93.1667, 44.9599]);
+    return {
+      dx: rect.left + rect.width / 2 - (canvas.left + expected.x),
+      dy: rect.top + rect.height / 2 - (canvas.top + expected.y),
+    };
+  });
+  expect(Math.abs(offset.dx)).toBeLessThan(6);
+  expect(Math.abs(offset.dy)).toBeLessThan(6);
 });
 
 test('a location outside the map area reports it instead of dropping a dot', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 45.5, longitude: -122.6 }); // Portland, OR — far outside
 
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
   await page.click('#locate-btn');
 
   await expect(page.locator('#toast-root')).toContainText(/outside the map area/i);
-  await expect(page.locator('[data-testid="you-are-here"]')).toBeHidden();
+  await expect(page.locator('[data-testid="you-are-here"]')).toHaveCount(0);
 });
 
 test('the map opens at the home view, not the full extent, and can pan in every direction', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  const svg = page.locator('#circuit-map');
-  await expect(svg).toBeVisible();
+  await gotoMap(page);
 
-  const parseVb = async () => (await svg.getAttribute('viewBox')).split(/\s+/).map(Number);
-  const [x0, y0, w0, h0] = await parseVb();
+  const view = await mapEval(page, (map) => ({
+    zoom: map.getZoom(),
+    minZoom: map.getMinZoom(),
+    maxZoom: map.getMaxZoom(),
+    centre: map.getCenter().toArray(),
+    bounds: map.getBounds().toArray(),
+    maxBounds: map.getMaxBounds().toArray(),
+  }));
 
-  // Home view is a ~3km square well inside the ~9.7 x 6.4 km map, and is not
-  // pinned to any edge — the point of the change is that there is somewhere to
-  // drag to in all four directions from the default view.
-  expect(w0).toBeCloseTo(h0, 0);
-  expect(w0).toBeLessThan(4000);
-  expect(x0).toBeGreaterThan(0);
-  expect(y0).toBeGreaterThan(0);
+  // The home view sits inside the map's own extent with room to pan in every
+  // direction — the point being that the default view is not pinned to an edge.
+  expect(view.zoom).toBeGreaterThan(view.minZoom);
+  expect(view.zoom).toBeLessThan(view.maxZoom);
+  expect(view.bounds[0][0]).toBeGreaterThan(view.maxBounds[0][0]);
+  expect(view.bounds[0][1]).toBeGreaterThan(view.maxBounds[0][1]);
+  expect(view.bounds[1][0]).toBeLessThan(view.maxBounds[1][0]);
+  expect(view.bounds[1][1]).toBeLessThan(view.maxBounds[1][1]);
 
-  await svg.focus();
+  await page.locator('#map-gl canvas').focus();
   await page.keyboard.press('ArrowLeft');
-  expect((await parseVb())[0]).toBeLessThan(x0);
-  await page.keyboard.press('ArrowUp');
-  expect((await parseVb())[1]).toBeLessThan(y0);
+  await page.waitForTimeout(700);
+  expect((await mapEval(page, (map) => map.getCenter().toArray()))[0]).toBeLessThan(view.centre[0]);
 
   // Zooming out reveals more map than the home view showed.
-  await page.click('#zoom-out');
-  expect((await parseVb())[2]).toBeGreaterThan(w0);
+  await page.locator('#zoom-out').click();
+  await page.waitForTimeout(700);
+  expect(await mapEval(page, (map) => map.getZoom())).toBeLessThan(view.zoom);
 });
 
 // The two rail lines draw at identical weight and differ only in hue, so the
@@ -219,8 +215,7 @@ test('the map opens at the home view, not the full extent, and can pan in every 
 // station pins in range either, so without it nothing on the page identifies
 // it at all.
 test('the legend names both rail lines in the colors the map draws them', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
 
   const legend = page.locator('.map-legend__list');
   await expect(legend).toContainText('METRO Green Line');
@@ -228,9 +223,65 @@ test('the legend names both rail lines in the colors the map draws them', async 
 
   for (const line of ['green', 'blue']) {
     const swatch = await page.locator(`.legend-icon--rail-${line} line`).evaluate((el) => getComputedStyle(el).stroke);
-    const rail = await page.locator(`#circuit-map .rail-${line}`).evaluate((el) => getComputedStyle(el).stroke);
+    // The engine's own paint for that layer, which map.js resolved from the
+    // same custom property the swatch uses. Both sides are read back so a
+    // future edit to either one has to keep them agreeing.
+    const rail = await mapEval(page, (map, id) => map.getPaintProperty(id, 'line-color'), `rail-${line}`);
     expect(swatch, `${line} line swatch does not match the rail it stands for`).toBe(rail);
   }
+});
+
+// A count on a cluster reads as a venue number — venue pins carry exactly that,
+// from the key list — so clusters carry no text at all (Anthony, 2026-08-10).
+test('clustered venue pins show no number that could be mistaken for a venue', async ({ page }) => {
+  await gotoMap(page);
+
+  const clusterLayout = await mapEval(page, (map) => {
+    const layer = map.getStyle().layers.find((l) => l.id === 'venue-cluster');
+    return layer ? layer.layout ?? {} : null;
+  });
+  expect(clusterLayout, 'the venue-cluster layer is missing').not.toBeNull();
+  expect(clusterLayout['text-field'], 'clusters must not render a count').toBeUndefined();
+
+  // And the venue pins that are not clusters still carry their key-list number.
+  const pin = await findPin(page, 'venue-pin');
+  expect(pin).not.toBeNull();
+  expect(pin.properties.label).toMatch(/^\d+$/);
+});
+
+// Every venue must be reachable even when zoom cannot separate its pin from a
+// neighbour's. Two venues share a coordinate (Mosaic on a Stick sits inside
+// Hamline Park — valid data, see CLAUDE.md), so a cluster that cannot expand
+// opens a picker listing what is under it.
+test('a cluster that no zoom can split opens a picker instead of a dead tap', async ({ page }) => {
+  await gotoMap(page);
+
+  const coincident = await mapEval(page, async (map, featuresFn) => {
+    const byPosition = new Map();
+    for (const f of new Function('return ' + featuresFn)()(map, 'venues')) {
+      const key = f.geometry.coordinates.join(',');
+      byPosition.set(key, [...(byPosition.get(key) ?? []), f.properties.name]);
+    }
+    const [key, names] = [...byPosition.entries()].find(([, list]) => list.length > 1) ?? [];
+    if (!key) return null;
+    map.jumpTo({ center: key.split(',').map(Number), zoom: map.getMaxZoom() - 3 });
+    await new Promise((r) => map.once('idle', () => setTimeout(r, 300)));
+    const rect = map.getCanvas().getBoundingClientRect();
+    const point = map.project(key.split(',').map(Number));
+    return { names, x: rect.left + point.x, y: rect.top + point.y };
+  }, SOURCE_FEATURES_FN);
+  expect(coincident, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
+
+  await page.mouse.click(coincident.x, coincident.y);
+  const dialog = sheet(page);
+  await expect(dialog).toBeVisible();
+  for (const name of coincident.names) {
+    await expect(dialog).toContainText(name);
+  }
+
+  // Picking one opens that venue's own sheet.
+  await dialog.locator('.sheet__picker-btn').first().click();
+  await expect(page.locator('#sheet-title')).toHaveText(coincident.names[0]);
 });
 
 // WCAG relative luminance, so the assertion below states the ratio the
@@ -279,8 +330,7 @@ test('the star reads against its card whether the event is saved or not', async 
 // bar is fixed over the bottom of every route.
 test('tabbing down the map view never parks focus behind the fixed tab bar', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
 
   const obscured = [];
   for (let i = 0; i < 40; i++) {
@@ -301,21 +351,19 @@ test('tabbing down the map view never parks focus behind the fixed tab bar', asy
 });
 
 test('map canvas is keyboard-focusable and arrow keys pan it once zoomed in', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  const svg = page.locator('#circuit-map');
-  await expect(svg).toBeVisible();
-  await expect(svg).toHaveAttribute('tabindex', '0');
-  expect(await svg.getAttribute('aria-label')).toMatch(/arrow keys/i);
+  await gotoMap(page);
+  const canvas = page.locator('#map-gl canvas');
+  await expect(canvas).toBeVisible();
+  await expect(canvas).toHaveAttribute('tabindex', '0');
+  expect(await canvas.getAttribute('aria-label')).toMatch(/arrow keys/i);
 
-  // Fully zoomed out, the view already fills the whole map -- there's no
-  // room to pan (same clamping as drag-panning), so zoom in first.
-  await page.locator('#zoom-in').click();
-  await page.locator('#zoom-in').click();
-  const viewBoxBefore = await svg.getAttribute('viewBox');
+  const before = await mapEval(page, (map) => map.getCenter().toArray());
 
-  await svg.focus();
-  await expect(svg).toBeFocused();
+  await canvas.focus();
+  await expect(canvas).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  const viewBoxAfter = await svg.getAttribute('viewBox');
-  expect(viewBoxAfter).not.toBe(viewBoxBefore);
+  await page.waitForTimeout(700);
+
+  const after = await mapEval(page, (map) => map.getCenter().toArray());
+  expect(after[0]).toBeGreaterThan(before[0]);
 });

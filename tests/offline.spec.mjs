@@ -2,6 +2,7 @@
 // must work fully offline — schedule, map, starred events — across reloads.
 // Run against the built site (`npm run build` first; `npm test` does both).
 import { test, expect } from '@playwright/test';
+import { waitForMapIdle, mapEval, sourceFeatures } from './map-helpers.mjs';
 
 // Demo clock inside the festival weekend so "on now" has content.
 const T = '?t=2026-10-03T15:00';
@@ -41,12 +42,28 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
   expect(await page.locator('[data-testid="event-row"]').count()).toBeGreaterThan(10);
 
-  // map renders offline with one pin per venue in the built content
+  // The map renders offline: the engine's four modules, the street GeoJSON and
+  // the calibration all come from precache. This is the heaviest thing the
+  // service worker carries, so it is the part most worth asserting offline.
   await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await waitForMapIdle(page);
   const venueCount = await page.evaluate(async () => (await (await fetch('data/content.json')).json()).venues.length);
   expect(venueCount).toBeGreaterThan(0);
-  expect(await page.locator('[data-testid="venue-pin"]').count()).toBe(venueCount);
+
+  // The venue count is checked against the source the map draws from, not
+  // against symbols on screen: pins close together combine into a cluster at
+  // the home view, so the number drawn is deliberately not the number of
+  // venues. What the render has to show is that both the ground and the pins
+  // came back from cache.
+  expect((await sourceFeatures(page, 'venues')).length).toBe(venueCount);
+  const drawn = await mapEval(page, (map) => ({
+    streets: map.queryRenderedFeatures({ layers: ['arterial-fill', 'spine-fill'] }).length,
+    symbols:
+      map.queryRenderedFeatures({ layers: ['venue-pin'] }).length +
+      map.queryRenderedFeatures({ layers: ['venue-cluster'] }).length,
+  }));
+  expect(drawn.streets, 'street geometry did not render offline').toBeGreaterThan(0);
+  expect(drawn.symbols, 'no venue pins or clusters rendered offline').toBeGreaterThan(0);
 
   // Transit pins are a *subset* of the committed transit.json (offline: served
   // from precache): the map now spans both downtowns, so only stops within
@@ -55,7 +72,7 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   // rendered from it — not the exact count.
   const transitStopCount = await page.evaluate(async () => (await (await fetch('assets/transit.json')).json()).stops.length);
   expect(transitStopCount).toBeGreaterThan(0);
-  const transitPinCount = await page.locator('[data-testid="transit-pin"]').count();
+  const transitPinCount = (await sourceFeatures(page, 'transit')).length;
   expect(transitPinCount).toBeGreaterThan(0);
   expect(transitPinCount).toBeLessThanOrEqual(transitStopCount);
 

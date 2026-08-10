@@ -3,7 +3,7 @@
 //
 // One-off generator (NOT part of `npm run build`): fetches real street
 // geometry for the Snelling & University corridor from the OSM Overpass API
-// and generates site/assets/map.svg + site/assets/map-calibration.json.
+// and generates site/assets/map-calibration.json + artwork/map.svg.
 //
 // Usage:
 //   node tools/make-map.mjs            # use tools/osm-cache.json if present
@@ -15,7 +15,7 @@
 // this is a generator, not a server-side build step. See CONTRACTS.md
 // ("Map + geo contract") for the coordinate system this must produce.
 
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,17 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const CACHE_PATH = path.join(__dirname, 'osm-cache.json');
-const SVG_OUT = path.join(ROOT, 'site/assets/map.svg');
+// The SVG is no longer part of the site: the map is drawn by MapLibre from
+// map-vector.geojson (tools/make-map-geojson.mjs), so this generator's only
+// shipped output is the calibration file -- still the single source of the
+// control points geo.js georeferences everything through.
+//
+// The SVG lands in artwork/, which is gitignored and never deployed. It stays
+// because it is the one rendering of this extent that can stand in for
+// commissioned artwork: tools/make-map-raster.mjs turns it into the raster the
+// four-corner ImageSource ground was auditioned with. See BACKLOG.md, artwork.
+const ARTWORK_DIR = path.join(ROOT, 'artwork');
+const SVG_OUT = path.join(ARTWORK_DIR, 'map.svg');
 const CALIBRATION_OUT = path.join(ROOT, 'site/assets/map-calibration.json');
 
 // ---------------------------------------------------------------------------
@@ -672,6 +682,7 @@ async function main() {
     waterLines: data.waterLines,
     labels,
   });
+  await mkdir(ARTWORK_DIR, { recursive: true });
   await writeFile(SVG_OUT, svg, 'utf8');
   console.log(`Wrote ${path.relative(ROOT, SVG_OUT)} (${Buffer.byteLength(svg, 'utf8')} bytes).`);
 

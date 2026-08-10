@@ -105,13 +105,20 @@ try {
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
     for (const route of routes) {
       await page.goto(`http://localhost:${PORT}/?t=${CLOCK}${route}`, { waitUntil: 'networkidle' });
-      // Views render async (content.json fetch, map.svg inline); wait for the
-      // splash to be replaced by real content rather than a fixed sleep.
+      // Views render async (content.json fetch, then the map engine); wait for
+      // the splash to be replaced by real content rather than a fixed sleep.
       await page
         .waitForFunction(() => !document.querySelector('#view > .splash'), { timeout: 10_000 })
         .catch(() => {});
       if (route === '#/map') {
-        await page.waitForSelector('.circuit-map-svg', { timeout: 10_000 }).catch(() => {});
+        // A canvas in the DOM is not a drawn map: wait for the engine to say it
+        // has finished rendering, or the shot catches an empty frame.
+        await page
+          .waitForFunction(() => window.__mmafMap && window.__mmafMap.loaded(), { timeout: 20_000 })
+          .catch(() => {});
+        await page
+          .evaluate(() => new Promise((r) => window.__mmafMap.once('idle', () => setTimeout(r, 400))))
+          .catch(() => {});
       }
       // --click '#zoom-out x3' presses a control before shooting, for states
       // that only exist after interaction (zoom levels, open sheets).

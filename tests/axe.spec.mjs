@@ -10,6 +10,7 @@
 // checklist in BACKLOG.md — a clean run here is not a conformance claim.
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { gotoMap, waitForMapIdle } from './map-helpers.mjs';
 
 const T = '?t=2026-10-03T15:00';
 
@@ -31,7 +32,9 @@ async function expectNoViolations(page, label) {
 const ROUTES = [
   { name: 'Now', url: '/' + T, ready: '[data-testid="now-view"]' },
   { name: 'Schedule', url: '/' + T + '#/schedule', ready: '[data-testid="schedule-list"]' },
-  { name: 'Map', url: '/' + T + '#/map', ready: '#circuit-map' },
+    // The map is a canvas: 'ready' has to mean the engine finished drawing, not
+  // that an element exists. See mapReady below.
+  { name: 'Map', url: '/' + T + '#/map', ready: '[data-testid="map-canvas"]', map: true },
   { name: 'Starred', url: '/' + T + '#/starred', ready: '[data-testid="starred-list"]' },
   { name: 'Vendors', url: '/' + T + '#/vendors', ready: '[data-testid="vendor-list"]' },
   { name: 'Support', url: '/' + T + '#/sponsors', ready: '[data-testid="sponsor-list"]' },
@@ -41,6 +44,7 @@ for (const route of ROUTES) {
   test(`${route.name} view has no WCAG A/AA violations`, async ({ page }) => {
     await page.goto(route.url);
     await expect(page.locator(route.ready)).toBeVisible();
+    if (route.map) await waitForMapIdle(page);
     await expectNoViolations(page, route.name);
   });
 }
@@ -62,8 +66,7 @@ test('the schedule grouped by venue has no WCAG A/AA violations', async ({ page 
 });
 
 test('an open venue sheet has no WCAG A/AA violations', async ({ page }) => {
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
   await page.locator('.venue-key-btn').first().click();
 
   await expect(page.locator('.sheet[role="dialog"]')).toBeVisible();
@@ -73,8 +76,7 @@ test('an open venue sheet has no WCAG A/AA violations', async ({ page }) => {
 test('a visible toast has no WCAG A/AA violations', async ({ page, context }) => {
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 45.5, longitude: -122.6 }); // Portland, OR — outside the map
-  await page.goto('/' + T + '#/map');
-  await expect(page.locator('#circuit-map')).toBeVisible();
+  await gotoMap(page);
   await page.click('#locate-btn');
 
   await expect(page.locator('#toast-root')).toContainText(/outside the map area/i);

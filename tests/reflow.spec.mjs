@@ -10,7 +10,7 @@ const T = '?t=2026-10-03T15:00';
 const ROUTES = [
   { name: 'Now', url: '/' + T, ready: '[data-testid="now-view"]' },
   { name: 'Schedule', url: '/' + T + '#/schedule', ready: '[data-testid="schedule-list"]' },
-  { name: 'Map', url: '/' + T + '#/map', ready: '#circuit-map' },
+  { name: 'Map', url: '/' + T + '#/map', ready: '[data-testid="map-canvas"]' },
   { name: 'Starred', url: '/' + T + '#/starred', ready: '[data-testid="starred-list"]' },
   { name: 'Vendors', url: '/' + T + '#/vendors', ready: '[data-testid="vendor-list"]' },
   { name: 'Support', url: '/' + T + '#/sponsors', ready: '[data-testid="sponsor-list"]' },

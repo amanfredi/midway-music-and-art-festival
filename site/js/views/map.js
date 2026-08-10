@@ -1,25 +1,19 @@
-// SPIKE (maplibre-spike branch): the #/map tab rendered by MapLibre GL JS 6
-// instead of the hand-rolled inline-SVG map. Everything around it -- the shell,
-// routes, venue data, sheets, the venue key list -- is untouched, so the two
-// implementations can be compared side by side on a real phone.
+// The #/map tab, rendered by MapLibre GL JS 6.
 //
-// Two ground modes, chosen with a `map` query param on the page URL (the same
-// place the demo clock's `?t=` lives, so the two compose: `?t=...&map=raster`):
+// The ground is vector: streets, water, rail and labels drawn from
+// assets/map-vector.geojson, which tools/make-map-geojson.mjs generates from the
+// committed Overpass response in tools/osm-cache.json. Labels are symbol layers,
+// so the engine re-places them at every zoom instead of carrying one placement
+// baked for the whole map.
 //
-//   ?map=vector  (default) streets, transit and labels as engine-styled vector
-//                layers from assets/map-vector.geojson -- the same OSM source
-//                data make-map.mjs bakes into map.svg. Labels are symbol layers,
-//                so the engine re-places them at every zoom.
-//   ?map=raster  a four-corner georeferenced ImageSource carrying a rasterized
-//                map.svg, standing in for commissioned artwork. Same pins on top.
-//   ?map=hybrid  the raster ground with the engine's street labels drawn over
-//                it. Not in the spike brief; it costs five lines and it is the
-//                configuration the deferred "artwork with no baked lettering"
-//                question is actually asking about.
+// Georeferencing still runs through geo.js: the map's extent and home view come
+// from map-calibration.json's control points, inverted through the same affine
+// projector the SVG map used forwards. Recalibrating to commissioned artwork
+// remains a pure data change.
 //
-// The corner coordinates for the raster come from geo.js's projector, inverted
-// -- so Mode B is a live test of the georeferencing story the artist constraint
-// depends on, not a hand-tuned placement.
+// A four-corner `ImageSource` ground for artwork was auditioned alongside this
+// one and is not shipped -- see BACKLOG.md's artwork entry for what it cost and
+// what it would need. tools/make-map-raster.mjs still produces the raster.
 
 import { esc, showToast } from '../util.js';
 import { makeProjector } from '../geo.js';
@@ -28,12 +22,11 @@ import { openVenueSheet, openSponsorSheet, openTransitSheet, openPickerSheet } f
 // View widths, in meters across the map frame, converted to MapLibre zooms at
 // runtime once the frame's pixel width is known.
 //
-// HOME (3000 m) and the full extent match the hand-rolled map exactly. The
-// closest zoom does NOT: the SVG map stops at 350 m across, and at that scale
-// two venues 14 m apart are still only ~15 px apart -- closer than one pin is
-// wide. No amount of collision handling fixes a zoom range that never separates
-// the points, so the spike opens the ceiling to 120 m. This is a deliberate
-// deviation from parity, and it is the thing to look at first on the phone.
+// HOME (3000 m) and the full extent carry over from the SVG map unchanged. The
+// closest zoom does not: that map stopped at 350 m across, where two venues 14 m
+// apart are still only ~15 px apart -- closer together than one pin is wide. No
+// amount of collision or cluster handling can separate points inside a zoom
+// range that never resolves them, so the ceiling is 120 m.
 const HOME_VIEW_M = 3000;
 const MIN_VIEW_M = 120;
 
@@ -46,13 +39,56 @@ const TRANSIT_LINE_LETTER = { green: 'G', a: 'A', b: 'B' };
 const TRANSIT_LINE_NAME = { green: 'METRO Green Line', a: 'METRO A Line', b: 'METRO B Line' };
 const FEATURED_SPONSOR_TIERS = new Set(['emerald', 'ruby', 'sapphire']);
 
-// Brand colors, lifted from the SVG map's own stylesheet so both grounds and
-// both implementations agree.
-const PAPER = '#eeeeec';
-const WATER = '#bcd2de';
-const PIN_VENUE = '#10577b';
-const PIN_TRANSIT = '#298d4e';
-const PIN_SPONSOR = '#a11f22';
+// Every color the map draws comes from app.css, resolved at render time.
+//
+// The SVG map had to state its colors twice -- once in app.css for the legend
+// swatches, once inside map.svg's own <style> block -- and CONTRACTS.md carried
+// a rule plus a test to keep the two copies honest. Drawing through an engine
+// removes the second copy: a legend swatch and the line it stands for are now
+// the same custom property, so they cannot drift.
+const MAP_COLOR_VARS = {
+  paper: '--map-paper',
+  water: '--map-water',
+  venue: '--pin-venue',
+  transit: '--pin-transit',
+  sponsor: '--pin-sponsor',
+  railGreen: '--rail-green',
+  railBlue: '--rail-blue',
+  streetCasing: '--street-casing',
+  streetFill: '--street-fill',
+  spineCasing: '--spine-casing',
+  spineFill: '--spine-fill',
+  motorwayCasing: '--motorway-casing',
+  motorwayFill: '--motorway-fill',
+  stationStroke: '--station-stroke',
+  labelSpine: '--map-label-spine',
+  labelArterial: '--map-label-arterial',
+  labelStation: '--map-label-station',
+  surface: '--color-surface',
+};
+
+/**
+ * Resolves custom properties to concrete colors.
+ *
+ * Reading a custom property directly hands back whatever token stream was
+ * authored -- often another `var()` -- so each one is bounced through a probe
+ * element's `color`, which the browser must resolve to an rgb() triple.
+ */
+function resolveMapColors(host) {
+  const probe = document.createElement('span');
+  probe.style.display = 'none';
+  host.appendChild(probe);
+  const out = {};
+  try {
+    for (const [key, name] of Object.entries(MAP_COLOR_VARS)) {
+      probe.style.color = `var(${name})`;
+      out[key] = getComputedStyle(probe).color;
+    }
+  } finally {
+    probe.remove();
+  }
+  return out;
+}
 
 // MapLibre 6 draws glyphs locally with TinySDF whenever a style carries no
 // `glyphs` URL -- for every codepoint, not just CJK (GlyphManager
@@ -172,6 +208,53 @@ function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
   return { data: ctx.getImageData(0, 0, size, size), pixelRatio: dpr };
 }
 
+/**
+ * The cluster symbol: three diamonds fanned behind each other, no number.
+ *
+ * A count here is actively misleading. Venue pins carry a venue's number from
+ * the key list, so a cluster reading "3" is indistinguishable from venue 3 --
+ * on the phone it was read as exactly that (Anthony, 2026-08-10). The stack
+ * says "more than one venue, zoom or tap" using the same diamond vocabulary,
+ * and numbers stay the exclusive property of individual venue pins.
+ */
+function clusterImage(radius, { fill, stroke }, dpr) {
+  const offset = Math.round(radius * 0.34);
+  const strokeWidth = 2;
+  const pad = 2 + strokeWidth + offset * 2;
+  const size = Math.ceil((radius + pad) * 2 * dpr);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const c = size / (2 * dpr);
+
+  const diamond = (cx, cy, r) => {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+  };
+
+  // Back to front. Each rear diamond is outlined in the surface color so the
+  // stack reads as separate sheets rather than one blurred blob.
+  for (const [dx, dy] of [
+    [offset, -offset],
+    [offset / 2, -offset / 2],
+    [0, 0],
+  ]) {
+    diamond(c + dx, c + dy, radius);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth;
+    ctx.stroke();
+  }
+  return { data: ctx.getImageData(0, 0, size, size), pixelRatio: dpr };
+}
+
 // The three zooms every zoom-keyed stop below is pinned to: the full extent,
 // the home view, and the closest zoom. They follow from the calibration and the
 // view widths above -- roughly 10.4 / 12.8 / 17.5 on a phone-width frame.
@@ -185,23 +268,23 @@ function widthByZoom(atWide, atHome, atClose) {
 }
 
 /** The vector ground: streets, water, rail and labels from the OSM GeoJSON. */
-function groundLayersVector() {
+function groundLayersVector(colors) {
   return [
-    { id: 'paper', type: 'background', paint: { 'background-color': PAPER } },
+    { id: 'paper', type: 'background', paint: { 'background-color': colors.paper } },
     {
       id: 'water-line',
       type: 'line',
       source: 'mapdata',
       filter: ['==', ['get', 'kind'], 'water-line'],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': WATER, 'line-width': widthByZoom(3, 9.5, 26) },
+      paint: { 'line-color': colors.water, 'line-width': widthByZoom(3, 9.5, 26) },
     },
     {
       id: 'water-area',
       type: 'fill',
       source: 'mapdata',
       filter: ['==', ['get', 'kind'], 'water-area'],
-      paint: { 'fill-color': WATER },
+      paint: { 'fill-color': colors.water },
     },
     // Casing under fill for each road tier, matching the SVG's two-stroke roads.
     {
@@ -210,7 +293,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'motorway']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#b4b4b2', 'line-width': widthByZoom(3.5, 9, 22), 'line-opacity': 0.6 },
+      paint: { 'line-color': colors.motorwayCasing, 'line-width': widthByZoom(3.5, 9, 22), 'line-opacity': 0.6 },
     },
     {
       id: 'motorway-fill',
@@ -218,7 +301,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'motorway']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#d9d9d9', 'line-width': widthByZoom(2.5, 7, 18), 'line-opacity': 0.6 },
+      paint: { 'line-color': colors.motorwayFill, 'line-width': widthByZoom(2.5, 7, 18), 'line-opacity': 0.6 },
     },
     {
       id: 'arterial-casing',
@@ -226,7 +309,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'arterial']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#c4c4c2', 'line-width': widthByZoom(2.5, 7, 17) },
+      paint: { 'line-color': colors.streetCasing, 'line-width': widthByZoom(2.5, 7, 17) },
     },
     {
       id: 'arterial-fill',
@@ -234,7 +317,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'arterial']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#dedede', 'line-width': widthByZoom(1.6, 5.2, 13) },
+      paint: { 'line-color': colors.streetFill, 'line-width': widthByZoom(1.6, 5.2, 13) },
     },
     {
       id: 'spine-casing',
@@ -242,7 +325,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'spine']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#a8a8a6', 'line-width': widthByZoom(3.5, 9.5, 24) },
+      paint: { 'line-color': colors.spineCasing, 'line-width': widthByZoom(3.5, 9.5, 24) },
     },
     {
       id: 'spine-fill',
@@ -250,7 +333,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'spine']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#cfcfcf', 'line-width': widthByZoom(2.6, 7.8, 20) },
+      paint: { 'line-color': colors.spineFill, 'line-width': widthByZoom(2.6, 7.8, 20) },
     },
     // One thick solid stroke per line, not two thin dashed ones: each direction
     // is a separate OSM way, so thin dashes read as two railways.
@@ -260,7 +343,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'rail'], ['==', ['get', 'line'], 'green']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#2f7d4f', 'line-width': widthByZoom(2, 4.2, 9) },
+      paint: { 'line-color': colors.railGreen, 'line-width': widthByZoom(2, 4.2, 9) },
     },
     {
       id: 'rail-blue',
@@ -268,7 +351,7 @@ function groundLayersVector() {
       source: 'mapdata',
       filter: ['all', ['==', ['get', 'kind'], 'rail'], ['==', ['get', 'line'], 'blue']],
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#2b5fa8', 'line-width': widthByZoom(2, 4.2, 9) },
+      paint: { 'line-color': colors.railBlue, 'line-width': widthByZoom(2, 4.2, 9) },
     },
     {
       id: 'station-dot',
@@ -278,7 +361,7 @@ function groundLayersVector() {
       paint: {
         'circle-radius': widthByZoom(2, 4, 7),
         'circle-color': '#ffffff',
-        'circle-stroke-color': '#4a4a4a',
+        'circle-stroke-color': colors.stationStroke,
         'circle-stroke-width': 1.2,
       },
     },
@@ -292,7 +375,7 @@ function groundLayersVector() {
  * placement at every zoom, repeating a name along the street as often as there
  * is room and dropping the ones that collide.
  */
-function labelLayers() {
+function labelLayers(colors) {
   // Order matters twice over, and in opposite directions. Later layers draw on
   // top, but they are also placed FIRST -- MapLibre runs collision from the top
   // of the layer stack down, so whatever is drawn last wins the space. The two
@@ -317,7 +400,7 @@ function labelLayers() {
         'text-size': ['interpolate', ['linear'], ['zoom'], 11.6, 9.5, Z_HOME, 11.5, Z_CLOSE, 13.5],
         'text-max-angle': 40,
       },
-      paint: { 'text-color': '#565654', 'text-halo-color': PAPER, 'text-halo-width': 1.5 },
+      paint: { 'text-color': colors.labelArterial, 'text-halo-color': colors.paper, 'text-halo-width': 1.5 },
     },
     {
       id: 'station-label',
@@ -333,7 +416,7 @@ function labelLayers() {
         'text-anchor': 'bottom',
         'text-offset': [0, -0.7],
       },
-      paint: { 'text-color': '#3d5c4d', 'text-halo-color': PAPER, 'text-halo-width': 1.5 },
+      paint: { 'text-color': colors.labelStation, 'text-halo-color': colors.paper, 'text-halo-width': 1.5 },
     },
     {
       id: 'street-label-spine',
@@ -348,16 +431,8 @@ function labelLayers() {
         'text-size': ['interpolate', ['linear'], ['zoom'], Z_WIDE, 10, Z_HOME, 12.5, Z_CLOSE, 15],
         'text-max-angle': 40,
       },
-      paint: { 'text-color': '#3f3f3f', 'text-halo-color': PAPER, 'text-halo-width': 1.5 },
+      paint: { 'text-color': colors.labelSpine, 'text-halo-color': colors.paper, 'text-halo-width': 1.5 },
     },
-  ];
-}
-
-/** The raster ground: today's map.svg, rasterized, placed by four corners. */
-function groundLayersRaster() {
-  return [
-    { id: 'paper', type: 'background', paint: { 'background-color': PAPER } },
-    { id: 'artwork', type: 'raster', source: 'artwork', paint: { 'raster-fade-duration': 0 } },
   ];
 }
 
@@ -367,7 +442,6 @@ let renderGeneration = 0;
 export async function renderMap(container, content) {
   const generation = ++renderGeneration;
   const youAreHereEnabled = content.settings.you_are_here_enabled === 'true';
-  const mode = pickMode();
 
   container.innerHTML = `
     <section class="view map-view">
@@ -381,7 +455,6 @@ export async function renderMap(container, content) {
           ${youAreHereEnabled ? `<button type="button" class="map-btn map-btn--locate" id="locate-btn" aria-label="Show my location">&#9678;</button>` : ''}
         </div>
       </div>
-      <p class="map-mode-note">Ground: <strong>${esc(mode)}</strong> (MapLibre spike &mdash; switch with <code>?map=vector</code>, <code>?map=raster</code>, <code>?map=hybrid</code>)</p>
       <div class="map-legend">
         <h2 class="map-legend__title sr-only">Legend</h2>
         <ul class="map-legend__list">
@@ -467,37 +540,30 @@ export async function renderMap(container, content) {
   // tile, so they would never break apart no matter how far you zoomed.
   const clusterMaxZoom = Math.min(17, Math.round(zoomForMeters(210, framePx, lat)));
 
-  wrap.innerHTML = '<div class="map-gl" id="map-gl"></div>';
+  wrap.innerHTML = '<div class="map-gl" id="map-gl" data-testid="map-canvas"></div>';
   const glHost = wrap.querySelector('#map-gl');
+  const colors = resolveMapColors(glHost);
 
   const { Map: MlMap, LngLatBounds, Marker } = engine;
 
-  const sources = {};
-  let layers;
-  if (mode === 'vector') {
-    // The URL, not a parsed object: MapLibre hands it to the worker, so 2.6 MB
-    // of GeoJSON is fetched (from the service-worker cache, offline) and parsed
-    // off the main thread.
-    sources.mapdata = { type: 'geojson', data: 'assets/map-vector.geojson' };
-    layers = [...groundLayersVector(), ...labelLayers()];
-  } else {
-    sources.artwork = { type: 'image', url: 'assets/map-raster.webp', coordinates: [nw, ne, se, sw] };
-    layers = groundLayersRaster();
-    if (mode === 'hybrid') {
-      sources.mapdata = { type: 'geojson', data: 'assets/map-vector.geojson' };
-      layers = [...layers, ...labelLayers()];
-    }
-  }
+  const style = {
+    version: 8,
+    // The URL, not a parsed object: MapLibre hands it to the worker, so the
+    // GeoJSON is fetched (from the service-worker cache when offline) and
+    // parsed off the main thread.
+    sources: { mapdata: { type: 'geojson', data: 'assets/map-vector.geojson' } },
+    layers: [...groundLayersVector(colors), ...labelLayers(colors)],
+  };
 
   const map = new MlMap({
     container: glHost,
-    style: { version: 8, sources, layers },
+    style,
     center: home,
     zoom: homeZoom,
     minZoom,
     maxZoom,
     maxBounds: new LngLatBounds([west, south], [east, north]),
-    // North-up, like the SVG map and like the artwork Mode B stands in for.
+    // North-up, as the SVG map was and as any future artwork would be.
     dragRotate: false,
     pitchWithRotate: false,
     touchPitch: false,
@@ -518,17 +584,19 @@ export async function renderMap(container, content) {
     'Festival map. Use the arrow keys to pan, and the zoom buttons below to zoom in and out.'
   );
 
-  // Spike-only handle: lets the verification pass drive the real map object,
-  // and lets Anthony poke at it from Safari's inspector during the audition.
-  // It is not one of the contract's test hooks and would not survive adoption.
-  window.__spikeMap = map;
+  // Test hook (CONTRACTS.md): the live MapLibre Map for the current #/map view,
+  // removed on teardown. Pins are drawn into a canvas, so there is no DOM node
+  // per pin for a test to find and no `data-testid` that could stand in --
+  // asking the engine what it rendered is the only way to assert on pins at all.
+  // Doubles as the handle for poking at the map from a browser inspector.
+  window.__mmafMap = map;
 
   const cleanupFns = [];
   let removed = false;
   const cleanup = () => {
     if (removed) return;
     removed = true;
-    if (window.__spikeMap === map) delete window.__spikeMap;
+    if (window.__mmafMap === map) delete window.__mmafMap;
     for (const fn of cleanupFns) {
       try {
         fn();
@@ -550,7 +618,7 @@ export async function renderMap(container, content) {
 
   map.on('load', () => {
     if (generation !== renderGeneration) return;
-    addPins(map, engine, { venues, stops, content, home, clusterMaxZoom });
+    addPins(map, engine, { venues, stops, content, home, clusterMaxZoom, colors });
     wirePinTaps(map, { venues, transitById, content, maxZoom });
   });
 
@@ -560,12 +628,6 @@ export async function renderMap(container, content) {
   }
 
   return cleanup;
-}
-
-/** `?map=` on the page URL, alongside the demo clock's `?t=`. */
-function pickMode() {
-  const value = new URLSearchParams(location.search).get('map');
-  return value === 'raster' || value === 'hybrid' ? value : 'vector';
 }
 
 function renderVenueKeyList(container, venues) {
@@ -584,16 +646,18 @@ function renderVenueKeyList(container, venues) {
   });
 }
 
-function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom }) {
+function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom, colors }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  map.addImage('pin-venue', diamondImage(VENUE_R, { fill: PIN_VENUE }, dpr).data, { pixelRatio: dpr });
-  map.addImage('pin-cluster', diamondImage(CLUSTER_R, { fill: PIN_VENUE }, dpr).data, { pixelRatio: dpr });
-  map.addImage('pin-transit', diamondImage(SMALL_R, { fill: PIN_TRANSIT }, dpr).data, { pixelRatio: dpr });
-  map.addImage('pin-sponsor-featured', diamondImage(SMALL_R, { fill: PIN_SPONSOR }, dpr).data, { pixelRatio: dpr });
+  map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
+  map.addImage('pin-cluster', clusterImage(CLUSTER_R, { fill: colors.venue, stroke: colors.surface }, dpr).data, {
+    pixelRatio: dpr,
+  });
+  map.addImage('pin-transit', diamondImage(SMALL_R, { fill: colors.transit }, dpr).data, { pixelRatio: dpr });
+  map.addImage('pin-sponsor-featured', diamondImage(SMALL_R, { fill: colors.sponsor }, dpr).data, { pixelRatio: dpr });
   // Generic sponsor pins are outlined rather than filled, as in the SVG map.
   map.addImage(
     'pin-sponsor-generic',
-    diamondImage(SMALL_R, { fill: '#ffffff', stroke: PIN_SPONSOR, strokeWidth: 3 }, dpr).data,
+    diamondImage(SMALL_R, { fill: colors.surface, stroke: colors.sponsor, strokeWidth: 3 }, dpr).data,
     { pixelRatio: dpr }
   );
 
@@ -705,14 +769,9 @@ function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom }) 
     type: 'symbol',
     source: 'venues',
     filter: ['has', 'point_count'],
-    layout: {
-      ...pinLayout,
-      ...labelLayout,
-      'icon-image': 'pin-cluster',
-      'text-field': ['get', 'point_count_abbreviated'],
-      'text-size': 15,
-    },
-    paint: { 'text-color': '#ffffff' },
+    // No text of any kind: see clusterImage(). The stacked glyph carries the
+    // meaning, and a digit here would read as a venue number.
+    layout: { ...pinLayout, 'icon-image': 'pin-cluster' },
   });
   map.addLayer({
     id: 'venue-pin',
@@ -834,16 +893,35 @@ function wireControls(container, map, { home, homeZoom, maxZoom, cleanupFns }) {
   on('#zoom-out', () => map.zoomOut());
   on('#zoom-reset', () => map.easeTo({ center: home, zoom: homeZoom, duration: 400 }));
 
-  // The engine's own double-tap zooms in; the SVG map additionally sends a
-  // double-tap at maximum zoom back to the home view, which is the only way out
-  // of a close view without pinching. Kept.
+  // Double-tap zooms in, and a double-tap when already as close as the map goes
+  // returns to the home view — otherwise the gesture strands you zoomed in with
+  // no way back out but pinching. The SVG map behaved this way and it is worth
+  // keeping, but it cannot be layered on top of the engine's own double-click
+  // zoom: that handler runs after this one and its easeTo cancels this one's,
+  // so the map simply stayed at maximum zoom. Owning the whole gesture is the
+  // only version that works.
+  map.doubleClickZoom.disable();
+  let dblClickFrame = null;
   const onDblClick = (e) => {
-    if (map.getZoom() < maxZoom - 0.05) return;
-    e.preventDefault();
-    map.easeTo({ center: home, zoom: homeZoom, duration: 400 });
+    // Deferred by a frame, not run inline. MapLibre's handler manager finishes
+    // processing the gesture after this event returns and stops any camera
+    // animation in flight, so an easeTo started here is cancelled before it
+    // moves — which is exactly how the original version failed, silently
+    // leaving the map wherever it already was.
+    const atClosest = map.getZoom() >= maxZoom - 0.05;
+    // `around` keeps the tapped point under the finger, as the engine's own
+    // handler does; it is what makes zooming toward something feel right.
+    const camera = atClosest
+      ? { center: home, zoom: homeZoom, duration: 400 }
+      : { zoom: Math.min(maxZoom, map.getZoom() + 1), around: e.lngLat, duration: 300 };
+    cancelAnimationFrame(dblClickFrame);
+    dblClickFrame = requestAnimationFrame(() => map.easeTo(camera));
   };
   map.on('dblclick', onDblClick);
-  cleanupFns.push(() => map.off('dblclick', onDblClick));
+  cleanupFns.push(() => {
+    cancelAnimationFrame(dblClickFrame);
+    map.off('dblclick', onDblClick);
+  });
 }
 
 function wireLocate(container, map, Marker, { west, east, south, north, cleanupFns }) {

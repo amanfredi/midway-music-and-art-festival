@@ -8,21 +8,31 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 ## Decisions that need Anthony
 
-**Map library — DECIDED 2026-08-10: adopt MapLibre GL JS.** The felt-UX spike
-(`definitions/maplibre-map-spike.md`) auditioned it on a real iPhone and
-passed; Anthony ruled to move forward. Cost numbers stand from the August
-review: ~289 KB gzipped self-hosted all-in, MapLibre 6, WebGL2-only. What
-remains is adoption-grade work, tracked by the spike definition's deferred
-questions: the fallback story for the WebGL2 floor (decide before merge),
-invariant rewording, deterministic-build integration, test-hook parity, and
-the a11y carry-over list under Map below.
+**WebGL2 fallback — open, and now shipping.** MapLibre requires WebGL2, so a
+device without it gets no map where the SVG map always drew something. This was
+set as a condition to answer before merge; the migration landed without an
+answer. Three options were on the record when MapLibre was chosen: keep the
+retired SVG map as a fallback (two implementations, which the original ledger
+rejected); swap to Leaflet (~42 KB, no WebGL floor, `ImageOverlay`, cluster
+plugins, but no per-zoom labels or vector styling — half of what the audition
+was for); or accept the floor and say so. Doing nothing leaves a blank square
+and no explanation. Cheap partial fix whichever way it goes: detect the failure
+and render the "map couldn't be loaded" empty state the view already has for a
+failed fetch.
 
-**`map.svg` weight.** 1.87 MB raw, about 690 KB gzipped, all of it precached
-for offline use — by far the largest thing a first-time visitor downloads.
-Raising the `simplify()` tolerance from 2 m to 4 m was measured and saved only
-19 KB gzipped, so it was reverted: the size is in the sheer number of ways, not
-per-way precision. The remaining levers are a smaller extent or dropping
-`tertiary` from the fetched highway tags.
+**Map artwork, if it is ever commissioned.** The spike auditioned a four-corner
+`ImageSource` ground against the vector one, and measured two constraints that
+belong in any artist brief. First, **~5 m of drift**: `map.svg` is drawn in a
+local equirectangular projection while `ImageSource` places an image by its four
+corners in Web Mercator, and over a 16 km sheet those disagree most in the
+middle. Pins land correctly; the artwork under them slides. Four corners are not
+enough georeferencing at this extent — more control points, or a pre-warped
+image, or a tiled source. Second, a **4096 px ceiling**: MapLibre uploads an
+`ImageSource` as a single WebGL texture, and 4096 is the largest size every
+WebGL2 device is guaranteed to accept. Over this extent that is 3.9 m per pixel,
+which reads acceptably at the home view and goes soft at the closest zoom, so
+shipped artwork needs tiling rather than a bigger single image. Tooling is kept
+— see the `artwork/` entries in CONTRACTS.md's directory layout. Nothing ships.
 
 **Sponsor presentation, pending real sponsors.** The featured-vs-generic
 sponsor pin distinction wants a design review once someone can see it against
@@ -53,6 +63,15 @@ the MapLibre migration — the specified fix targets the outgoing SVG map's
 pins; the 4.5:1 requirement itself carries over to however the engine renders
 transit pins, so revisit the color there.
 
+**"Zero runtime dependencies" needs rewording.** MapLibre is a runtime
+dependency — vendored and self-hosted, never fetched, but a dependency.
+`CLAUDE.md` still says "Zero runtime dependencies, zero external page
+resources" and `README.md` still says "There are no runtime dependencies", so
+both now read as false to anyone who checks. The substance the invariant
+protects is unchanged and worth keeping: nothing is fetched from a third party,
+everything is self-hosted, offline and \$0/month still hold. This is Anthony's
+prose to edit; CONTRACTS.md's own conventions section has been updated already.
+
 ## Code and test review follow-ups (August 2026)
 
 The August review's follow-ups all landed 2026-08-09 (four waves — build/CI
@@ -77,46 +96,47 @@ Deferred — uncertain or bigger than a follow-up:
   re-running the whole toolchain (F21's second half).
 - Genuine multi-touch pinch test (arguably not worth paying for before
   October).
-- On-device iOS Safari map profile, then — only if rasterization is the wall —
-  a MapLibre `ImageSource` prototype (see the map-library decision above).
+- On-device map profiling, if the map ever feels slow again. The original lag
+  report closed unprofiled: the MapLibre migration replaced the SVG renderer
+  that was suspected, and the device evaluation reported it smooth.
 
 ## Map
 
-The largest open item is **overlapping pins**. With 14 venues, several within
-about 15 m of each other, pins stack and the one underneath cannot be reached.
-Paint order is defined (transit, then featured destination, then sponsor, then
-venue) but that only decides which pin wins, not how to reach the loser. Needs
-an offset or a cluster-and-expand-on-zoom treatment; the venue key list below
-the map is the workaround meanwhile.
+Overlapping pins, per-zoom label placement, the SVG's weight and the on-device
+pan/zoom lag all closed with the MapLibre migration (2026-08-10) — PROGRESS.md
+records what each cost and what replaced it.
 
-Two related interaction gaps: **clicking a pin should highlight it**, and
-**clicking a venue card in the key list below the map should highlight its pin
+The largest open item is now **keyboard and assistive-technology access to
+pins**. They are drawn into a canvas, so they are not DOM nodes: the SVG map's
+roving tabindex, Enter/Space activation and focus-return-to-pin are all gone.
+Venues are still fully reachable through the venue key list below the map, but
+**transit and sponsor pins have no keyboard path to their sheets at all**, and
+axe cannot see the problem — a canvas gives it nothing to flag. The cheap fix is
+a visually-hidden list of buttons, one per transit stop and pinned sponsor,
+opening the same sheets. A richer fix is a roving focus ring drawn into the
+canvas, which is real work.
+
+Two related interaction gaps: **tapping a pin should highlight it**, and
+**tapping a venue card in the key list below the map should highlight its pin
 and recenter the map on it**, as though the pin itself had been tapped. Today
-the card opens the detail sheet without any connection to the map.
+the card opens the detail sheet without any connection to the map. Both are
+easier now — `easeTo` handles the recentering, and a highlight is a paint
+expression keyed on `feature-state` rather than custom rendering.
 
 A further refinement of the venue/map interaction might involve having the venue info card pop up as a map tooltip, rather than a separate card at the bottom of the screen.
 
-**Scroll and zoom lag noticeably on a recent iPhone.** Observed, not yet
-diagnosed. The August 2026 review bounded it by reading: `map.svg` is only
-1,416 elements, so the node-count half of the old hypothesis is unsupported —
-the weight sits in ten very large path `d` attributes, and the likely
-aggravators are unthrottled per-pointer-event `viewBox` writes and a full
-re-fetch/re-parse of the 1.87 MB SVG on every visit to `#/map` (both fixed as
-review follow-ups). What remains is an **on-device iOS Safari profile**: if it
-shows SVG rasterization itself is the wall, the MapLibre `ImageSource` path
-becomes the serious option and the map-library decision above flips.
+**Leader lines for coincident pins.** At close zoom, pins that share (or nearly
+share) a position could render as a small dot at the true lat/lng with the label
+floating clear of it, joined by a short line — so a label never misrepresents
+where something physically is. Raised from the iPhone evaluation, 2026-08-10.
+Deferred: the cluster-plus-picker treatment already makes every venue reachable,
+and this is a legibility refinement on top of it, not a fix for a broken case.
 
-**Street labels are placed once for the whole map**, with collision detection,
-then counter-scaled and hidden by level of detail as the view widens. Placement
-itself is not zoom-dependent — positions are fixed — so a close view can land
-between labels. A real map engine re-places labels per zoom.
-
-Smaller: the OSM station dots and names baked into `map.svg` sit underneath the
-transit pins, a mild redundancy that could be suppressed in `make-map.mjs` or
-left as a zoomed-in detail. And bus routes 67 and 72 could be drawn as **route
-lines rather than stop pins** — adding 40-plus stop pins was rejected as
-clutter, but a line conveys "the bus goes along here" at a fraction of the
-visual cost.
+Smaller: bus routes 67 and 72 could be drawn as **route lines rather than stop
+pins** — adding 40-plus stop pins was rejected as clutter, but a line conveys
+"the bus goes along here" at a fraction of the visual cost. The GeoJSON
+generator makes this cheaper than it was: it is another `kind` and another
+layer.
 
 The **map-design pass against the accessibility guide** ran as part of the
 August 2026 WCAG audit, and `reference/map-artwork-a11y-constraints.md` now
@@ -126,17 +146,19 @@ decided (2026-08-10), don't land them there — they are requirements the
 migrated map must meet, kept for their measurements and acceptance criteria
 (all evidence in `reviews/2026-08-wcag-aa-audit.md`).
 
-- [ ] **MapLibre migration: accessibility carry-over.** Behaviors the engine
-      swap must preserve or re-satisfy, beyond the spike's functional parity
-      checklist: keyboard panning with the roving pin tabindex and
-      Enter/Space activation; focus handoff into sheets and back to the
-      triggering pin; the legend naming both rail lines (F5's fix and its
-      pinned test); readable attribution (F11 — the engine's attribution
-      control must clear contrast); `prefers-reduced-motion` on the
-      you-are-here pulse; rail-line hues re-cleared for 1.4.1/1.4.11 once the
-      engine styles them; and the axe gate plus the map tests in
-      `tests/a11y.spec.mjs` re-pointed at the new map (branch reds are
-      expected during the spike; adoption-grade means green again).
+- [ ] **MapLibre migration: accessibility carry-over.** Mostly discharged by
+      the migration (2026-08-10). Preserved and re-pinned by tests: keyboard
+      panning of the canvas; focus handoff into sheets and back to the
+      triggering control; the legend naming both rail lines, with its test now
+      comparing the swatch against the engine's own paint; the site's own
+      attribution text below the frame, with MapLibre's attribution control
+      disabled so there is only one; `prefers-reduced-motion` on the
+      you-are-here pulse, which stayed a CSS animation by keeping the marker a
+      DOM node; and the axe gate plus every map test in `tests/a11y.spec.mjs`
+      re-pointed at the new map and green.
+      **Still outstanding: the roving pin tabindex and Enter/Space activation**
+      — see the keyboard-access item at the top of this section, which is where
+      that work now lives.
 - [ ] **MapLibre migration: map accessibility re-audit.** After the migration
       lands, re-run the map sections of `reference/wcag-aa-site-profile.md` —
       its re-audit triggers name map rework as exactly this invalidating
@@ -146,40 +168,47 @@ migrated map must meet, kept for their measurements and acceptance criteria
 - [ ] **Pan buttons** (WCAG 2.5.7, finding F9). Panning is drag-only for
       pointer users — zoom and reset change scale, double-tap cannot traverse,
       and arrow keys are keyboard, which the criterion explicitly does not
-      accept as the alternative. `panBy()` already exists; the cost is fitting
-      four buttons or a d-pad onto a 288–560px frame beside the zoom stack.
-      W3C's own compliant example for this criterion is a map with pan
-      buttons, so the "dragging is essential" exception is not available.
-- [ ] **Hit-target floor for transit and sponsor pins** (WCAG 2.5.8, F4). They
-      render 22.7px at a 320px viewport against a 24px minimum, and the
-      spacing exception fails as well — the closest measured pair is 3.4px
-      apart. Venue pins are excused by the key list repeating them at 44px+;
-      transit and sponsor sheets have no entry point but the pin. Best fix:
-      clamp `.pin__hit`'s counter-scale in `updateOverlayScale` so the hit
-      area never renders below 24px while the visible diamond keeps its size.
-      Raising `TRANSIT_HIT_R`/`SPONSOR_*_HIT_R` is the one-line alternative
-      but enlarges the tap halo at every width, re-trading the swallowed-taps
-      QA decision. Note two venues legitimately share coordinates (Mosaic on
-      a Stick sits inside Hamline Park), so one SVG pin is pointer-unreachable
-      at every zoom — engine collision/offset handling is the intended fix.
-- [ ] **Station and arterial label size floors** (guide Part C #4). They render
-      6.0px and 7.4px at a 288px frame against the guide's 8px floor. Advisory
-      rather than a WCAG failure — the contrast passes — but worth doing before
-      the artwork brief locks sizes. Raise the font-size units in
-      `tools/make-map.mjs`, or gate the smallest labels behind a deeper LOD so
-      they never render below the floor.
+      accept as the alternative. `map.panBy()` is the engine's equivalent of the
+      old helper; the cost is unchanged — fitting four buttons or a d-pad onto a
+      288–560px frame beside the zoom stack. W3C's own compliant example for
+      this criterion is a map with pan buttons, so the "dragging is essential"
+      exception is not available.
+- [ ] **Hit-target floor for transit and sponsor pins** (WCAG 2.5.8, F4).
+      **Needs re-measuring against the new map** — the old measurement (22.7px
+      rendered, closest pair 3.4px apart) described SVG pins whose hit shape
+      was the diamond itself. Pins are now 22px canvas symbols, but a tap
+      resolves against a ±10px box around the touch point, so the effective
+      target is larger than the drawn one and the two no longer coincide. Which
+      of them 2.5.8 measures here is the question to settle before deciding
+      there is anything to fix; the map re-audit item above is the natural
+      place. The coincident-venue half of this is closed: clustering plus the
+      picker sheet makes every venue reachable, including the pair that shares
+      a coordinate.
+- [ ] **Station and arterial label size floors** (guide Part C #4). Advisory
+      rather than a WCAG failure — the contrast passes. The old measurement
+      (6.0px and 7.4px at a 288px frame) was of `map.svg`'s counter-scaled type
+      and no longer applies: label sizes are now zoom-interpolated CSS pixels in
+      `map.js`, currently bottoming out at 9.5px for arterials and 11px for
+      station names, which clears the guide's 8px floor at every frame width.
+      Re-measure on device to confirm, then close.
 - [ ] **Legend swatch size** (guide Part C #1). A fixed 20px CSS swatch against
-      pins rendering 22–43px depending on frame width; matching exactly would
-      mean scaling the legend with the frame. Shapes and colors already match
-      exactly, so recording an accepted deviation is a legitimate answer here.
-- [ ] **Venue-pin hierarchy** (guide Part C #2). Venue pins are 1.25× the
-      others where the guide wants 2×. The direction has to be growing
-      `VENUE_PIN_R`, since shrinking the others worsens the hit-target item
-      above — so check overlap fallout at the home view before landing.
-- [ ] **Scale bar** (guide Part C #5). A map spanning 350 m to 16 km trips the
-      guide's conditional requirement; add it in the generator as a
-      counter-scale-exempt element. The north-arrow half is closed as
-      unnecessary: the map is north-up and never rotates.
+      pins that are now a constant 22–28px at every frame width, since symbol
+      layers are sized in screen pixels rather than counter-scaled. That makes
+      matching them a fixed-number change rather than the scale-with-the-frame
+      problem it used to be — or record an accepted deviation, which is still a
+      legitimate answer given shapes and colors already match exactly.
+- [ ] **Venue-pin hierarchy** (guide Part C #2). Venue pins are 1.27× the
+      others — 28px against 22px, from `VENUE_R` 14 and `SMALL_R` 11, which are
+      radii — where the guide wants 2×. The direction has to
+      be growing `VENUE_R`, since shrinking the others worsens the hit-target
+      item above — so check overlap fallout at the home view before landing.
+      Cheaper to judge now: clustering absorbs the crowding that made bigger
+      venue pins risky.
+- [ ] **Scale bar** (guide Part C #5). A map spanning 120 m to 16 km trips the
+      guide's conditional requirement. MapLibre ships a `ScaleControl`, so this
+      is now a few lines plus a contrast check on its text rather than
+      generator work. The north-arrow half stays closed as unnecessary: the map
+      is north-up and rotation is disabled.
 
 ## App
 
@@ -239,9 +268,10 @@ Anthony 2026-08-10, after repeated sessions flagged them; also recorded in
 CLAUDE.md): **Mosaic on a Stick sits inside Hamline Park** and correctly
 carries the park's address and plus code (`1564 Lafond Ave` / `XR5M+X8`), and
 **Vig Guitars and Fluid Ink Tattoos are about 14 m apart**. Identical or
-near-identical coordinates are a rendering limitation of the outgoing SVG map
-(overlapping pins, one pointer-unreachable) — the MapLibre migration's
-collision/offset handling is the fix, not data changes or build validation.
+near-identical coordinates were a rendering limitation of the retired SVG map
+(overlapping pins, one pointer-unreachable). The MapLibre migration fixed it
+with clustering plus a picker sheet for pins no zoom can separate — not data
+changes or build validation.
 
 Two live venue `url` cells are schemeless (`hamline.edu/sundin-music-hall`,
 `blackgarnetbooks.com`). The build completes them to `https://` with a logged
@@ -282,9 +312,9 @@ None of these can be checked from the screenshot harness or the test suite.
       confirm it appears without touching the tab; then confirm a worker
       version bump still leaves exactly one `circuit-map-*` cache. The
       clone-throw was observed in Chromium only — Safari unverified.
-- [ ] Re-measure the reported map scroll/zoom lag now that pan writes are
-      rAF-batched and the SVG parse is cached (see the profile item under
-      Map).
+- [ ] Confirm map pan/zoom still feels smooth on a mid-range Android, not
+      just the iPhone the migration was evaluated on. WebGL2 is a harder floor
+      than SVG was.
 - [ ] Header scroll behavior on a phone. The page is now the scroll container;
       momentum scrolling, rubber-banding and the pinned control bar under real
       browser chrome need eyes on a device.

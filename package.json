@@ -7,6 +7,7 @@
   "scripts": {
     "build": "node scripts/build.mjs && node scripts/build-sw.mjs",
     "build:fixtures": "node scripts/build.mjs tests/fixtures-good/config.json && node scripts/build-sw.mjs",
+    "vendor:maplibre": "node tools/vendor-maplibre.mjs",
     "serve": "node scripts/serve.mjs",
     "test:unit": "node --test tests/*.test.mjs",
     "test:offline": "playwright test",
@@ -15,6 +16,6 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@playwright/test": "^1.49.0",
-    "maplibre-gl": "^6.2.0"
+    "maplibre-gl": "6.2.0"
   }
 }

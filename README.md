@@ -25,8 +25,11 @@ a readable error instead of shipping a broken site.
 
 ## Run it locally
 
-Built and tested on Node 24–25 (CI runs 24). There are no runtime
-dependencies; `npm install` is only needed for the test tooling (Playwright).
+Built and tested on Node 24–25 (CI runs 24). The map engine (MapLibre GL JS)
+is the one runtime dependency, and it is vendored into `site/assets/maplibre/`
+rather than fetched, so the site still loads nothing from anyone else's server.
+`npm install` is only needed for the tooling — Playwright, and the pinned
+`maplibre-gl` package that `npm run vendor:maplibre` copies from.
 
 ```sh
 npm install            # one-time, dev tooling only
@@ -129,17 +132,21 @@ until the id changes again.
 
 ## Swapping in the real map artwork (maybe)
 
-The current map is a generated placeholder drawn from OpenStreetMap street
-centerlines at true scale (1 SVG unit = 1 meter). The commissioned artwork
-replaces `site/assets/map.svg`, under one hard constraint the artist must
-know **before starting**: the artwork must be drawn over the true-scale
-street grid — stylize freely on top (colors, texture, decoration), but keep
-street positions to scale. That's what lets venue pins and the optional
-"you are here" dot land correctly via the control-point calibration in
-`site/assets/map-calibration.json`. To recalibrate for new artwork: pick 3+
-spread-out, non-collinear landmarks whose lat/lng you know, record each
-one's x/y position in the new SVG's coordinate space, and replace
-`control_points`. Nothing else changes.
+The map today is drawn by MapLibre from OpenStreetMap street centerlines
+(`site/assets/map-vector.geojson`). Commissioned artwork would replace that
+ground with an image, under one hard constraint the artist must know **before
+starting**: the artwork must be drawn over the true-scale street grid —
+stylize freely on top (colors, texture, decoration), but keep street positions
+to scale. That is what lets venue pins and the optional "you are here" dot land
+correctly via the control-point calibration in
+`site/assets/map-calibration.json`. To recalibrate: pick 3+ spread-out,
+non-collinear landmarks whose lat/lng you know, record each one's x/y position
+in the artwork's coordinate space, and replace `control_points`.
+
+Two measured constraints go in the artist brief before anyone is commissioned —
+a georeferencing error and a resolution ceiling, both in BACKLOG.md under "Map
+artwork". Neither is a reason not to commission artwork; both change what has to
+be delivered.
 
 ## Verifying offline on a real iPhone
 
@@ -184,6 +191,6 @@ matters and needs a hands-on check after any caching change:
 | `content/fixtures/` | Placeholder CSV content + sponsor logo SVGs |
 | `content/config.json` | Where content comes from (fixture paths or sheet URLs) |
 | `scripts/` | Build (CSV→JSON, validation), service-worker generator, dev server |
-| `tools/` | One-off generators (map SVG from OSM data, transit stops, PWA icons, ticket-icon sprite) and `shoot.mjs`, which renders routes to PNGs in `.screenshots/` for visual review |
+| `tools/` | One-off generators (map GeoJSON and calibration from OSM data, transit stops, PWA icons, ticket-icon sprite), `vendor-maplibre.mjs`, and `shoot.mjs`, which renders routes to PNGs in `.screenshots/` for visual review |
 | `tests/` | Unit tests (validation, georeferencing) + Playwright offline test |
 | `.github/workflows/` | Deploy on push; scheduled/manual content rebuild |

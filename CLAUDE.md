@@ -7,8 +7,7 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
 ## Where things are decided
 
 - `DEFINITION.md` — binding scope and **non-goals**. Don't add what it excludes
-  (no native app, no server runtime, no map engine, no push, no search, no
-  accounts) without Anthony's say-so.
+  without Anthony's say-so.
 - `CONTRACTS.md` — binding interfaces: CSV schemas, content.json shape, geo/map
   calibration, UI routes, storage keys, test hooks.
 - `README.md` — operator how-to: run, test, deploy, content swap, iPhone
@@ -21,14 +20,13 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
 
 ## Invariants
 
-- Zero runtime dependencies, zero external page resources. Every byte
-  self-hosted: no CDNs, fonts, analytics, or third-party scripts. Offline and
-  $0/month are the point.
+- Everything the app needs to function at runtime should be available from the primary origin and cached for offline use after initial load from Github Pages. Offline and $0/month are the point.
 - `site/sw.js`, `site/data/`, `site/assets/sponsors/` are generated — edit
   sources and run `npm run build`, never the outputs.
 - Build output is deterministic: unchanged sources must produce byte-identical
   `content.json` (and therefore an unchanged service-worker version). Don't
   add timestamps or randomness to build outputs.
+- The build and deploy process should be robust against remote sources being unavailable. If NPM is down, we should still be able to deploy content updates. If a content spreadsheet is unavailable, we should still be able to deploy a code update using the latest available data. This is currently not met; a backlog item tracks compliance.
 - Offline is the acceptance criterion. `npm test` before trusting a change;
   anything touching the service worker or caching also needs the manual
   iPhone airplane-mode pass in README.

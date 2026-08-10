@@ -38,6 +38,11 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
 - The venues tab is LIVE from the organizers' Google Sheet (URL in
   `content/config.json`). Venue content fixes belong in the sheet;
   `content/fixtures/venues.csv` is only a committed snapshot of it.
+- Venues may legitimately share a location: Mosaic on a Stick sits inside
+  Hamline Park and correctly carries the park's address and plus code, and
+  two more venues are ~14 m apart. **Valid data, not an error** (ruled
+  2026-08-10) — don't flag it or propose validation against it. Overlapping
+  pins are a map-rendering concern, addressed by the MapLibre migration.
 - Events/vendors/sponsors/settings are still placeholder fixtures; swapping
   each to the sheet is a one-line change in `content/config.json`.
 - Tests build from local fixtures only — keep them off the network. `npm test`

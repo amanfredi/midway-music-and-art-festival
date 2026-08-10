@@ -26,6 +26,25 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-10 — audit decisions ratified; MapLibre adoption decided
+
+Anthony ruled on the audit's open ends, and on the MapLibre spike from the
+parallel session (`definitions/maplibre-map-spike.md`). The map keeps the AA
+goal — and the engine swap is happening, so the remaining map failures became
+requirements on the migrated map rather than fixes to the outgoing SVG one:
+BACKLOG now carries an accessibility carry-over list and a post-migration map
+re-audit item, and both map decision blocks read DECIDED. Transit-pin green
+stays deferred until after the migration. The optional `logo_alt` sponsor
+column is approved and tracked. Co-located venues (Mosaic on a Stick inside
+Hamline Park) are ruled valid data — recorded in CLAUDE.md so sessions stop
+flagging them, and the duplicate-location build-validation idea is dropped.
+
+Also this session: the audit report gained an implementation-stage
+corrections section (an F2 misattribution, a disproven no-wrap claim, a
+phantom CONTRACTS citation), and the screenshot baseline was recaptured —
+15 of 37 shots changed, every one attributable to the fixes since the live
+sheet was byte-identical between captures (RECIPE.md updated).
+
 ### 2026-08-10 — WCAG 2.2 AA audit, and the cheap half of its fix list
 
 The audit is `reviews/2026-08-wcag-aa-audit.md`: all 55 Level A/AA criteria

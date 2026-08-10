@@ -8,20 +8,14 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 ## Decisions that need Anthony
 
-**Map library — keep hand-rolling, or adopt MapLibre GL JS?** Current answer is
-still not yet; the August 2026 review firmed up the numbers (details in
-`reviews/2026-08-code-and-test-review.md`). MapLibre 6 is WebGL2-only and
-costs ~289 KB gzipped self-hosted all-in (ESM entry + shared chunk + worker +
-CSS, measured 2026-08-09); the last WebGL1 line (5.24.0) is no smaller and a
-dead end. Whether current iOS Lockdown Mode still disables WebGL is unverified
-(iOS-16-era sourcing); low-end phones where a static SVG always works are a
-concern regardless. The strongest argument *for*: `ImageSource` accepts four
-corner coordinates for a georeferenced raster, so the commissioned hand-drawn
-artwork could ride the engine, retiring the overlapping-pin and per-zoom-label
-items for free — though it would complicate the georeferencing design
-(`geo.js` plus control points) the map strategy is built around. Decide
-together with the artwork commission, and only after the on-device lag profile
-below.
+**Map library — DECIDED 2026-08-10: adopt MapLibre GL JS.** The felt-UX spike
+(`definitions/maplibre-map-spike.md`) auditioned it on a real iPhone and
+passed; Anthony ruled to move forward. Cost numbers stand from the August
+review: ~289 KB gzipped self-hosted all-in, MapLibre 6, WebGL2-only. What
+remains is adoption-grade work, tracked by the spike definition's deferred
+questions: the fallback story for the WebGL2 floor (decide before merge),
+invariant rewording, deterministic-build integration, test-hook parity, and
+the a11y carry-over list under Map below.
 
 **`map.svg` weight.** 1.87 MB raw, about 690 KB gzipped, all of it precached
 for offline use — by far the largest thing a first-time visitor downloads.
@@ -36,16 +30,15 @@ real logos. Emerald tier's "special treatment / custom branding" is undefined
 because no emerald sponsor exists yet, and the ruby logo-pin map format is
 likewise unspecified.
 
-**Map conformance path — bring the map itself to WCAG AA, or designate the
-list views as the conforming alternate?** The August 2026 audit
-(`reviews/2026-08-wcag-aa-audit.md`) exists to settle this, and recommends
-bringing the map to AA. Nothing it found is expensive or inherent at the AA
-bar; what remains is pan buttons and a pin hit-size floor, both below. The
-alternate-path option does not avoid that work, it relocates it: map pins are
-today the only way to reach transit-stop and sponsor sheets, so the
-designation would first require adding those to a list view. A mapping
-library changes none of the ten failures, so this decision adds no weight to
-the library question above — decide that one on artwork and performance.
+**Map conformance path — DECIDED 2026-08-10: bring the map itself to WCAG
+AA.** Anthony ratified the audit's recommendation
+(`reviews/2026-08-wcag-aa-audit.md`): nothing it found is expensive or
+inherent at the AA bar, and the alternate-path option relocates the work
+rather than avoiding it (map pins are today the only way to reach
+transit-stop and sponsor sheets). With MapLibre adoption also decided, the
+remaining map failures (pan buttons, pin hit-size floor) are requirements on
+the migrated map, not fixes to the outgoing SVG one — see the a11y carry-over
+list under Map.
 
 **Transit pin green — needs a brand ack, then it lands.** White line letters
 on `--pin-transit` `#298d4e` compute 4.19:1. The CSS comment justifies that as
@@ -55,8 +48,10 @@ Darkening to `#1e7a41` gives 5.36:1 against the letters and 4.60:1 against the
 paper, and lifts the pin fill's own non-text contrast from 3.61:1 as a side
 effect. The change is one token in `app.css` and the CONTRACTS.md pin-table
 row `| Transit | green #298d4e | diamond with the line letter inside |`, with
-a numeric contrast test alongside. It is ready to land and held only because
-it moves a brand color.
+a numeric contrast test alongside. Deferred 2026-08-10 by Anthony until after
+the MapLibre migration — the specified fix targets the outgoing SVG map's
+pins; the 4.5:1 requirement itself carries over to however the engine renders
+transit pins, so revisit the color there.
 
 ## Code and test review follow-ups (August 2026)
 
@@ -125,10 +120,28 @@ visual cost.
 
 The **map-design pass against the accessibility guide** ran as part of the
 August 2026 WCAG audit, and `reference/map-artwork-a11y-constraints.md` now
-carries the constraints for the commissioned artwork. What it left open is
-below, every measurement in `reviews/2026-08-wcag-aa-audit.md`. The items are
-independent of each other, and the first two are the work the map conformance
-decision above turns on.
+carries the constraints for the commissioned artwork. The open items below
+were specified against the hand-rolled SVG map; with MapLibre adoption
+decided (2026-08-10), don't land them there — they are requirements the
+migrated map must meet, kept for their measurements and acceptance criteria
+(all evidence in `reviews/2026-08-wcag-aa-audit.md`).
+
+- [ ] **MapLibre migration: accessibility carry-over.** Behaviors the engine
+      swap must preserve or re-satisfy, beyond the spike's functional parity
+      checklist: keyboard panning with the roving pin tabindex and
+      Enter/Space activation; focus handoff into sheets and back to the
+      triggering pin; the legend naming both rail lines (F5's fix and its
+      pinned test); readable attribution (F11 — the engine's attribution
+      control must clear contrast); `prefers-reduced-motion` on the
+      you-are-here pulse; rail-line hues re-cleared for 1.4.1/1.4.11 once the
+      engine styles them; and the axe gate plus the map tests in
+      `tests/a11y.spec.mjs` re-pointed at the new map (branch reds are
+      expected during the spike; adoption-grade means green again).
+- [ ] **MapLibre migration: map accessibility re-audit.** After the migration
+      lands, re-run the map sections of `reference/wcag-aa-site-profile.md` —
+      its re-audit triggers name map rework as exactly this invalidating
+      change. The 2026-08 audit's map dispositions describe the SVG map and
+      expire with it. Scope is the map view unless the shell changed too.
 
 - [ ] **Pan buttons** (WCAG 2.5.7, finding F9). Panning is drag-only for
       pointer users — zoom and reset change scale, double-tap cannot traverse,
@@ -146,7 +159,9 @@ decision above turns on.
       area never renders below 24px while the visible diamond keeps its size.
       Raising `TRANSIT_HIT_R`/`SPONSOR_*_HIT_R` is the one-line alternative
       but enlarges the tap halo at every width, re-trading the swallowed-taps
-      QA decision. Entangled with the duplicate-coordinate item under Content.
+      QA decision. Note two venues legitimately share coordinates (Mosaic on
+      a Stick sits inside Hamline Park), so one SVG pin is pointer-unreachable
+      at every zoom — engine collision/offset handling is the intended fix.
 - [ ] **Station and arterial label size floors** (guide Part C #4). They render
       6.0px and 7.4px at a 288px frame against the guide's 8px floor. Advisory
       rather than a WCAG failure — the contrast passes — but worth doing before
@@ -219,11 +234,14 @@ using Claude for Chrome.
 
 ## Content and data
 
-There are two data quirks in the venues sheet that expose limitations with the current map implementation:
-**Mosaic on a Stick carries Hamline Park's address and plus code verbatim** (`1564 Lafond Ave` /
-`XR5M+X8`), so its pin lands exactly on the park's and hides it. The store is actually located within the park, so the addresses are accurate.
-**Vig Guitars and Fluid Ink Tattoos are about 14 m apart**,
-This also causes overlapping pins.
+Two venue-location facts are **valid data, not sheet errors** (ruled by
+Anthony 2026-08-10, after repeated sessions flagged them; also recorded in
+CLAUDE.md): **Mosaic on a Stick sits inside Hamline Park** and correctly
+carries the park's address and plus code (`1564 Lafond Ave` / `XR5M+X8`), and
+**Vig Guitars and Fluid Ink Tattoos are about 14 m apart**. Identical or
+near-identical coordinates are a rendering limitation of the outgoing SVG map
+(overlapping pins, one pointer-unreachable) — the MapLibre migration's
+collision/offset handling is the fix, not data changes or build validation.
 
 Two live venue `url` cells are schemeless (`hamline.edu/sundin-music-hall`,
 `blackgarnetbooks.com`). The build completes them to `https://` with a logged
@@ -236,23 +254,15 @@ published sheet tab.
 
 - Should we try to translate the content to multiple languages? Limited English Proficiency languages in Saint Paul are Spanish, Hmong, Karen, and Somali.
 
-Three accessibility items from the August 2026 audit need organizer
-coordination before any build validation can land:
+Two accessibility items from the August 2026 audit need content-side
+follow-through:
 
-- [ ] **Sponsor logo alt text has no authoring channel.** The build derives
-      `alt="<name> logo"`, so a logo whose meaning exceeds the sponsor's name —
-      a tagline, a co-brand — has no way to say so, and the sheet has no column
-      for it. Ask organizers whether any real logo will need more than its
-      name. If yes, add an optional `logo_alt` column (use when non-empty,
-      derive otherwise, validate non-empty-if-present so a stray space can't
-      blank it). If no, record the derived form as sufficient rather than
-      adding a required column nobody fills.
-- [ ] **Flag identical `location` values across records in build validation**,
-      warning-grade — legitimately co-located records are conceivable, just
-      rare. This cannot land before the sheet is fixed: Hamline Park and Mosaic
-      on a Stick carry identical coordinates today (above), so the validation
-      would fail the next organizer-triggered build. Sheet first, validation
-      second.
+- [ ] **Add the optional `logo_alt` sponsor-sheet column** (approved by
+      Anthony 2026-08-10). The build derives `alt="<name> logo"`; a logo
+      whose meaning exceeds the sponsor's name — a tagline, a co-brand —
+      needs the override. Coordinate the new column with organizers, then
+      wire the build: use `logo_alt` when non-empty, derive otherwise, and
+      validate non-empty-if-present so a stray space can't blank the alt.
 - [ ] **Editorial check of venue and event descriptions at content freeze**
       for non-English passages needing a `lang` attribute (WCAG 3.1.2). A
       one-time read, not a build rule — the audit concluded validation is not

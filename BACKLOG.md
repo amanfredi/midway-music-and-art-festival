@@ -8,17 +8,15 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 ## Decisions that need Anthony
 
-**WebGL2 fallback — open, and now shipping.** MapLibre requires WebGL2, so a
-device without it gets no map where the SVG map always drew something. This was
-set as a condition to answer before merge; the migration landed without an
-answer. Three options were on the record when MapLibre was chosen: keep the
-retired SVG map as a fallback (two implementations, which the original ledger
-rejected); swap to Leaflet (~42 KB, no WebGL floor, `ImageOverlay`, cluster
-plugins, but no per-zoom labels or vector styling — half of what the audition
-was for); or accept the floor and say so. Doing nothing leaves a blank square
-and no explanation. Cheap partial fix whichever way it goes: detect the failure
-and render the "map couldn't be loaded" empty state the view already has for a
-failed fetch.
+**WebGL2 floor — DECIDED 2026-08-10: accept it, degrade gracefully.** A device
+without WebGL2 cannot run MapLibre. Anthony ruled against both alternatives on
+the record — reviving the SVG map as a fallback (two implementations, which the
+original ledger rejected) and swapping to Leaflet (no per-zoom labels or vector
+styling, half of what the audition was for). Shipped instead: the map view
+checks for WebGL2 before importing the engine and, when it is missing, replaces
+the frame with a short explanation and leaves the venue key list — every venue,
+every directions link — in place. Nothing to do; recorded so the next person to
+find a mapless phone knows it is a decision rather than a bug.
 
 **Map artwork, if it is ever commissioned.** The spike auditioned a four-corner
 `ImageSource` ground against the vector one, and measured three constraints that

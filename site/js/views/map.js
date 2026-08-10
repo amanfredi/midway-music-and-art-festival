@@ -436,6 +436,31 @@ function labelLayers(colors) {
   ];
 }
 
+/**
+ * Whether this device can run the map engine at all.
+ *
+ * MapLibre requires WebGL2, and that floor is accepted rather than worked around
+ * (decided 2026-08-10; a second, non-WebGL implementation was the alternative
+ * and was rejected as two maps to maintain). What is not acceptable is a blank
+ * square, so this is checked before the engine is even imported: a device that
+ * cannot draw the map skips ~1.1 MB of module it could never use, and gets the
+ * venue list instead — which carries every location and its directions link.
+ *
+ * The probe context is released immediately. iOS caps how many live WebGL
+ * contexts a page may hold, and holding one open to answer a yes/no question
+ * would spend one of them for the life of the view.
+ */
+function hasWebGl2() {
+  try {
+    const probe = document.createElement('canvas').getContext('webgl2');
+    if (!probe) return false;
+    probe.getExtension('WEBGL_lose_context')?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const NO_CLEANUP = () => {};
 let renderGeneration = 0;
 
@@ -480,7 +505,21 @@ export async function renderMap(container, content) {
   const mapWrap = () => (generation === renderGeneration ? container.querySelector('#map-svg-wrap') : null);
 
   const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
+  // Rendered before the engine is loaded, and left in place if it never is:
+  // on a device without WebGL2 this list is the map view.
   renderVenueKeyList(container, venues);
+
+  if (!hasWebGl2()) {
+    const frame = container.querySelector('#map-svg-wrap');
+    if (frame) {
+      frame.innerHTML = `<p class="empty-state map-unsupported" data-testid="map-unsupported">
+        This device can&rsquo;t display the interactive map. Every venue is listed
+        below, with directions.</p>`;
+    }
+    // The zoom and locate controls steer a map that isn't there.
+    container.querySelector('.map-controls')?.remove();
+    return NO_CLEANUP;
+  }
 
   let engine;
   let calibration;

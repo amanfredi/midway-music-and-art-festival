@@ -82,16 +82,27 @@ stop ordinary side streets taking their space. And a camera animation started
 inside a `dblclick` handler is cancelled by the engine's own gesture processing
 a moment later, so double-tap-to-go-home defers by a frame.
 
-**Shipped unanswered:** MapLibre requires WebGL2 and there is no fallback, so a
-device without it gets a blank frame. **Also outstanding:** transit and sponsor
-pins have no keyboard path to their sheets, now that pins are canvas symbols
-rather than DOM nodes. Both are in BACKLOG.
+**The WebGL2 floor is accepted rather than worked around** (Anthony,
+2026-08-10). Reviving the SVG map as a fallback and swapping to Leaflet were
+both rejected — the first as two implementations to maintain, the second because
+it lacks the per-zoom labels and vector styling the audition was largely about.
+What ships instead is a graceful degrade: the view tests for WebGL2 *before*
+importing the engine, so a device that cannot draw the map skips ~1.1 MB it
+could never use and gets a short explanation in the frame plus the venue key
+list, which carries every venue and its directions link. Tests reach that path
+by stubbing `getContext('webgl2')` to null.
 
-Everything else held. The whole suite passes — 85 unit and 60 Playwright —
+**Still outstanding:** transit and sponsor pins have no keyboard path to their
+sheets, now that pins are canvas symbols rather than DOM nodes. In BACKLOG.
+
+Everything else held. The whole suite passes — 85 unit and 65 Playwright —
 including the offline acceptance test and the axe gate now scanning the real
 map, and the build is still byte-identical across runs from unchanged sources.
-Map tests drive the engine through a `window.__mmafMap` hook, documented in
-CONTRACTS.
+The offline suite gained a cold-start case (a page that was never online, so the
+worker is doing the work rather than a warm reload) and a negative control that
+proves going offline actually severs the network; both were checked by breaking
+them on purpose. Map tests drive the engine through a `window.__mmafMap` hook,
+documented in CONTRACTS.
 
 ### 2026-08-10 — audit decisions ratified; MapLibre adoption decided
 

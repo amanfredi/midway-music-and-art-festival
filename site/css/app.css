@@ -822,6 +822,19 @@ html:has(dialog.sheet[open]) {
   height: 100%;
 }
 
+/* Shown in place of the map on a device without WebGL2. Centred in the square
+   frame rather than sitting at the top of it, so the frame reads as carrying a
+   deliberate message rather than as a map that failed to paint. */
+.map-unsupported {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  padding: 1.5rem;
+  box-sizing: border-box;
+}
+
 /* The you-are-here dot is a DOM marker here rather than an SVG node, so the
    pulse stays a CSS animation and keeps honoring prefers-reduced-motion. */
 .you-are-here-gl {

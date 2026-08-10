@@ -7,6 +7,23 @@ import { waitForMapIdle, mapEval, sourceFeatures } from './map-helpers.mjs';
 // Demo clock inside the festival weekend so "on now" has content.
 const T = '?t=2026-10-03T15:00';
 
+// `img.complete` sampled once is a race: the list is visible before its images
+// have finished decoding, and under a loaded test run that gap is wide enough to
+// fail. Polling asks the same question until the browser has actually answered
+// it, which is what the assertion always meant.
+async function expectFirstSponsorLogoLoaded(target) {
+  await expect
+    .poll(
+      () =>
+        target
+          .locator('[data-testid="sponsor-list"] img')
+          .first()
+          .evaluate((img) => img.complete && img.naturalWidth > 0),
+      { message: 'sponsor logo never finished loading from cache' },
+    )
+    .toBe(true);
+}
+
 async function waitForServiceWorker(page) {
   await page.waitForFunction(
     () => navigator.serviceWorker && navigator.serviceWorker.controller !== null,
@@ -84,11 +101,7 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   await page.goto('/' + T + '#/sponsors');
   await expect(page.locator('[data-testid="sponsor-list"]')).toBeVisible();
   await expect(page.locator('[data-testid="donate-link"]')).toBeVisible();
-  const logoOk = await page
-    .locator('[data-testid="sponsor-list"] img')
-    .first()
-    .evaluate((img) => img.complete && img.naturalWidth > 0);
-  expect(logoOk).toBe(true);
+  await expectFirstSponsorLogoLoaded(page);
 
   // the star persisted through the offline reload
   await page.goto('/' + T + '#/starred');
@@ -142,9 +155,7 @@ test('cold start offline: a page that was never online boots from cache', async 
   // covered code but not content.
   await cold.goto('/' + T + '#/sponsors');
   await expect(cold.locator('[data-testid="sponsor-list"]')).toBeVisible();
-  expect(
-    await cold.locator('[data-testid="sponsor-list"] img').first().evaluate((img) => img.complete && img.naturalWidth > 0),
-  ).toBe(true);
+  await expectFirstSponsorLogoLoaded(cold);
 
   expect(failures, 'a cold offline start should need nothing from the network').toEqual([]);
 });

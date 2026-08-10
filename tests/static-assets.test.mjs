@@ -20,3 +20,15 @@ test('the manifest leaves the installed app free to follow the device orientatio
     `manifest pins "orientation": ${JSON.stringify(manifest.orientation)}; an installed app must follow the device (WCAG 1.3.4)`,
   );
 });
+
+// The attribution attendees actually read is HTML below the map frame, from
+// settings.map_attribution. The SVG once carried a second copy that scaled
+// with the map instead of holding its size, so it rendered ~1-2 px at the
+// only zoom where it was on screen at all. The generator is asserted
+// alongside the output because regenerating needs Overpass, so the two are
+// edited by hand and can drift apart silently.
+for (const file of ['site/assets/map.svg', 'tools/make-map.mjs']) {
+  test(`${file} carries no attribution text inside the map artwork`, () => {
+    assert.ok(!read(file).includes('attribution'), `${file} still declares SVG attribution text (WCAG 1.4.3)`);
+  });
+}

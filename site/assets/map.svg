@@ -20,7 +20,6 @@
   .street-label  { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; text-anchor:middle; paint-order:stroke; stroke:#eeeeec; stroke-width:7.7; stroke-linejoin:round; }
   .street-label.spine    { font-size:98px; font-weight:700; fill:#3f3f3f; }
   .street-label.arterial { font-size:77px; font-weight:600; fill:#565654; }
-  .attribution { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-size:56px; fill:#8c8c8a; }
 
   /* Level of detail. Every label carries a lod class; the UI sets data-lod on
      the root as the user zooms, hiding anything above that level. Zoomed out,
@@ -511,5 +510,4 @@
 <g class="map-label lod1" transform="translate(15860.9 7248.0) rotate(-3.1)"><g class="map-label__scale"><text class="street-label arterial" x="0" y="0">Neid Lane</text></g></g>
 <g class="map-label lod1" transform="translate(10615.5 5991.6) rotate(-37.2)"><g class="map-label__scale"><text class="street-label arterial" x="0" y="0">West Wheelock Parkway</text></g></g>
 <g class="map-label lod1" transform="translate(5086.3 5082.6) rotate(-89.5)"><g class="map-label__scale"><text class="street-label arterial" x="0" y="0">North Hunting Valley Road</text></g></g>
-<text class="attribution" x="22" y="16071.4">Map data © OpenStreetMap contributors</text>
 </svg>

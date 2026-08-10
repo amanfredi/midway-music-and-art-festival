@@ -108,6 +108,17 @@ test('a second version installs over the first, drops its cache, and serves the 
     // --- the returning phone: reload onto the new worker
     await page.reload();
 
+    // This load is answered from the cache it already had, so the new text can
+    // only reach it as a message: the old worker's revalidation notices the
+    // bytes have changed, posts content-updated, and the page re-renders where
+    // it stands. Asserting it on *this* load, not a later one, is the point —
+    // an urgent day-of notice has to reach a tab that is already open, and
+    // every way this can break (the worker throwing before it posts, the page
+    // not listening yet) is silent.
+    const banner = page.locator('[data-testid="notice-banner"]');
+    await expect(banner).toContainText(bannerText, { timeout: 15_000 });
+    expect(bannerV1).not.toContain(bannerText);
+
     // skipWaiting + clients.claim put the new worker in charge without a second
     // visit, and activate deletes every older circuit-map-* cache — so exactly
     // one cache survives and it is the new one. A worker that installed but
@@ -115,16 +126,6 @@ test('a second version installs over the first, drops its cache, and serves the 
     await expect
       .poll(() => cacheNames(page), { timeout: 30_000 })
       .toEqual([`circuit-map-${v2}`]);
-
-    // ...and the next load — the reopened tab, on iOS the reload after an
-    // eviction — is served the new bytes rather than the ones it had cached.
-    // (The load that performed the update can still be showing the old content:
-    // its navigation and content.json were both answered from the old cache
-    // before the new worker took over.)
-    await page.reload();
-    const banner = page.locator('[data-testid="notice-banner"]');
-    await expect(banner).toContainText(bannerText);
-    expect(bannerV1).not.toContain(bannerText);
 
     // The new version is fully precached too: it works offline straight away,
     // which is the whole point of re-precaching on install.

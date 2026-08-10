@@ -1,4 +1,3 @@
-/* Generated from scripts/sw.template.js by scripts/build-sw.mjs — do not edit site/sw.js directly. */
 const VERSION = '__VERSION__';
 const CACHE = `circuit-map-${VERSION}`;
 const PRECACHE = __PRECACHE__;
@@ -26,12 +25,15 @@ self.addEventListener('activate', (event) => {
 
 // Stale-while-revalidate for content.json: cached copy answers instantly (or at
 // all, offline); a background refetch updates the cache and tells open pages.
+// `cached` must be a clone: respondWith consumes the original's body, so
+// reading it here throws once the refetch lands, and the catch below would
+// swallow that along with the update message.
 async function revalidateContent(cache, cached) {
   try {
     const fresh = await fetch(CONTENT_URL, { cache: 'no-cache' });
     if (!fresh.ok) return;
     const freshText = await fresh.clone().text();
-    const cachedText = cached ? await cached.clone().text() : null;
+    const cachedText = cached ? await cached.text() : null;
     await cache.put(CONTENT_URL, fresh);
     if (cachedText !== null && cachedText !== freshText) {
       for (const client of await self.clients.matchAll()) {
@@ -64,7 +66,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
       const cached = await cache.match(CONTENT_URL);
-      const revalidation = revalidateContent(cache, cached);
+      const revalidation = revalidateContent(cache, cached?.clone());
       if (cached) {
         event.waitUntil(revalidation);
         return cached;

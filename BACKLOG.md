@@ -154,6 +154,17 @@ pins** — adding 40-plus stop pins was rejected as clutter, but a line conveys
 generator makes this cheaper than it was: it is another `kind` and another
 layer.
 
+Also small: **the locate button's denial message should say where to fix it.**
+On iOS a code-1 geolocation failure looks the same whether the user once tapped
+"Don't Allow" for the site or Location Services is off for Safari websites
+entirely — the case observed 2026-08-10 on the deployed site: instant
+"Location permission denied", no prompt (Settings → Privacy & Security →
+Location Services → Safari Websites was set to Never; the home-screen install
+prompted and worked because standalone web apps carry their own permission
+identity). The current message is a dead end; a one-line hint pointing at
+Safari's website location settings turns it into a fixable state. Copy change
+only, no permission machinery.
+
 The **map-design pass against the accessibility guide** ran as part of the
 August 2026 WCAG audit, and `reference/map-artwork-a11y-constraints.md` now
 carries the constraints for the commissioned artwork. The open items below

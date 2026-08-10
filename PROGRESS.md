@@ -10,11 +10,11 @@ Live and working at https://go.midwaymusicandart.org/ (the github.io URL 301s
 to it). Every push to `main` deploys; the full suite is green. `npm test` runs
 offline from fixtures; only the deploy workflow builds from the live sheet.
 
-The map is **MapLibre GL JS**, vendored and self-hosted — the project's one
-runtime dependency, and the one place the "zero runtime dependencies" invariant
-now needs reading as "zero *fetched* dependencies" (CLAUDE.md and README still
-carry the old wording; BACKLOG). It requires WebGL2, with no fallback yet
-(BACKLOG).
+The map is **MapLibre GL JS**, vendored into `site/assets/maplibre/` and served
+from the primary origin like everything else — the invariant in CLAUDE.md is now
+stated in those terms. It requires WebGL2, an accepted floor (decided
+2026-08-10): a device without it gets a short explanation plus the venue key
+list instead of the map.
 
 **Only the venues tab is real content.** It is live from the organizers' Google
 Sheet (URL in `content/config.json`), currently 14 venues.
@@ -103,6 +103,11 @@ worker is doing the work rather than a warm reload) and a negative control that
 proves going offline actually severs the network; both were checked by breaking
 them on purpose. Map tests drive the engine through a `window.__mmafMap` hook,
 documented in CONTRACTS.
+
+Deployed the same day (fast-forward `3480382..a5f715a`), and the acceptance
+criterion passed where it counts: Anthony's manual airplane-mode pass on a real
+iPhone in Safari, against the deployed site after one online visit — site and
+map both working offline on the new precache.
 
 ### 2026-08-10 — audit decisions ratified; MapLibre adoption decided
 

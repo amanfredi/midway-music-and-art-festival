@@ -19,6 +19,7 @@ const routeAnnouncer = document.getElementById('route-announcer');
 const navLinks = [...document.querySelectorAll('.tab-bar a')];
 
 let currentCleanup = null;
+let routeGeneration = 0;
 
 // Human-readable names for the route-change live-region announcement below.
 // Matches the nav labels (CONTRACTS.md: "Support" is the #/sponsors route
@@ -72,6 +73,7 @@ function setActiveTab(routeName) {
 }
 
 async function handleRoute(route) {
+  const generation = ++routeGeneration;
   const content = store.getContent();
   closeSheet();
   if (currentCleanup) {
@@ -87,29 +89,41 @@ async function handleRoute(route) {
   setActiveTab(name === 'event' ? '' : name);
   if (name !== 'event') recordListRoute(location.hash || '#/now');
 
+  let cleanup;
   switch (name) {
     case 'schedule':
-      currentCleanup = renderSchedule(viewEl, content, route);
+      cleanup = renderSchedule(viewEl, content, route);
       break;
     case 'event':
-      currentCleanup = renderEventDetail(viewEl, content, route.parts[1]);
+      cleanup = renderEventDetail(viewEl, content, route.parts[1]);
       break;
     case 'map':
-      currentCleanup = await renderMap(viewEl, content);
+      cleanup = await renderMap(viewEl, content);
       break;
     case 'starred':
-      currentCleanup = renderStarred(viewEl, content);
+      cleanup = renderStarred(viewEl, content);
       break;
     case 'vendors':
-      currentCleanup = renderVendors(viewEl, content);
+      cleanup = renderVendors(viewEl, content);
       break;
     case 'sponsors':
-      currentCleanup = renderSponsors(viewEl, content);
+      cleanup = renderSponsors(viewEl, content);
       break;
     case 'now':
     default:
-      currentCleanup = renderNow(viewEl, content);
+      cleanup = renderNow(viewEl, content);
   }
+
+  // The map renders asynchronously, so another route can have taken over while
+  // it loaded. Its cleanup still has to run — that is what unbinds the map's
+  // listeners — but it must not replace the cleanup of the view now on screen.
+  if (generation !== routeGeneration) {
+    if (cleanup) {
+      try { cleanup(); } catch { /* view cleanup is best-effort */ }
+    }
+    return;
+  }
+  currentCleanup = cleanup;
 
   announceRoute(name);
   // Move focus to the view container on every route change so keyboard/screen

@@ -1,7 +1,7 @@
 // Bottom-sheet overlay used both by the map view (tap a pin) and event detail
 // (tap the venue name) so there is exactly one venue/vendor detail surface.
 
-import { esc } from '../util.js';
+import { esc, mapsDirectionsHref, safeHref } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
 import { findVenue, findSponsor, eventsForVenue } from '../store.js';
 
@@ -9,46 +9,60 @@ function root() {
   return document.getElementById('sheet-root');
 }
 
-function escKeyHandler(ev) {
-  if (ev.key === 'Escape') closeSheet();
+function currentDialog() {
+  const r = root();
+  return r ? r.querySelector('dialog.sheet') : null;
 }
 
-// The element focused right before a sheet opens (the pin/button that
-// triggered it), so closeSheet() can return focus there.
-let triggerEl = null;
+// A modal <dialog>'s ::backdrop reports the dialog itself as the event target,
+// so a target check alone would also close on clicks in the sheet's own
+// padding; the coordinates are what tell backdrop and sheet apart.
+function onBackdropClick(ev) {
+  const dialog = ev.currentTarget;
+  if (ev.target !== dialog) return;
+  const box = dialog.getBoundingClientRect();
+  const outside =
+    ev.clientX < box.left || ev.clientX > box.right || ev.clientY < box.top || ev.clientY > box.bottom;
+  if (outside) dialog.close();
+}
 
+// showModal() is what supplies the focus trap, background inertness, scroll
+// lock and Escape-to-close; all four were previously missing or hand-rolled.
 function open(innerHtml) {
   const r = root();
   if (!r) return;
-  triggerEl = document.activeElement;
+  closeSheet();
+  // The pin/button that opened the sheet, so focus can return there on close.
+  const trigger = document.activeElement;
   r.innerHTML = `
-    <div class="sheet-overlay" id="sheet-overlay">
-      <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
-        <button type="button" class="sheet__close" id="sheet-close" aria-label="Close">&times;</button>
-        ${innerHtml}
-      </div>
-    </div>`;
-  r.querySelector('#sheet-overlay').addEventListener('click', (ev) => {
-    if (ev.target.id === 'sheet-overlay') closeSheet();
+    <dialog class="sheet" role="dialog" aria-labelledby="sheet-title" tabindex="-1">
+      <button type="button" class="sheet__close" id="sheet-close" aria-label="Close">&times;</button>
+      ${innerHtml}
+    </dialog>`;
+  const dialog = r.querySelector('dialog.sheet');
+  dialog.addEventListener('click', onBackdropClick);
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+    // The browser's own focus restore doesn't fire for an opener that a route
+    // change has since removed; handleRoute() focuses #view in that case.
+    if (trigger && typeof trigger.focus === 'function' && document.contains(trigger)) trigger.focus();
   });
-  r.querySelector('#sheet-close').addEventListener('click', closeSheet);
-  document.addEventListener('keydown', escKeyHandler);
-  r.querySelectorAll('[data-close-sheet]').forEach((el) => el.addEventListener('click', closeSheet));
-  // Focus the dialog itself (not the close button): its aria-labelledby
-  // announces the sheet's title first, before a screen reader user tabs into
-  // its content.
-  r.querySelector('.sheet').focus();
+  r.querySelector('#sheet-close').addEventListener('click', () => dialog.close());
+  r.querySelectorAll('[data-close-sheet]').forEach((el) => el.addEventListener('click', () => dialog.close()));
+  dialog.showModal();
+  // Focus the dialog itself (not the close button showModal would pick): its
+  // aria-labelledby announces the sheet's title first, before a screen reader
+  // user tabs into its content.
+  dialog.focus();
 }
 
 export function closeSheet() {
-  const r = root();
-  const wasOpen = !!(r && r.innerHTML);
-  if (r) r.innerHTML = '';
-  document.removeEventListener('keydown', escKeyHandler);
-  if (wasOpen && triggerEl && typeof triggerEl.focus === 'function' && document.contains(triggerEl)) {
-    triggerEl.focus();
-  }
-  triggerEl = null;
+  const dialog = currentDialog();
+  if (!dialog) return;
+  // close() fires its event asynchronously; the sheet leaves the DOM now so
+  // the next render never sees a stale one.
+  dialog.close();
+  dialog.remove();
 }
 
 export function openVenueSheet(venueId) {
@@ -58,7 +72,8 @@ export function openVenueSheet(venueId) {
   const todaysEvents = eventsForVenue(venueId)
     .filter((e) => dateKey(parseEventTimes(e).start) === todayKey)
     .sort((a, b) => a.start.localeCompare(b.start));
-  const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking`;
+  const mapsHref = mapsDirectionsHref(venue.lat, venue.lng);
+  const websiteHref = safeHref(venue.url);
 
   open(`
     <h2 class="sheet__title" id="sheet-title">${esc(venue.name)}</h2>
@@ -70,7 +85,10 @@ export function openVenueSheet(venueId) {
           .map((e) => `<li><a class="sheet__event-link" data-close-sheet href="#/event/${esc(e.id)}">${esc(formatTime(parseEventTimes(e).start))} &mdash; ${esc(e.title)}</a></li>`)
           .join('')}</ul>`
       : '<p class="empty-state">Nothing scheduled here today.</p>'}
-    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>
+    <div class="sheet__actions">
+      ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''}
+      ${websiteHref ? `<a class="btn btn--secondary" href="${esc(websiteHref)}" target="_blank" rel="noopener">Visit venue website</a>` : ''}
+    </div>
   `);
 }
 
@@ -134,8 +152,9 @@ export function openInstallInstructionsSheet(flavor = 'ios') {
  * intersection would be worse than one.
  */
 export function openTransitSheet(stop, lineNames) {
-  if (!stop || !Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) return;
-  const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${stop.lat},${stop.lng}&travelmode=walking`;
+  if (!stop) return;
+  const mapsHref = mapsDirectionsHref(stop.lat, stop.lng);
+  if (!mapsHref) return;
   open(`
     <h2 class="sheet__title" id="sheet-title">${esc(stop.name)}</h2>
     <h3 class="sheet__subtitle">${lineNames.length > 1 ? 'Lines served' : 'Line served'}</h3>
@@ -148,8 +167,9 @@ export function openTransitSheet(stop, lineNames) {
 
 export function openSponsorSheet(sponsorId) {
   const sponsor = findSponsor(sponsorId);
-  if (!sponsor || !Number.isFinite(sponsor.lat) || !Number.isFinite(sponsor.lng)) return;
-  const mapsHref = `https://www.google.com/maps/dir/?api=1&destination=${sponsor.lat},${sponsor.lng}&travelmode=walking`;
+  if (!sponsor) return;
+  const mapsHref = mapsDirectionsHref(sponsor.lat, sponsor.lng);
+  if (!mapsHref) return;
   open(`
     <h2 class="sheet__title" id="sheet-title">${esc(sponsor.name)}</h2>
     ${sponsor.blurb ? `<p class="sheet__description">${esc(sponsor.blurb)}</p>` : ''}

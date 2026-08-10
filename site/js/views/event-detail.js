@@ -1,4 +1,4 @@
-import { esc } from '../util.js';
+import { esc, mapsDirectionsHref } from '../util.js';
 import { parseEventTimes, formatDayLabel, formatTime } from '../time.js';
 import { findVenue, isStarred, toggleStar } from '../store.js';
 import { navigate, getLastListRoute } from '../router.js';
@@ -18,6 +18,7 @@ export function renderEventDetail(container, content, eventId) {
   if (!event) {
     container.innerHTML = `
       <section class="view event-detail">
+        <h1 class="sr-only">Event detail</h1>
         <p class="empty-state">That event couldn't be found. <a href="#/schedule">Back to schedule</a></p>
       </section>`;
     return;
@@ -27,7 +28,7 @@ export function renderEventDetail(container, content, eventId) {
   const { start, end } = parseEventTimes(event);
   const starred = isStarred(event.id);
   const kind = event.kind || 'music';
-  const mapsHref = venue ? `https://www.google.com/maps/dir/?api=1&destination=${venue.lat},${venue.lng}&travelmode=walking` : '';
+  const mapsHref = venue ? mapsDirectionsHref(venue.lat, venue.lng) : '';
 
   container.innerHTML = `
     <section class="view event-detail">
@@ -48,7 +49,7 @@ export function renderEventDetail(container, content, eventId) {
           <span class="star-icon" aria-hidden="true">${starred ? '★' : '☆'}</span>
           <span class="star-label">${starred ? 'Starred' : 'Star this event'}</span>
         </button>
-        ${venue ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''}
+        ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''}
       </div>
     </section>`;
 

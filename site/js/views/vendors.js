@@ -1,4 +1,4 @@
-import { esc } from '../util.js';
+import { esc, groupBy } from '../util.js';
 
 // Grouped by type (food/art/retail) rather than a flat list: festival-goers
 // browsing vendors are usually looking for "something to eat" or "art to
@@ -34,12 +34,7 @@ export function renderVendors(container, content) {
   // Defensive "Other" bucket for any type outside the known enum, so a future
   // content change degrades gracefully instead of silently dropping vendors
   // (build.mjs already validates the enum, so this should stay empty today).
-  const byType = new Map();
-  for (const v of vendors) {
-    const key = TYPE_ORDER.includes(v.type) ? v.type : 'other';
-    if (!byType.has(key)) byType.set(key, []);
-    byType.get(key).push(v);
-  }
+  const byType = groupBy(vendors, (v) => (TYPE_ORDER.includes(v.type) ? v.type : 'other'));
   const orderedKeys = [...TYPE_ORDER, 'other'].filter((key) => byType.has(key));
 
   container.innerHTML = `

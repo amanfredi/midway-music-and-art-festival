@@ -82,16 +82,20 @@ function diamondPoints(r) {
  * (QA, 2026-08-09; overlap was ruled out, nearest pin was 652 m away).
  */
 function transitLabelMarkup(lines) {
-  if (lines.length === 1) {
-    return `<text class="pin__label" x="0" y="0">${TRANSIT_LINE_LETTER[lines[0]]}</text>`;
+  // A line the app has no letter for leaves the diamond blank rather than
+  // stamping it with the word "undefined".
+  const letters = lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean);
+  if (letters.length === 0) return '';
+  if (letters.length === 1) {
+    return `<text class="pin__label" x="0" y="0">${letters[0]}</text>`;
   }
   // Stacked: first tspan lifted half a line above center, each subsequent one
   // a full line below the previous. Offsets are in map units, not em, so they
   // don't depend on how the engine resolves font-relative lengths.
   const lineHeight = 78;
-  const firstOffset = -((lines.length - 1) * lineHeight) / 2;
-  const tspans = lines
-    .map((l, i) => `<tspan x="0" dy="${i === 0 ? firstOffset : lineHeight}">${TRANSIT_LINE_LETTER[l]}</tspan>`)
+  const firstOffset = -((letters.length - 1) * lineHeight) / 2;
+  const tspans = letters
+    .map((letter, i) => `<tspan x="0" dy="${i === 0 ? firstOffset : lineHeight}">${letter}</tspan>`)
     .join('');
   return `<text class="pin__label pin__label--stacked" x="0" y="0">${tspans}</text>`;
 }
@@ -101,9 +105,10 @@ function transitLabelMarkup(lines) {
  * onto an inlined <svg>.
  *
  * `full` is the SVG's own viewBox (the pan/zoom limit); `home` is the smaller
- * rectangle the map opens at and resets to.
+ * rectangle the map opens at and resets to. `onViewChange` runs after every
+ * committed view write, batched with it.
  */
-function setupInteraction(svg, full, home, onActivatePin) {
+function setupInteraction(svg, full, home, onActivatePin, onViewChange) {
   let view = { ...home };
   const pointers = new Map();
   let pinchStartDist = null;
@@ -151,9 +156,32 @@ function setupInteraction(svg, full, home, onActivatePin) {
     for (const g of scalables) g.setAttribute('transform', transform);
   }
 
-  function apply() {
+  let pendingFrame = null;
+
+  function commit() {
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
     updateOverlayScale();
+    onViewChange(view);
+  }
+
+  // Gestures coalesce to one write per frame: a 120 Hz pointer stream would
+  // otherwise write the viewBox 120 times a second, and a transform on each of
+  // ~500 counter-scaled groups while pinching. Discrete input (keys, zoom
+  // buttons) still writes straight through, so it is done when it returns.
+  function scheduleCommit() {
+    if (pendingFrame !== null) return;
+    pendingFrame = requestAnimationFrame(() => {
+      pendingFrame = null;
+      commit();
+    });
+  }
+
+  function apply() {
+    if (pendingFrame !== null) {
+      cancelAnimationFrame(pendingFrame);
+      pendingFrame = null;
+    }
+    commit();
   }
 
   function clampPan() {
@@ -165,7 +193,7 @@ function setupInteraction(svg, full, home, onActivatePin) {
     view.y = view.h >= full.h ? full.y + (full.h - view.h) / 2 : Math.min(Math.max(view.y, full.y), maxY);
   }
 
-  function zoomBy(factor, focalX, focalY) {
+  function zoomBy(factor, focalX, focalY, write = apply) {
     const newW = Math.min(maxViewW, Math.max(MIN_VIEW_M, view.w * factor));
     const newH = newW; // square view
     const fx = focalX === undefined ? 0.5 : (focalX - view.x) / view.w;
@@ -175,7 +203,7 @@ function setupInteraction(svg, full, home, onActivatePin) {
     view.w = newW;
     view.h = newH;
     clampPan();
-    apply();
+    write();
   }
 
   function reset() {
@@ -193,9 +221,8 @@ function setupInteraction(svg, full, home, onActivatePin) {
 
   // Keyboard equivalent of drag-panning (mouse/touch drag has no keyboard
   // analogue otherwise). Step is relative to the current viewport so it stays
-  // useful at any zoom level. Listening on the svg root rather than each pin
-  // means arrow keys pan regardless of which focusable element inside the map
-  // (a pin, or the svg itself) currently has focus.
+  // useful at any zoom level. A focused pin handles arrow keys itself, to move
+  // along the pin set, and stops them reaching this handler.
   function onKeyDown(e) {
     switch (e.key) {
       case 'ArrowLeft':
@@ -246,14 +273,14 @@ function setupInteraction(svg, full, home, onActivatePin) {
       view.x -= ((e.clientX - prev.x) / rect.width) * view.w;
       view.y -= ((e.clientY - prev.y) / rect.height) * view.h;
       clampPan();
-      apply();
+      scheduleCommit();
     } else if (pointers.size === 2) {
       const pts = [...pointers.values()];
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
       if (pinchStartDist != null && dist > 0) {
         const focal = toSvgPoint(mid.x, mid.y);
-        zoomBy(pinchStartDist / dist, focal.x, focal.y);
+        zoomBy(pinchStartDist / dist, focal.x, focal.y, scheduleCommit);
       }
       pinchStartDist = dist;
     }
@@ -262,6 +289,9 @@ function setupInteraction(svg, full, home, onActivatePin) {
   function onPointerUp(e) {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinchStartDist = null;
+    // The gesture's last frame may still be queued; land it now so the view
+    // never sits one frame behind where the finger left it.
+    if (pendingFrame !== null) apply();
 
     if (multiTouch || !primaryDown || primaryDown.id !== e.pointerId) {
       if (pointers.size === 0) { primaryDown = null; multiTouch = false; }
@@ -312,6 +342,10 @@ function setupInteraction(svg, full, home, onActivatePin) {
     zoomOut: () => zoomBy(1 / 0.7),
     reset,
     destroy() {
+      if (pendingFrame !== null) {
+        cancelAnimationFrame(pendingFrame);
+        pendingFrame = null;
+      }
       svg.removeEventListener('pointerdown', onPointerDown);
       svg.removeEventListener('pointermove', onPointerMove);
       svg.removeEventListener('pointerup', onPointerUp);
@@ -321,7 +355,58 @@ function setupInteraction(svg, full, home, onActivatePin) {
   };
 }
 
+const NO_CLEANUP = () => {};
+
+// Every visit to #/map used to re-fetch and re-parse 1.87 MB of SVG. It is
+// parsed once and cloned per visit instead; the cached copy stays pristine
+// because the clone is what gets the pins and the runtime attributes.
+let mapAssets = null;
+let transitStopsCache = null;
+
+async function loadMapAssets() {
+  if (mapAssets) return mapAssets;
+  const [svgText, calibration] = await Promise.all([
+    fetch('assets/map.svg').then((r) => {
+      if (!r.ok) throw new Error('map fetch failed');
+      return r.text();
+    }),
+    fetch('assets/map-calibration.json').then((r) => {
+      if (!r.ok) throw new Error('calibration fetch failed');
+      return r.json();
+    }),
+  ]);
+  // Inserting SVG markup into an HTML element correctly namespaces the
+  // children (supported in all evergreen browsers), so this is a plain
+  // innerHTML assignment rather than manual createElementNS plumbing. The
+  // holder is detached, so parsing costs no layout.
+  const holder = document.createElement('div');
+  holder.innerHTML = svgText;
+  const svg = holder.querySelector('#circuit-map') || holder.querySelector('svg');
+  // A response with no root element is not cached: a truncated body should be
+  // retried on the next visit, not remembered as a broken map forever.
+  if (!svg) return { svg: null, calibration };
+  mapAssets = { svg, calibration };
+  return mapAssets;
+}
+
+// Transit pins are an informational overlay, not core map infrastructure like
+// the street SVG/calibration above -- a failed or missing fetch just means no
+// transit pins render, not a broken map view, and the next visit retries.
+async function loadTransitStops() {
+  if (transitStopsCache) return transitStopsCache;
+  try {
+    const r = await fetch('assets/transit.json');
+    if (r.ok) transitStopsCache = (await r.json()).stops ?? [];
+  } catch {
+    // offline/missing transit.json: map still works without the overlay
+  }
+  return transitStopsCache ?? [];
+}
+
+let renderGeneration = 0;
+
 export async function renderMap(container, content) {
+  const generation = ++renderGeneration;
   const youAreHereEnabled = content.settings.you_are_here_enabled === 'true';
 
   container.innerHTML = `
@@ -357,45 +442,34 @@ export async function renderMap(container, content) {
       <ol class="venue-key-list" id="venue-key-list"></ol>
     </section>`;
 
-  const wrap = container.querySelector('#map-svg-wrap');
-  let svgText;
-  let calibration;
+  // Tapping another tab mid-load wipes #view while these awaits are in
+  // flight. Anything the continuation wrote after that would land in a
+  // detached tree and leak its listeners, so every DOM reference is re-queried
+  // through here and a null answer ends the render.
+  const mapWrap = () => (generation === renderGeneration ? container.querySelector('#map-svg-wrap') : null);
+
+  let assets;
+  let stops;
   try {
-    [svgText, calibration] = await Promise.all([
-      fetch('assets/map.svg').then((r) => {
-        if (!r.ok) throw new Error('map fetch failed');
-        return r.text();
-      }),
-      fetch('assets/map-calibration.json').then((r) => {
-        if (!r.ok) throw new Error('calibration fetch failed');
-        return r.json();
-      }),
-    ]);
+    assets = await loadMapAssets();
+    stops = await loadTransitStops();
   } catch {
-    wrap.innerHTML = `<p class="empty-state">The map couldn't be loaded right now. It will be available next time you're online.</p>`;
-    return () => {};
+    const failedWrap = mapWrap();
+    if (failedWrap) {
+      failedWrap.innerHTML = `<p class="empty-state">The map couldn't be loaded right now. It will be available next time you're online.</p>`;
+    }
+    return NO_CLEANUP;
   }
 
-  // Transit pins are an informational overlay, not core map infrastructure
-  // like the street SVG/calibration above -- a failed or missing fetch just
-  // means no transit pins render, not a broken map view.
-  let transitStops = [];
-  try {
-    const r = await fetch('assets/transit.json');
-    if (r.ok) transitStops = (await r.json()).stops ?? [];
-  } catch {
-    // offline/missing transit.json: map still works without the overlay
-  }
-
-  // Inserting SVG markup into an <svg>-context element correctly namespaces
-  // the children (supported in all evergreen browsers), so this is a plain
-  // innerHTML assignment rather than manual createElementNS plumbing.
-  wrap.innerHTML = svgText;
-  const svg = wrap.querySelector('#circuit-map') || wrap.querySelector('svg');
-  if (!svg) {
+  const wrap = mapWrap();
+  if (!wrap) return NO_CLEANUP;
+  const calibration = assets.calibration;
+  if (!assets.svg) {
     wrap.innerHTML = `<p class="empty-state">The map file is invalid.</p>`;
-    return () => {};
+    return NO_CLEANUP;
   }
+  const svg = assets.svg.cloneNode(true);
+  wrap.replaceChildren(svg);
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   svg.classList.add('circuit-map-svg');
   // Pan/zoom was pointer-only (drag + pinch + the on-screen zoom buttons);
@@ -410,7 +484,7 @@ export async function renderMap(container, content) {
     projector = makeProjector(calibration.control_points);
   } catch {
     wrap.innerHTML = `<p class="empty-state">The map calibration data is invalid.</p>`;
-    return () => {};
+    return NO_CLEANUP;
   }
 
   // The map extent is anchored on the two downtowns, so its middle is NOT the
@@ -444,7 +518,7 @@ export async function renderMap(container, content) {
   venues.forEach((v, i) => {
     const { x, y } = projector.project(v.lat, v.lng);
     venuePins.push(`
-      <g class="pin pin--venue" data-testid="venue-pin" data-venue-id="${esc(v.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="Venue ${i + 1}: ${esc(v.name)}">
+      <g class="pin pin--venue" data-testid="venue-pin" data-venue-id="${esc(v.id)}" transform="translate(${x} ${y})" role="button" tabindex="-1" aria-label="Venue ${i + 1}: ${esc(v.name)}">
         <g class="pin__scale">
           <polygon class="pin__hit" points="${diamondPoints(VENUE_HIT_R)}"></polygon>
           <polygon class="pin__diamond" points="${diamondPoints(VENUE_PIN_R)}"></polygon>
@@ -452,14 +526,14 @@ export async function renderMap(container, content) {
         </g>
       </g>`);
   });
-  transitStops.forEach((s) => {
+  stops.forEach((s) => {
     if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng) || !Array.isArray(s.lines) || s.lines.length === 0) return;
     const { x, y } = projector.project(s.lat, s.lng);
     // Only stops near the festival get a pin — see TRANSIT_PIN_RADIUS_M.
     if (Math.hypot(x - homeCenter.x, y - homeCenter.y) > TRANSIT_PIN_RADIUS_M) return;
     const lineNames = s.lines.map((l) => TRANSIT_LINE_NAME[l] || l).join(', ');
     transitPins.push(`
-      <g class="pin pin--transit" data-testid="transit-pin" data-transit-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="${esc(s.name)}: ${esc(lineNames)}">
+      <g class="pin pin--transit" data-testid="transit-pin" data-transit-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="-1" aria-label="${esc(s.name)}: ${esc(lineNames)}">
         <g class="pin__scale">
           <polygon class="pin__hit" points="${diamondPoints(TRANSIT_HIT_R)}"></polygon>
           <polygon class="pin__diamond" points="${diamondPoints(TRANSIT_PIN_R)}"></polygon>
@@ -474,7 +548,7 @@ export async function renderMap(container, content) {
     const kind = featured ? 'Featured Destination' : 'Sponsor';
     const { x, y } = projector.project(s.lat, s.lng);
     (featured ? featuredPins : genericSponsorPins).push(`
-      <g class="pin pin--sponsor-${featured ? 'featured' : 'generic'}" data-testid="sponsor-pin" data-sponsor-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="0" aria-label="${kind}: ${esc(s.name)}">
+      <g class="pin pin--sponsor-${featured ? 'featured' : 'generic'}" data-testid="sponsor-pin" data-sponsor-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="-1" aria-label="${kind}: ${esc(s.name)}">
         <g class="pin__scale">
           <polygon class="pin__hit" points="${diamondPoints(hitR)}"></polygon>
           <polygon class="pin__diamond" points="${diamondPoints(r)}"></polygon>
@@ -503,7 +577,7 @@ export async function renderMap(container, content) {
     );
   }
 
-  const transitById = new Map(transitStops.map((s) => [s.id, s]));
+  const transitById = new Map(stops.map((s) => [s.id, s]));
 
   function activatePin(pinEl) {
     if (pinEl.dataset.venueId) openVenueSheet(pinEl.dataset.venueId);
@@ -513,14 +587,53 @@ export async function renderMap(container, content) {
       if (stop) openTransitSheet(stop, stop.lines.map((l) => TRANSIT_LINE_NAME[l] || l));
     }
   }
-  svg.querySelectorAll('.pin').forEach((pinEl) => {
-    pinEl.addEventListener('keydown', (e) => {
+
+  // The pin set is one tab stop, not thirty-plus: reaching the venue list below
+  // the map used to mean tabbing past every pin, including the ones panned off
+  // screen. Arrow keys walk the pins that are actually in view; the map itself
+  // keeps arrow-key panning for when it, rather than a pin, has focus.
+  const pins = [...svg.querySelectorAll('.pin')].map((el) => {
+    const [x, y] = (el.getAttribute('transform').match(/-?[\d.]+/g) ?? ['0', '0']).map(Number);
+    return { el, x, y };
+  });
+  let rovingPin = null;
+
+  function pinsInView(view) {
+    return pins.filter((p) => p.x >= view.x && p.x <= view.x + view.w && p.y >= view.y && p.y <= view.y + view.h);
+  }
+
+  function setRovingPin(pin) {
+    rovingPin = pin;
+    for (const p of pins) {
+      const tabindex = p === rovingPin ? '0' : '-1';
+      if (p.el.getAttribute('tabindex') !== tabindex) p.el.setAttribute('tabindex', tabindex);
+    }
+  }
+
+  let visiblePins = pins;
+  function onViewChange(view) {
+    visiblePins = pinsInView(view);
+    setRovingPin(visiblePins.includes(rovingPin) ? rovingPin : visiblePins[0] ?? null);
+  }
+
+  const ARROW_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  for (const pin of pins) {
+    pin.el.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        activatePin(pinEl);
+        activatePin(pin.el);
+        return;
       }
+      const step = ARROW_STEP[e.key];
+      if (step === undefined || !visiblePins.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const from = visiblePins.indexOf(pin);
+      const next = visiblePins[(from + step + visiblePins.length) % visiblePins.length];
+      setRovingPin(next);
+      next.el.focus();
     });
-  });
+  }
 
   const keyList = container.querySelector('#venue-key-list');
   keyList.innerHTML = venues
@@ -547,7 +660,7 @@ export async function renderMap(container, content) {
     h: HOME_VIEW_M,
   };
 
-  const interaction = setupInteraction(svg, full, home, activatePin);
+  const interaction = setupInteraction(svg, full, home, activatePin, onViewChange);
   container.querySelector('#zoom-in').addEventListener('click', () => interaction.zoomIn());
   container.querySelector('#zoom-out').addEventListener('click', () => interaction.zoomOut());
   container.querySelector('#zoom-reset').addEventListener('click', () => interaction.reset());

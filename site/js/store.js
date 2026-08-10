@@ -6,7 +6,6 @@ const STARRED_KEY = 'mfc:starred';
 const DISMISSED_BANNER_KEY = 'mfc:dismissed-banner';
 
 let content = null;
-const listeners = [];
 
 async function fetchContent() {
   const res = await fetch(CONTENT_URL, { cache: 'no-store' });
@@ -27,15 +26,10 @@ export function getContent() {
 export async function refreshContent() {
   try {
     content = await fetchContent();
-    listeners.forEach((fn) => fn(content));
   } catch {
     // Offline or a transient failure — keep serving what we already rendered.
   }
   return content;
-}
-
-export function onContentUpdate(fn) {
-  listeners.push(fn);
 }
 
 // -- starred events --

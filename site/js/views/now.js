@@ -1,45 +1,38 @@
 import { esc } from '../util.js';
 import { now as clockNow, parseEventTimes, formatDayLabel, dateKey } from '../time.js';
-import { eventRowHtml, bindEventRowStars } from './event-row.js';
+import { eventRowHtml, venueGroupsHtml, bindEventRowStars } from './event-row.js';
 import { installButtonHtml, bindInstallButton, onInstallStateChange } from '../pwa-install.js';
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 const REFRESH_MS = 60 * 1000;
 
-function groupByVenue(events, venuesById) {
-  const groups = new Map();
-  for (const e of events) {
-    if (!groups.has(e.venue_id)) groups.set(e.venue_id, []);
-    groups.get(e.venue_id).push(e);
-  }
-  return [...groups.entries()]
-    .map(([venueId, evs]) => ({
-      venue: venuesById.get(venueId),
-      events: evs.sort((a, b) => a.start.localeCompare(b.start)),
-    }))
-    .sort((a, b) => (a.venue?.name ?? '').localeCompare(b.venue?.name ?? ''));
-}
-
-function venueGroupHtml(group, relativeTo) {
-  return `
-    <div class="venue-group">
-      <h3 class="venue-group__title">${esc(group.venue?.name ?? 'Venue')}</h3>
-      <div class="event-list">${group.events.map((e) => eventRowHtml(e, { venue: group.venue, showVenue: false, relativeTo })).join('')}</div>
-    </div>`;
-}
-
 export function renderNow(container, content) {
   const venuesById = new Map(content.venues.map((v) => [v.id, v]));
+  let lastKey = null;
+
+  // Replacing the whole view destroys focus and reading position inside it, so
+  // a tick that would render the same thing doesn't render at all. Star state
+  // is deliberately absent from the key — rows patch their own star in place.
+  function paint(key, html) {
+    if (key === lastKey) return;
+    lastKey = key;
+    container.innerHTML = html;
+    bindEventRowStars(container);
+    bindInstallButton(container);
+  }
 
   function draw() {
+    const install = installButtonHtml();
     const events = content.events;
     if (!events.length) {
-      container.innerHTML = `
-        <section data-testid="now-view" class="view now-view">
+      paint(
+        `empty|${install}`,
+        `<section data-testid="now-view" class="view now-view">
+          <h1 class="sr-only">Now</h1>
           <p class="empty-state">No events scheduled yet — check back once the schedule is published.</p>
-          ${installButtonHtml()}
-        </section>`;
-      bindInstallButton(container);
+          ${install}
+        </section>`
+      );
       return;
     }
 
@@ -49,11 +42,11 @@ export function renderNow(container, content) {
     const t = clockNow();
 
     if (t < festivalStart) {
-      drawNotStarted(t, festivalStart, times);
+      paint(`not-started|${install}`, notStartedHtml(festivalStart, times, install));
       return;
     }
     if (t >= festivalEnd) {
-      drawEnded();
+      paint(`ended|${install}`, endedHtml(install));
       return;
     }
 
@@ -76,28 +69,34 @@ export function renderNow(container, content) {
       upNext = [...nextByVenue.values()].sort((a, b) => a.start - b.start).map((x) => x.e);
     }
 
-    const onNowGroups = groupByVenue(onNow, venuesById);
-    const upNextGroups = groupByVenue(upNext, venuesById);
-
-    container.innerHTML = `
-      <section data-testid="now-view" class="view now-view">
-        <h1 class="view-title">On now</h1>
-        ${onNowGroups.length ? onNowGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
-        <h2 class="view-subtitle">Up next</h2>
-        ${upNextGroups.length ? upNextGroups.map((g) => venueGroupHtml(g, t)).join('') : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
-        ${installButtonHtml()}
-      </section>`;
-    bindEventRowStars(container);
-    bindInstallButton(container);
+    // The calendar day is part of the key because rows carry a day prefix
+    // whenever they fall on a different day than the reference time.
+    const ids = (list) => list.map((e) => e.id).join(',');
+    paint(`live|${dateKey(t)}|${ids(onNow)}|${ids(upNext)}|${install}`, liveHtml(onNow, upNext, t, install));
   }
 
-  function drawNotStarted(t, festivalStart, times) {
+  function liveHtml(onNow, upNext, t, install) {
+    return `
+      <section data-testid="now-view" class="view now-view">
+        <h1 class="view-title">On now</h1>
+        ${onNow.length
+          ? venueGroupsHtml(onNow, venuesById, { relativeTo: t })
+          : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
+        <h2 class="view-subtitle">Up next</h2>
+        ${upNext.length
+          ? venueGroupsHtml(upNext, venuesById, { relativeTo: t })
+          : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
+        ${install}
+      </section>`;
+  }
+
+  function notStartedHtml(festivalStart, times, install) {
     const firstDayKey = dateKey(festivalStart);
     const firstDayEvents = times
       .filter((x) => dateKey(x.start) === firstDayKey)
       .sort((a, b) => a.start - b.start)
       .map((x) => x.e);
-    container.innerHTML = `
+    return `
       <section data-testid="now-view" class="view now-view">
         <div class="empty-state empty-state--hero">
           <h1>${esc(content.settings.festival_name || 'The festival')} hasn't started yet</h1>
@@ -105,14 +104,12 @@ export function renderNow(container, content) {
         </div>
         <h2 class="view-subtitle">Opening lineup &mdash; ${esc(formatDayLabel(festivalStart))}</h2>
         <div class="event-list">${firstDayEvents.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
-        ${installButtonHtml()}
+        ${install}
       </section>`;
-    bindEventRowStars(container);
-    bindInstallButton(container);
   }
 
-  function drawEnded() {
-    container.innerHTML = `
+  function endedHtml(install) {
+    return `
       <section data-testid="now-view" class="view now-view">
         <div class="empty-state empty-state--hero">
           <h1>Thanks for coming!</h1>
@@ -120,9 +117,8 @@ export function renderNow(container, content) {
           <p>${esc(content.settings.festival_dates_label || '')}</p>
           <a class="btn btn--primary" href="#/schedule">Browse the full schedule</a>
         </div>
-        ${installButtonHtml()}
+        ${install}
       </section>`;
-    bindInstallButton(container);
   }
 
   draw();

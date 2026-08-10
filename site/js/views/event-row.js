@@ -5,7 +5,7 @@
 // holding the event `<a>` link plus a *sibling* star `<button>` — never a button
 // nested inside a link, which is broken for screen readers and touch.
 
-import { esc } from '../util.js';
+import { esc, groupBy } from '../util.js';
 import { parseEventTimes, formatTime, shortDayName, dateKey } from '../time.js';
 import { isStarred, toggleStar } from '../store.js';
 
@@ -68,6 +68,35 @@ export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null
         aria-label="${starred ? 'Unstar' : 'Star'} ${title}"
       ><span class="event-row__star-glyph" aria-hidden="true">${starred ? '★' : '☆'}</span></button>
     </div>`;
+}
+
+/**
+ * One titled group of event rows. The schedule's three groupings and the Now
+ * view's per-venue lists are all this shape, and share its styling.
+ */
+export function eventGroupHtml(title, rowsHtml) {
+  return `
+    <div class="event-group">
+      <h3 class="event-group__title">${esc(title)}</h3>
+      <div class="event-list">${rowsHtml}</div>
+    </div>`;
+}
+
+/** Rows grouped by venue: venues alphabetical, rows chronological within each. */
+export function venueGroupsHtml(events, venuesById, { relativeTo = null } = {}) {
+  return [...groupBy(events, (e) => e.venue_id)]
+    .map(([venueId, venueEvents]) => ({
+      venue: venuesById.get(venueId),
+      events: venueEvents.sort((a, b) => a.start.localeCompare(b.start)),
+    }))
+    .sort((a, b) => (a.venue?.name ?? '').localeCompare(b.venue?.name ?? ''))
+    .map((group) =>
+      eventGroupHtml(
+        group.venue?.name ?? 'Venue',
+        group.events.map((e) => eventRowHtml(e, { venue: group.venue, showVenue: false, relativeTo })).join('')
+      )
+    )
+    .join('');
 }
 
 /**

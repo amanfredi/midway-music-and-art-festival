@@ -31,6 +31,22 @@ const DEFAULT_TICKETS = "General Admission";
 // in content.json so the UI can test it falsily; only these two values render
 // a badge.
 const VALID_AGE_LIMITS = new Set(["18+", "21+"]);
+// The settings the app actually reads, with the values it can make sense of.
+// An unknown key is a typo — and a typo here is invisible at runtime, since the
+// app just falls back to its default.
+const SETTINGS_KEYS = {
+  festival_name: {},
+  festival_dates_label: {},
+  banner_id: {},
+  banner_text: {},
+  you_are_here_enabled: { oneOf: ["true", "false"] },
+  map_attribution: {},
+  donation_url: { isUrl: true },
+  donation_label: {},
+};
+// esc() in the app stops attribute breakout but is not a URL sanitizer, so the
+// scheme is constrained here, where a bad sheet edit fails loudly.
+const ALLOWED_URL_SCHEMES = new Set(["https:", "http:", "mailto:"]);
 const ID_RE = /^[a-z0-9-]+$/;
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_ONLY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -244,6 +260,15 @@ function errorMsg(fileLabel, rowNum, identifier, message) {
 }
 
 /**
+ * Every message the build prints can quote a spreadsheet cell, and the build log
+ * is public in Actions. Flattening control characters keeps a cell containing
+ * newlines from forging extra log lines.
+ */
+function oneLine(text) {
+  return String(text).replace(/[\u0000-\u001f\u007f]+/g, " ");
+}
+
+/**
  * Header cells become record keys verbatim, so a column renamed in the sheet is
  * indistinguishable from a column added — and the renamed one comes out blank
  * for every row with nothing to show for it. Extra columns stay legal, but a
@@ -317,6 +342,33 @@ function validateRequiredFields(fileLabel, records, requiredFields, identifierFi
           errorMsg(fileLabel, rec.rowNum, identifierFor(rec, identifierField), `missing required field "${field}".`)
         );
       }
+    }
+  }
+  return errors;
+}
+
+/** Describes what's wrong with a URL cell, or null when it's fine (blank included). */
+function urlValueError(value) {
+  const raw = String(value ?? "").trim();
+  if (raw === "") return null;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return `isn't a complete web address — write it out in full, starting with "https://" (or "mailto:" for an email address).`;
+  }
+  if (!ALLOWED_URL_SCHEMES.has(parsed.protocol)) {
+    return `uses the "${parsed.protocol}" scheme; only https, http, and mailto addresses are allowed.`;
+  }
+  return null;
+}
+
+function validateUrlField(fileLabel, records, identifierField, field = "url") {
+  const errors = [];
+  for (const rec of records) {
+    const problem = urlValueError(rec.fields[field]);
+    if (problem) {
+      errors.push(errorMsg(fileLabel, rec.rowNum, identifierFor(rec, identifierField), `${field} "${rec.fields[field]}" ${problem}`));
     }
   }
   return errors;
@@ -407,6 +459,40 @@ function normalizeIds(parsed) {
   rewrite("sponsors.csv", parsed.sponsors.records, "id", "name");
   rewrite("events.csv", parsed.events.records, "id", "title");
   rewrite("events.csv", parsed.events.records, "venue_id", "title");
+  return notes;
+}
+
+/**
+ * Coordinators paste links the way they read them out loud
+ * ("blackgarnetbooks.com") — two of the live venues sheet's links are written
+ * that way today. A bare domain is unambiguous, so the build completes it to
+ * https:// rather than failing, following the same normalize-don't-reject rule
+ * ids do. Anything carrying a scheme is left exactly as typed, for
+ * validateUrlField to accept or reject.
+ */
+const BARE_DOMAIN_RE = /^[^\s/:?#]+\.[^\s/:?#]+(?:[/?#]\S*)?$/;
+
+function normalizeUrls(parsed) {
+  const notes = [];
+  const rewrite = (fileLabel, records, field, identifierField) => {
+    for (const rec of records) {
+      const raw = String(rec.fields[field] ?? "").trim();
+      if (raw === "" || !BARE_DOMAIN_RE.test(raw)) continue;
+      const completed = `https://${raw}`;
+      notes.push(
+        `${fileLabel} row ${rec.rowNum} (${identifierFor(rec, identifierField)}): ${field} "${raw}" -> "${completed}"`
+      );
+      rec.fields[field] = completed;
+    }
+  };
+  rewrite("venues.csv", parsed.venues.records, "url", "name");
+  rewrite("sponsors.csv", parsed.sponsors.records, "url", "name");
+  rewrite(
+    "settings.csv",
+    parsed.settings.records.filter((rec) => String(rec.fields.key ?? "").trim() === "donation_url"),
+    "value",
+    "key"
+  );
   return notes;
 }
 
@@ -514,6 +600,7 @@ function validateVenues(records) {
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
     ...validateLocation(fileLabel, records, "name"),
+    ...validateUrlField(fileLabel, records, "name"),
   ];
   const clean = records.map((rec) => ({
     id: rec.fields.id ?? "",
@@ -687,6 +774,7 @@ function validateSponsorFields(records) {
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
     ...validateLocation(fileLabel, records, "name"),
+    ...validateUrlField(fileLabel, records, "name"),
   ];
 
   const seenByTier = new Map(); // tier slug -> row numbers seen so far, in order
@@ -739,13 +827,49 @@ function validateSponsorFields(records) {
 
 function validateSettings(records) {
   const fileLabel = "settings.csv";
+  // Trimmed before anything else: a trailing space made "donation_url " a
+  // different key, and the donate button silently disappeared.
+  for (const rec of records) {
+    rec.fields.key = String(rec.fields.key ?? "").trim();
+    rec.fields.value = String(rec.fields.value ?? "").trim();
+  }
+
   const errors = [
     ...validateRequiredFields(fileLabel, records, ["key"], "key"),
     ...validateDuplicateIds(fileLabel, records, "key", "key"),
   ];
+
+  const knownKeys = Object.keys(SETTINGS_KEYS);
+  for (const rec of records) {
+    const key = rec.fields.key;
+    if (key === "") continue; // reported by the required-field check
+    const spec = SETTINGS_KEYS[key];
+    if (!spec) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          key,
+          `unknown setting "${key}" — the site would ignore it. Expected one of: ${knownKeys.join(", ")}.`
+        )
+      );
+      continue;
+    }
+    const value = rec.fields.value;
+    if (spec.oneOf && !spec.oneOf.includes(value)) {
+      errors.push(
+        errorMsg(fileLabel, rec.rowNum, key, `value "${value}" must be exactly ${spec.oneOf.join(" or ")}.`)
+      );
+    }
+    if (spec.isUrl) {
+      const problem = urlValueError(value);
+      if (problem) errors.push(errorMsg(fileLabel, rec.rowNum, key, `value "${value}" ${problem}`));
+    }
+  }
+
   const clean = {};
   for (const rec of records) {
-    if (rec.fields.key) clean[rec.fields.key] = rec.fields.value ?? "";
+    if (rec.fields.key) clean[rec.fields.key] = rec.fields.value;
   }
   return { errors, clean };
 }
@@ -909,7 +1033,7 @@ async function resolveSponsorLogos(records) {
 
 function reportErrorsAndExit(errors) {
   console.error(`Found ${errors.length} content error(s):\n`);
-  for (const e of errors) console.error(`  - ${e}`);
+  for (const e of errors) console.error(`  - ${oneLine(e)}`);
   console.error(`\nFix the field(s) above in the spreadsheet/CSV and re-run the build.`);
   process.exit(1);
 }
@@ -997,7 +1121,13 @@ async function main() {
   const idNotes = normalizeIds(parsed);
   if (idNotes.length) {
     console.log(`Normalized ${idNotes.length} id(s):`);
-    for (const n of idNotes) console.log(`  - ${n}`);
+    for (const n of idNotes) console.log(`  - ${oneLine(n)}`);
+  }
+
+  const urlNotes = normalizeUrls(parsed);
+  if (urlNotes.length) {
+    console.log(`Completed ${urlNotes.length} link(s) to https://:`);
+    for (const n of urlNotes) console.log(`  - ${oneLine(n)}`);
   }
 
   const venuesResult = validateVenues(parsed.venues.records);

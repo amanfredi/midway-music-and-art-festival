@@ -86,6 +86,13 @@ typed are kept. Two consequences worth relying on:
 Build errors remain for a value that slugifies to nothing (`&&&`) and for two
 rows that slugify to the same id. The build prints every rewrite it made.
 
+**Links follow the same rule.** Every URL field (`venues.url`,
+`sponsors.url`, `settings.donation_url`) may use only `https:`, `http:`, or
+`mailto:` — anything else, `javascript:` included, is a build error. A bare
+domain (`blackgarnetbooks.com`) is completed to `https://` rather than
+rejected, and the completion is printed like an id rewrite. Text that is
+neither is a build error.
+
 **venues.csv** — `id, name, address, location, description, url`
 - `id`: unique, normalized as above; `url` optional, others required.
 - `location`: either decimal `lat, lng` (`44.9557, -93.1668`) **or** a Google
@@ -150,7 +157,10 @@ rows that slugify to the same id. The build prints every rewrite it made.
   one.
 - `url`, `blurb` optional.
 
-**settings.csv** — two columns `key, value`, one setting per row:
+**settings.csv** — two columns `key, value`, one setting per row. Keys and
+values are trimmed (a trailing space used to make a different, silently ignored
+key); a key outside the list below is a build error, since the site would ignore
+it; `you_are_here_enabled` must be exactly `true` or `false`:
 - `festival_name`, `festival_dates_label` (display text), `banner_id`,
   `banner_text` (both empty = no banner; `banner_id` changing re-shows a
   dismissed banner), `you_are_here_enabled` (`true`/`false`),

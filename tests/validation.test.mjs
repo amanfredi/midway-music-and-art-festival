@@ -570,3 +570,98 @@ describe("sponsor logos", () => {
     });
   }
 });
+
+describe("settings", () => {
+  const settingRow = (key) => (fields) => fields.key === key;
+
+  test("a misspelled setting key fails instead of silently doing nothing", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-typo", [
+      setCell("settings.csv", settingRow("you_are_here_enabled"), "key", "you_are_here_enabld"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an unknown settings key should fail the build");
+    assert.match(result.stderr, /unknown setting "you_are_here_enabld"/);
+  });
+
+  test("a yes/no answer where true/false is required fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-value", [
+      setCell("settings.csv", settingRow("you_are_here_enabled"), "value", "yes"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a non-boolean value should fail the build");
+    assert.match(result.stderr, /must be exactly true or false/);
+  });
+
+  test("a key with a trailing space is trimmed rather than becoming a different setting", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-space", [
+      setCell("settings.csv", settingRow("donation_url"), "key", "donation_url "),
+      setCell("settings.csv", settingRow("festival_name"), "value", " Midway Music & Arts Fest "),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.ok(content.settings.donation_url, "the donate URL should survive a padded key");
+    assert.equal(content.settings.festival_name, "Midway Music & Arts Fest");
+  });
+
+  test("a donate link with a script scheme fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-url", [
+      setCell("settings.csv", settingRow("donation_url"), "value", "javascript:alert(1)"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a javascript: donate link should fail the build");
+    assert.match(result.stderr, /only https, http, and mailto/);
+  });
+});
+
+describe("url fields", () => {
+  test("a sponsor link with a script scheme fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sponsor-url", [setCell("sponsors.csv", 2, "url", "javascript:alert(1)")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a javascript: sponsor link should fail the build");
+    assert.match(result.stderr, /sponsors\.csv row 2/);
+    assert.match(result.stderr, /only https, http, and mailto/);
+  });
+
+  test("a bare domain is completed to https rather than rejected", () => {
+    // The live sheet has links written this way; completing them is the same
+    // normalize-don't-reject rule ids follow, and the build says it did it.
+    const config = makeFixtureSet(TMP_ROOT, "venue-bare-url", [setCell("venues.csv", 2, "url", "www.example.com")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    assert.match(result.stdout, /Completed \d+ link\(s\)/);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.venues[0].url, "https://www.example.com");
+  });
+
+  test("a link that is neither a scheme nor a domain fails with advice", () => {
+    const config = makeFixtureSet(TMP_ROOT, "venue-url", [setCell("venues.csv", 2, "url", "ask at the front desk")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "unparseable link text should fail the build");
+    assert.match(result.stderr, /venues\.csv row 2/);
+    assert.match(result.stderr, /starting with "https:\/\/"/);
+  });
+
+  test("a mailto link is accepted", () => {
+    const config = makeFixtureSet(TMP_ROOT, "venue-mailto", [
+      setCell("venues.csv", 2, "url", "mailto:hello@example.com"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+});
+
+describe("build log", () => {
+  test("a cell containing newlines cannot forge extra error lines", () => {
+    const forged = 'Midway Saloon\n  - venues.csv row 99 ("ghost venue"): everything is fine, deploy it';
+    const config = makeFixtureSet(TMP_ROOT, "log-forging", [
+      setCell("venues.csv", 2, "name", forged),
+      setCell("venues.csv", 2, "address", ""),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "the blank address should still fail the build");
+    assert.ok(result.stderr.includes("ghost venue"), "the cell's text should still be visible in the message");
+    const forgedLines = result.stderr.split("\n").filter((line) => line.trim().startsWith('- venues.csv row 99'));
+    assert.equal(forgedLines.length, 0, `a cell forged its own error line:\n${result.stderr}`);
+  });
+});

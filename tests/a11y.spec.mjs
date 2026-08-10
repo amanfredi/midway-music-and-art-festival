@@ -108,6 +108,48 @@ test('dragging the map pans it without sweeping a text selection across the labe
   expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
 });
 
+// Genuine two-finger pinch is out of scope here (it needs real multi-touch);
+// double-tap is the other half of the same gesture handler and is reachable
+// with a mouse, so it is the half worth pinning.
+test('double-tapping the map zooms in, and double-tapping again at full zoom returns home', async ({ page }) => {
+  await page.goto('/' + T + '#/map');
+  const svg = page.locator('#circuit-map');
+  await expect(svg).toBeVisible();
+
+  const viewWidth = async () => Number((await svg.getAttribute('viewBox')).split(/\s+/)[2]);
+
+  // A pin under the tap opens its sheet instead of zooming, so the tap point is
+  // found rather than hardcoded — the map's artwork and pin set both change.
+  const spot = await page.evaluate(() => {
+    const rect = document.querySelector('#circuit-map').getBoundingClientRect();
+    for (let fy = 0.1; fy < 0.95; fy += 0.1) {
+      for (let fx = 0.1; fx < 0.95; fx += 0.1) {
+        const x = rect.left + rect.width * fx;
+        const y = rect.top + rect.height * fy;
+        const el = document.elementFromPoint(x, y);
+        if (el?.closest('#circuit-map') && !el.closest('.pin')) return { x, y };
+      }
+    }
+    return null;
+  });
+  expect(spot, 'no pin-free point found on the map to tap').not.toBeNull();
+
+  const homeWidth = await viewWidth();
+  await page.mouse.click(spot.x, spot.y);
+  await page.mouse.click(spot.x, spot.y);
+  expect(await viewWidth()).toBeCloseTo(homeWidth / 2, 0);
+  // A zoom, not a pin activation.
+  await expect(page.locator('.sheet[role="dialog"]')).toBeHidden();
+
+  // Already as close as the map goes, a double-tap is the way back out —
+  // otherwise the gesture strands someone zoomed in with no obvious escape.
+  for (let i = 0; i < 5; i++) await page.locator('#zoom-in').click();
+  expect(await viewWidth()).toBeLessThan(homeWidth);
+  await page.mouse.click(spot.x, spot.y);
+  await page.mouse.click(spot.x, spot.y);
+  expect(await viewWidth()).toBeCloseTo(homeWidth, 0);
+});
+
 // Regression: this silently stopped working when a variable was renamed during
 // a map rework. The failure was a ReferenceError inside the geolocation success
 // callback, so nothing rendered and nothing obvious surfaced — exactly the kind

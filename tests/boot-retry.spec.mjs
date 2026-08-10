@@ -26,9 +26,15 @@ test('one transient 503 on a module self-heals via auto-reload', async ({ page }
 });
 
 test('persistent failure ends in a manual retry button, not a blank page', async ({ page }) => {
+  // This one deliberately waits out the app's own backoff, so ~12 s of its
+  // budget is spent sleeping by design. Under machine load the surrounding
+  // page loads have pushed it past a 30 s allowance; the generous window below
+  // is headroom for a slow runner, not an expectation about how long this takes.
+  test.setTimeout(120_000);
+
   await page.route('**/js/app.js', (route) => route.fulfill({ status: 503, body: 'Service Unavailable' }));
 
   await page.goto('/' + T);
   // 3 auto-reloads with 1s/3s/8s backoff, then the terminal state
-  await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 60_000 });
 });

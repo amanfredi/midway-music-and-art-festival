@@ -53,3 +53,44 @@ test.describe('at a 320 px viewport', () => {
     );
   });
 });
+
+// WCAG 1.4.12's four overrides, the values the criterion names. A reader
+// applying them with a browser extension or user stylesheet must not lose
+// content — nothing may be clipped or pushed off the side.
+const TEXT_SPACING_OVERRIDES = `
+  * { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; }
+  p { margin-bottom: 2em !important; }
+`;
+
+// Elements that opt into scrolling (the schedule's two control bars) hold
+// more than fits by design; anything else overflowing its own box is text
+// painting over its neighbour. Elements are keyed by document order so the
+// same element can be compared before and after the overrides land — the
+// criterion asks that *applying* the spacing loses nothing, so a box that
+// already bleeds by design (the full-width control bar) is not the subject.
+const spills = (page) =>
+  page.evaluate(() =>
+    [...document.querySelectorAll('#view *')].flatMap((el, i) => {
+      if (el.scrollWidth - el.clientWidth <= 1 || getComputedStyle(el).overflowX !== 'visible') return [];
+      const cls = typeof el.className === 'string' ? el.className : el.className.baseVal || '';
+      return [`${i} ${el.tagName.toLowerCase()}.${cls.split(' ').filter(Boolean).join('.')} — "${(el.textContent || '').trim().slice(0, 40)}"`];
+    }),
+  );
+
+test.describe('under the text-spacing overrides at 320 px', () => {
+  test.use({ viewport: { width: 320, height: 568 } });
+
+  for (const route of ROUTES) {
+    test(`the ${route.name} view loses no content to the text-spacing overrides`, async ({ page }) => {
+      await page.goto(route.url);
+      await expect(page.locator(route.ready)).toBeVisible();
+      const before = await spills(page);
+
+      await page.addStyleTag({ content: TEXT_SPACING_OVERRIDES });
+
+      expect(await overflow(page), `${route.name} overflows the document once text spacing grows`).toBeLessThanOrEqual(0);
+      const introduced = (await spills(page)).filter((s) => !before.includes(s));
+      expect(introduced, `${route.name} spills content out of its boxes`).toEqual([]);
+    });
+  }
+});

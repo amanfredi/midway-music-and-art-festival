@@ -407,7 +407,6 @@ img {
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--color-primary-dark);
-  white-space: nowrap;
 }
 
 .event-row__day {

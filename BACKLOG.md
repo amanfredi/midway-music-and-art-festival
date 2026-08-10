@@ -21,18 +21,36 @@ and render the "map couldn't be loaded" empty state the view already has for a
 failed fetch.
 
 **Map artwork, if it is ever commissioned.** The spike auditioned a four-corner
-`ImageSource` ground against the vector one, and measured two constraints that
-belong in any artist brief. First, **~5 m of drift**: `map.svg` is drawn in a
-local equirectangular projection while `ImageSource` places an image by its four
-corners in Web Mercator, and over a 16 km sheet those disagree most in the
-middle. Pins land correctly; the artwork under them slides. Four corners are not
-enough georeferencing at this extent — more control points, or a pre-warped
-image, or a tiled source. Second, a **4096 px ceiling**: MapLibre uploads an
-`ImageSource` as a single WebGL texture, and 4096 is the largest size every
-WebGL2 device is guaranteed to accept. Over this extent that is 3.9 m per pixel,
-which reads acceptably at the home view and goes soft at the closest zoom, so
-shipped artwork needs tiling rather than a bigger single image. Tooling is kept
-— see the `artwork/` entries in CONTRACTS.md's directory layout. Nothing ships.
+`ImageSource` ground against the vector one, and measured three constraints that
+belong in any artist brief.
+
+First, **~5 m of drift**: `map.svg` is drawn in a local equirectangular
+projection while `ImageSource` places an image by its four corners in Web
+Mercator, and over a 16 km sheet those disagree most in the middle. Pins land
+correctly; the artwork under them slides. Four corners are not enough
+georeferencing at this extent — more control points, or a pre-warped image, or a
+tiled source.
+
+Second, a **4096 px ceiling**: MapLibre uploads an `ImageSource` as a single
+WebGL texture, and 4096 is the largest size every WebGL2 device is guaranteed to
+accept. Over this extent that is 3.9 m per pixel, which reads acceptably at the
+home view and goes soft at the closest zoom, so shipped artwork needs tiling
+rather than a bigger single image.
+
+Third, and observed rather than measured: **the raster ground was noticeably
+slower than the vector one** on a real iPhone (Anthony, 2026-08-10). Not
+diagnosed — vector is what ships, so it was not worth chasing — but it points the
+same way the resolution ceiling does, toward a tiled raster source rather than
+one large texture. The practical consequence for any future artwork work is
+sequencing: **validate performance on a real device early**, before art is
+commissioned against an approach that turns out to feel worse than what it
+replaces. It is also a third reason the raster stays out of the shipped payload,
+alongside its 863 KB and the fact that nothing renders it.
+
+Tooling is kept — see the `artwork/` entries in CONTRACTS.md's directory layout.
+Nothing ships. The artist-facing constraints are in
+`reference/artist-accessibility-rider.md`; the three above are implementation
+constraints on whoever wires the artwork up, not on the artist.
 
 **Sponsor presentation, pending real sponsors.** The featured-vs-generic
 sponsor pin distinction wants a design review once someone can see it against

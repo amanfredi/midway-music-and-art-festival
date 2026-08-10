@@ -929,6 +929,18 @@ function wireLocate(container, map, Marker, { west, east, south, north, cleanupF
   if (!locateBtn) return;
   let marker = null;
 
+  // Geolocation needs a secure context. On an insecure origin the call fails
+  // immediately with PERMISSION_DENIED and no prompt, which is indistinguishable
+  // from a real denial -- and the repo's documented device-evaluation workflow
+  // is exactly that case, serving over http:// to a LAN IP. Left alone, every
+  // LAN evaluation reports the feature as permanently denied and broken.
+  if (!window.isSecureContext) {
+    locateBtn.disabled = true;
+    locateBtn.title = 'Location needs the deployed site (https).';
+    locateBtn.setAttribute('aria-label', 'Show my location — needs the deployed site');
+    return;
+  }
+
   const handler = () => {
     if (!('geolocation' in navigator)) {
       showToast("This device doesn't support location.");

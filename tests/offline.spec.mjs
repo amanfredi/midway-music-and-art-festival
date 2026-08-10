@@ -96,6 +96,86 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   expect(await page.locator('[data-testid="starred-list"] [data-testid="event-row"]').count()).toBe(1);
 });
 
+// A reload keeps the page that installed the worker, along with whatever it
+// still holds in memory. iOS evicting a tab and relaunching it does not, and
+// that is the case this site exists to survive — so this opens a page that has
+// never been online and never run any of the app's code, and asks it to boot
+// from cache alone.
+test('cold start offline: a page that was never online boots from cache', async ({ page, context }) => {
+  await page.goto('/' + T);
+  await waitForServiceWorker(page);
+  await expect(page.locator('[data-testid="now-view"]')).toBeVisible();
+  await page.close();
+
+  await context.setOffline(true);
+  const cold = await context.newPage();
+  const failures = [];
+  cold.on('requestfailed', (r) => failures.push(`${r.url()} — ${r.failure()?.errorText ?? 'failed'}`));
+  cold.on('pageerror', (e) => failures.push(`pageerror: ${e.message}`));
+
+  // Land somewhere other than the default route, so the router and the content
+  // fetch are both exercised rather than just the cached shell.
+  await cold.goto('/' + T + '#/schedule');
+  // Stated rather than inferred: this page is being served by the worker, which
+  // is the mechanism the rest of the assertions are actually testing.
+  expect(
+    await cold.evaluate(() => Boolean(navigator.serviceWorker.controller)),
+    'the cold page is not service-worker controlled',
+  ).toBe(true);
+  await expect(cold.locator('[data-testid="schedule-list"]')).toBeVisible();
+  expect(await cold.locator('[data-testid="event-row"]').count()).toBeGreaterThan(10);
+
+  // The map is the heaviest thing in the precache — the engine's four modules
+  // plus the street GeoJSON — and the most likely thing to be missing.
+  await cold.goto('/' + T + '#/map');
+  await waitForMapIdle(cold);
+  const drawn = await mapEval(cold, (map) => ({
+    streets: map.queryRenderedFeatures({ layers: ['arterial-fill', 'spine-fill'] }).length,
+    symbols:
+      map.queryRenderedFeatures({ layers: ['venue-pin'] }).length +
+      map.queryRenderedFeatures({ layers: ['venue-cluster'] }).length,
+  }));
+  expect(drawn.streets, 'no street geometry on a cold offline start').toBeGreaterThan(0);
+  expect(drawn.symbols, 'no venue pins on a cold offline start').toBeGreaterThan(0);
+
+  // Sponsor logos are separate cached files, so they catch a precache that
+  // covered code but not content.
+  await cold.goto('/' + T + '#/sponsors');
+  await expect(cold.locator('[data-testid="sponsor-list"]')).toBeVisible();
+  expect(
+    await cold.locator('[data-testid="sponsor-list"] img').first().evaluate((img) => img.complete && img.naturalWidth > 0),
+  ).toBe(true);
+
+  expect(failures, 'a cold offline start should need nothing from the network').toEqual([]);
+});
+
+// The negative control for every other test in this file. If `setOffline` did
+// not actually sever the network for service-worker-mediated fetches, all of
+// them would pass whether or not anything was ever cached — proving nothing.
+// This asserts the one request that must fail, still fails.
+test('offline really is offline: an uncached URL cannot be fetched', async ({ page, context }) => {
+  await page.goto('/' + T);
+  await waitForServiceWorker(page);
+
+  // Same origin and same scope as the app, so the worker's fetch handler runs
+  // and falls through to the network on a cache miss. `ignoreSearch: true` in
+  // that handler means a query string cannot fake a miss — the path itself has
+  // to be absent from the precache.
+  const uncached = 'assets/not-precached-negative-control.json';
+  expect(await page.evaluate((url) => fetch(url).then((r) => r.status).catch(() => 'network-error'), uncached)).toBe(404);
+
+  await context.setOffline(true);
+  expect(
+    await page.evaluate((url) => fetch(url).then((r) => r.status).catch(() => 'network-error'), uncached),
+    'an uncached URL resolved while offline — the network was not actually severed',
+  ).toBe('network-error');
+
+  // And the control cuts both ways: something that *is* precached still works.
+  expect(
+    await page.evaluate(() => fetch('assets/map-calibration.json').then((r) => r.status).catch(() => 'network-error')),
+  ).toBe(200);
+});
+
 test('notice banner shows and dismissal persists offline', async ({ page, context }) => {
   await page.goto('/' + T);
   await waitForServiceWorker(page);

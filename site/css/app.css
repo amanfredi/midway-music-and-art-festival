@@ -23,6 +23,8 @@
   --pin-venue: var(--color-primary);
   --pin-transit: #298d4e;
   --pin-sponsor: var(--color-danger);
+  --rail-green: #2f7d4f;
+  --rail-blue: #2b5fa8;
 
   --badge-music-bg: #ddeaf3;
   --badge-art-bg: #fdecd1;
@@ -878,6 +880,25 @@ html:has(dialog.sheet[open]) {
   /* No letter here (unlike the real pins): a single example letter would
      misrepresent a category that covers Green/A/B lines. Shape + color
      alone still matches the map's transit pins exactly. */
+}
+
+/* Rail swatches are strokes, not diamonds: the legend entry has to read as
+   the line on the map, which is a thick round-capped stroke. Colors are the
+   ones map.svg declares for .rail-green / .rail-blue (CONTRACTS.md light-rail
+   bullet) — the map SVG carries its own style block, so they are stated twice
+   by necessity, and a test asserts the two agree. */
+.legend-icon--rail-green line,
+.legend-icon--rail-blue line {
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.legend-icon--rail-green line {
+  stroke: var(--rail-green);
+}
+
+.legend-icon--rail-blue line {
+  stroke: var(--rail-blue);
 }
 
 .legend-icon--sponsor-featured polygon {

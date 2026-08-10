@@ -214,6 +214,25 @@ test('the map opens at the home view, not the full extent, and can pan in every 
   expect((await parseVb())[2]).toBeGreaterThan(w0);
 });
 
+// The two rail lines draw at identical weight and differ only in hue, so the
+// legend is the only thing that can name them — and the Blue Line has no
+// station pins in range either, so without it nothing on the page identifies
+// it at all.
+test('the legend names both rail lines in the colors the map draws them', async ({ page }) => {
+  await page.goto('/' + T + '#/map');
+  await expect(page.locator('#circuit-map')).toBeVisible();
+
+  const legend = page.locator('.map-legend__list');
+  await expect(legend).toContainText('METRO Green Line');
+  await expect(legend).toContainText('METRO Blue Line');
+
+  for (const line of ['green', 'blue']) {
+    const swatch = await page.locator(`.legend-icon--rail-${line} line`).evaluate((el) => getComputedStyle(el).stroke);
+    const rail = await page.locator(`#circuit-map .rail-${line}`).evaluate((el) => getComputedStyle(el).stroke);
+    expect(swatch, `${line} line swatch does not match the rail it stands for`).toBe(rail);
+  }
+});
+
 // WCAG relative luminance, so the assertion below states the ratio the
 // criterion names rather than pinning a hex value that says nothing about
 // whether the star is actually visible.

@@ -433,6 +433,11 @@ export async function renderMap(container, content) {
         <ul class="map-legend__list">
           <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Venue</li>
           <li><svg class="legend-icon legend-icon--transit" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Transit</li>
+          <!-- The two rail lines draw at the same weight in different colors,
+               so their names live here or nowhere: the Blue Line has no
+               station pin within the pin radius to carry a letter. -->
+          <li><svg class="legend-icon legend-icon--rail-green" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> METRO Green Line</li>
+          <li><svg class="legend-icon legend-icon--rail-blue" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> METRO Blue Line</li>
           <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
           <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
         </ul>

@@ -92,6 +92,39 @@ export function openVenueSheet(venueId) {
   `);
 }
 
+// SPIKE (maplibre-spike branch). Disambiguation for pins that no amount of
+// zooming can pull apart. Clustering separates venues that are merely close --
+// tap the cluster, the map zooms until they're distinct -- but two venues in
+// the sheet share identical coordinates (Hamline Park and Mosaic on a Stick),
+// and coincident points have no expansion zoom. Without this the pin
+// underneath stays unreachable on the map, which is the exact gap the engine
+// was auditioned to close.
+export function openPickerSheet(title, items, onPick) {
+  if (!items.length) return;
+  open(`
+    <h2 class="sheet__title" id="sheet-title">${esc(title)}</h2>
+    <p class="sheet__address">These are at the same spot on the map. Pick one:</p>
+    <ul class="sheet__event-list">
+      ${items
+        .map(
+          (it, i) =>
+            `<li><button type="button" class="sheet__event-link sheet__picker-btn" data-pick="${i}">${esc(it.label)}</button></li>`
+        )
+        .join('')}
+    </ul>
+  `);
+  const dialog = currentDialog();
+  if (!dialog) return;
+  dialog.querySelectorAll('[data-pick]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const picked = items[Number(btn.dataset.pick)];
+      // The chosen item's own sheet replaces this one; open() closes the
+      // current dialog first, so there is never a sheet stacked on a sheet.
+      if (picked) onPick(picked);
+    });
+  });
+}
+
 // Safari has no beforeinstallprompt API, so the install button opens this
 // instead: the same steps a person would find under Safari's Share button,
 // kept in-page because the site has no external links to send them to

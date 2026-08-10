@@ -93,9 +93,99 @@ function railLineKey(tags = {}) {
   return null;
 }
 
+/**
+ * Chains ways that share a name and an endpoint into single LineStrings.
+ *
+ * This is not tidiness, it is the difference between the engine labeling a
+ * street and not labeling it. OSM splits an avenue at every junction, so
+ * Snelling Avenue arrives as a dozen 150-200 m fragments; `symbol-placement:
+ * line` gets one placement attempt per feature per tile, and short fragments
+ * lose to their neighbors, so the map's most important street came out unnamed
+ * while side streets got labels. make-map.mjs solves the same problem its own
+ * way, by grouping ways by name before placing labels (its `streetGroups`).
+ * Giving the engine long continuous geometry is the vector-tile equivalent.
+ */
+const MAX_JOIN_TURN_DEG = 60;
+
+/** Bearing from a to b, in degrees, with longitude scaled so angles are true. */
+function bearing(a, b) {
+  return (Math.atan2((b[1] - a[1]) * M_PER_DEG_LAT, (b[0] - a[0]) * M_PER_DEG_LNG) * 180) / Math.PI;
+}
+
+function turnBetween(inBearing, outBearing) {
+  let d = Math.abs(outBearing - inBearing) % 360;
+  if (d > 180) d = 360 - d;
+  return d;
+}
+
+function mergeNamedWays(segments) {
+  const key = (pt) => `${pt[0]},${pt[1]}`;
+  const remaining = new Set(segments.keys());
+  const byEndpoint = new Map();
+  for (const [id, coords] of segments) {
+    for (const pt of [coords[0], coords[coords.length - 1]]) {
+      const k = key(pt);
+      if (!byEndpoint.has(k)) byEndpoint.set(k, []);
+      byEndpoint.get(k).push(id);
+    }
+  }
+
+  /**
+   * The unused segment at `pt` that best continues the current heading.
+   *
+   * Picking any touching segment (the obvious greedy choice) is wrong here: a
+   * name like "Snelling Avenue" covers both carriageways of a divided road plus
+   * its ramps, all meeting at the same node, so a naive chain runs north up one
+   * side and straight back down the other. The resulting hairpin exceeds
+   * `text-max-angle` and the engine refuses to label it -- which is how the
+   * map's most prominent street ended up anonymous, with one label rendered
+   * upside down where a doubled-back line reversed direction.
+   */
+  const bestAt = (pt, inBearing) => {
+    let best = null;
+    for (const id of byEndpoint.get(key(pt)) ?? []) {
+      if (!remaining.has(id)) continue;
+      const coords = segments.get(id);
+      const forward = key(coords[0]) === key(pt);
+      const out = forward ? bearing(coords[0], coords[1]) : bearing(coords[coords.length - 1], coords[coords.length - 2]);
+      const turn = inBearing === null ? 0 : turnBetween(inBearing, out);
+      if (turn > MAX_JOIN_TURN_DEG) continue;
+      if (!best || turn < best.turn) best = { id, forward, turn };
+    }
+    return best;
+  };
+
+  const chains = [];
+  for (const startId of segments.keys()) {
+    if (!remaining.has(startId)) continue;
+    remaining.delete(startId);
+    let chain = segments.get(startId).slice();
+
+    // Extend off the tail, then off the head, flipping segments as needed.
+    for (const atTail of [true, false]) {
+      for (;;) {
+        const end = atTail ? chain[chain.length - 1] : chain[0];
+        const prev = atTail ? chain[chain.length - 2] : chain[1];
+        const inBearing = prev ? bearing(prev, end) : null;
+        const pick = bestAt(end, inBearing);
+        if (!pick) break;
+        remaining.delete(pick.id);
+        const next = segments.get(pick.id);
+        const piece = pick.forward ? next.slice(1) : next.slice(0, -1).reverse();
+        chain = atTail ? chain.concat(piece) : piece.concat(chain);
+      }
+    }
+    chains.push(chain);
+  }
+  return chains;
+}
+
 const raw = JSON.parse(await readFile(CACHE_PATH, 'utf8'));
 const features = [];
 const counts = { street: 0, rail: 0, station: 0, waterArea: 0, waterLine: 0 };
+// Named streets are collected first and merged at the end; unnamed ways go
+// straight through, since only labels care about continuity.
+const namedStreets = new Map(); // tier -> name -> Map<wayId, coords>
 
 for (const el of raw.elements) {
   if (el.type === 'relation' && el.tags?.route === 'light_rail') {
@@ -150,10 +240,19 @@ for (const el of raw.elements) {
     const tier = widthTier(el);
     // `name` drives the symbol layer's text-field. Unnamed ways still draw as
     // street geometry; they just never get a label.
-    const properties = { kind: 'street', tier };
-    if (el.tags.name) properties.name = el.tags.name;
-    features.push({ type: 'Feature', properties, geometry: { type: 'LineString', coordinates: coords } });
-    counts.street++;
+    if (el.tags.name) {
+      if (!namedStreets.has(tier)) namedStreets.set(tier, new Map());
+      const byName = namedStreets.get(tier);
+      if (!byName.has(el.tags.name)) byName.set(el.tags.name, new Map());
+      byName.get(el.tags.name).set(el.id, coords);
+    } else {
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'street', tier },
+        geometry: { type: 'LineString', coordinates: coords },
+      });
+      counts.street++;
+    }
   } else if (el.type === 'node' && /^(station|tram_stop)$/.test(el.tags?.railway || '')) {
     const name = (el.tags.name || 'Station').replace(/\s+Avenue$/, '');
     features.push({
@@ -162,6 +261,21 @@ for (const el of raw.elements) {
       geometry: { type: 'Point', coordinates: [round(el.lon), round(el.lat)] },
     });
     counts.station++;
+  }
+}
+
+let mergedFrom = 0;
+for (const [tier, byName] of namedStreets) {
+  for (const [name, segments] of byName) {
+    mergedFrom += segments.size;
+    for (const coords of mergeNamedWays(segments)) {
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'street', tier, name },
+        geometry: { type: 'LineString', coordinates: coords },
+      });
+      counts.street++;
+    }
   }
 }
 
@@ -176,5 +290,8 @@ console.log(
   `  streets ${counts.street}, rail ways ${counts.rail}, stations ${counts.station}, ` +
     `water ${counts.waterArea} area(s) + ${counts.waterLine} centerline(s)`
 );
-const named = new Set(features.filter((f) => f.properties.kind === 'street' && f.properties.name).map((f) => f.properties.name));
-console.log(`  named streets: ${named.size} (the engine places and re-places their labels per zoom)`);
+const namedFeatures = features.filter((f) => f.properties.kind === 'street' && f.properties.name);
+const named = new Set(namedFeatures.map((f) => f.properties.name));
+console.log(
+  `  named streets: ${named.size}, merged from ${mergedFrom} OSM ways into ${namedFeatures.length} continuous lines`
+);

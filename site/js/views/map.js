@@ -1,420 +1,376 @@
+// SPIKE (maplibre-spike branch): the #/map tab rendered by MapLibre GL JS 6
+// instead of the hand-rolled inline-SVG map. Everything around it -- the shell,
+// routes, venue data, sheets, the venue key list -- is untouched, so the two
+// implementations can be compared side by side on a real phone.
+//
+// Two ground modes, chosen with a `map` query param on the page URL (the same
+// place the demo clock's `?t=` lives, so the two compose: `?t=...&map=raster`):
+//
+//   ?map=vector  (default) streets, transit and labels as engine-styled vector
+//                layers from assets/map-vector.geojson -- the same OSM source
+//                data make-map.mjs bakes into map.svg. Labels are symbol layers,
+//                so the engine re-places them at every zoom.
+//   ?map=raster  a four-corner georeferenced ImageSource carrying a rasterized
+//                map.svg, standing in for commissioned artwork. Same pins on top.
+//   ?map=hybrid  the raster ground with the engine's street labels drawn over
+//                it. Not in the spike brief; it costs five lines and it is the
+//                configuration the deferred "artwork with no baked lettering"
+//                question is actually asking about.
+//
+// The corner coordinates for the raster come from geo.js's projector, inverted
+// -- so Mode B is a live test of the georeferencing story the artist constraint
+// depends on, not a hand-tuned placement.
+
 import { esc, showToast } from '../util.js';
 import { makeProjector } from '../geo.js';
-import { openVenueSheet, openSponsorSheet, openTransitSheet } from './sheet.js';
+import { openVenueSheet, openSponsorSheet, openTransitSheet, openPickerSheet } from './sheet.js';
 
-// The map SVG covers 6 x 4 miles, but the view never opens that far out. Two
-// distinct rectangles matter (QA, 2026-08-08):
+// View widths, in meters across the map frame, converted to MapLibre zooms at
+// runtime once the frame's pixel width is known.
 //
-//   HOME  the square the map opens at and returns to on reset -- roughly the
-//         festival footprint, centered on the SVG's own center (the bbox is
-//         built around Hamline Park, see tools/make-map.mjs).
-//   FULL  the SVG viewBox: the hard limit for panning and zooming out.
-//
-// Keeping them separate is what fixes the two complaints from QA: at the old
-// default (home == full) there was nowhere to drag to, and no way to zoom out
-// for context. Now the map opens pannable in every direction.
-const HOME_VIEW_M = 3000; // side of the square home view, in meters
-const MIN_VIEW_M = 350; // closest zoom: about a block and a half across
+// HOME (3000 m) and the full extent match the hand-rolled map exactly. The
+// closest zoom does NOT: the SVG map stops at 350 m across, and at that scale
+// two venues 14 m apart are still only ~15 px apart -- closer than one pin is
+// wide. No amount of collision handling fixes a zoom range that never separates
+// the points, so the spike opens the ceiling to 120 m. This is a deliberate
+// deviation from parity, and it is the thing to look at first on the phone.
+const HOME_VIEW_M = 3000;
+const MIN_VIEW_M = 120;
 
 // Transit pins are limited to stops within this distance of the festival
-// center. Widening the map to reach both downtowns pulled in 64 stops, most of
-// them nowhere near the festival and unreadable as a wall of pins. 2414 m
-// (1.5 miles) keeps 15 — including Raymond Avenue, the stop this round was
-// asked to add — and the Green Line's route is still drawn across the whole
-// map, so the line to downtown remains visible without pinning every station.
+// center, exactly as the SVG map does it -- the extent reaches both downtowns
+// and transit.json carries 64 stops.
 const TRANSIT_PIN_RADIUS_M = 2414;
-
-// Pin sizes are in map units (1 unit = 1 meter, per CONTRACTS.md), not CSS
-// pixels. They are authored at home-view scale and then counter-scaled as the
-// user zooms (see updatePinScale), so a pin holds a constant *on-screen* size
-// at every zoom level -- the behavior of every real map. Sizing them in fixed
-// map units instead meant a pin swallowed the screen when zoomed in and
-// vanished when zoomed out (QA, 2026-08-09).
-//
-// Venue pins are the dominant symbol; everything else is a step down and all
-// non-venue pins are the same size. Vendor pins are gone entirely -- vendors
-// moved to the #/vendors list view.
-// Hit targets are diamonds, not circles, so the tappable area is the shape the
-// user sees rather than a halo around it (QA, 2026-08-09). They used to be
-// ~1.7x the pin and circular, which swallowed taps meant for the map or a
-// neighboring pin.
-//
-// The radii are a little larger than the pin's (~1.26x) to offset geometry: a
-// diamond of radius r has area 2r², a circle has πr², so matching the old
-// radius exactly would have cut the tappable area by ~36%. At these values a
-// venue's target is still ~26 CSS px across at home view on a phone. Since
-// pins counter-scale with zoom, so does the hit area.
-const VENUE_PIN_R = 115;
-const VENUE_HIT_R = 145;
-const TRANSIT_PIN_R = 92;
-const TRANSIT_HIT_R = 118;
-const SPONSOR_FEATURED_R = 92;
-const SPONSOR_FEATURED_HIT_R = 118;
-const SPONSOR_GENERIC_R = 92;
-const SPONSOR_GENERIC_HIT_R = 118;
-const DOUBLE_TAP_MS = 350;
-const DOUBLE_TAP_DIST = 24;
-const TAP_MOVE_THRESHOLD = 10;
-const KEYBOARD_PAN_FRACTION = 0.2; // how far one arrow-key press moves, relative to the current viewport
 
 const TRANSIT_LINE_LETTER = { green: 'G', a: 'A', b: 'B' };
 const TRANSIT_LINE_NAME = { green: 'METRO Green Line', a: 'METRO A Line', b: 'METRO B Line' };
 const FEATURED_SPONSOR_TIERS = new Set(['emerald', 'ruby', 'sapphire']);
 
-/** SVG polygon points for a diamond (equal-length diagonals) of "radius" r, centered on the pin's translate(). */
-function diamondPoints(r) {
-  return `0,${-r} ${r},0 0,${r} ${-r},0`;
+// Brand colors, lifted from the SVG map's own stylesheet so both grounds and
+// both implementations agree.
+const PAPER = '#eeeeec';
+const WATER = '#bcd2de';
+const PIN_VENUE = '#10577b';
+const PIN_TRANSIT = '#298d4e';
+const PIN_SPONSOR = '#a11f22';
+
+// MapLibre 6 draws glyphs locally with TinySDF whenever a style carries no
+// `glyphs` URL -- for every codepoint, not just CJK (GlyphManager
+// _getAndCacheGlyphsPromise: `if (!this.url || ...) return this._drawGlyph(...)`).
+// So these styles deliberately omit `glyphs`: no font server, no committed SDF
+// PBFs, nothing fetched, and labels come out in the device's own UI font, which
+// is what the rest of the site already uses.
+//
+// The engine reads a weight out of the FIRST family name in the stack and uses
+// the whole stack as a CSS font-family. "Bold"/"Semibold" are not real
+// families, so they set the weight and then fall through to the system font.
+const FONT_BOLD = ['Bold,-apple-system,BlinkMacSystemFont,Helvetica'];
+const FONT_SEMIBOLD = ['Semibold,-apple-system,BlinkMacSystemFont,Helvetica'];
+
+// Pin geometry in CSS pixels. The SVG map authors pins in map units at home-view
+// scale and counter-scales them on every zoom to hold a constant on-screen size;
+// symbol layers are in screen pixels already, so that whole mechanism goes away.
+// These are the SVG's home-view sizes: a 115-unit venue radius over a 3000 m
+// view on a ~360 px frame is ~14 px.
+const VENUE_R = 14;
+const SMALL_R = 11;
+const CLUSTER_R = 17;
+// Taps are matched against a box around the touch point rather than the icon's
+// own pixels, which is how the SVG map's oversized diamond hit targets are
+// reproduced without inflating the icons (and their collision boxes) to match.
+const TAP_SLOP_PX = 10;
+
+let enginePromise = null;
+let cssInjected = false;
+
+// The engine is ~1 MB of module across two files, so it is imported on the
+// first visit to #/map rather than at boot -- the other five tabs never need it.
+function loadEngine() {
+  enginePromise ||= import('../../assets/maplibre/maplibre-gl.mjs');
+  return enginePromise;
 }
 
-/**
- * Transit pins carry the line letter(s) inside the diamond. Single-line stops
- * get one centered letter, same as a venue number. Multi-line stops (a
- * transfer point served by two lines) stack the letters on separate lines
- * rather than e.g. a "G/A" slash -- more legible at pin size. Design call,
- * see CONTRACTS.md / the map agent's final report for the reasoning.
- *
- * Coordinates are explicit (x="0" y="0") and vertical centering uses
- * `dominant-baseline` from CSS rather than an em-relative `dy` on the <text>.
- * The old form leaned on an implicit origin plus `dy="0.35em"` resolving
- * against a CSS-supplied font-size, which is exactly the combination WebKit
- * has historically been inconsistent about -- and a transit letter was
- * reported missing on iOS while rendering correctly in macOS Safari
- * (QA, 2026-08-09; overlap was ruled out, nearest pin was 652 m away).
- */
-function transitLabelMarkup(lines) {
-  // A line the app has no letter for leaves the diamond blank rather than
-  // stamping it with the word "undefined".
-  const letters = lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean);
-  if (letters.length === 0) return '';
-  if (letters.length === 1) {
-    return `<text class="pin__label" x="0" y="0">${letters[0]}</text>`;
-  }
-  // Stacked: first tspan lifted half a line above center, each subsequent one
-  // a full line below the previous. Offsets are in map units, not em, so they
-  // don't depend on how the engine resolves font-relative lengths.
-  const lineHeight = 78;
-  const firstOffset = -((letters.length - 1) * lineHeight) / 2;
-  const tspans = letters
-    .map((letter, i) => `<tspan x="0" dy="${i === 0 ? firstOffset : lineHeight}">${letter}</tspan>`)
-    .join('');
-  return `<text class="pin__label pin__label--stacked" x="0" y="0">${tspans}</text>`;
+// MapLibre's stylesheet is injected on first use for the same reason. It styles
+// the canvas container and the controls; the site's own CSS handles everything
+// around it.
+function injectEngineCss() {
+  if (cssInjected) return;
+  cssInjected = true;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'assets/maplibre/maplibre-gl.css';
+  document.head.appendChild(link);
 }
 
-/**
- * Wires pan (drag) + pinch-zoom + double-tap-zoom + pin/background tap dispatch
- * onto an inlined <svg>.
- *
- * `full` is the SVG's own viewBox (the pan/zoom limit); `home` is the smaller
- * rectangle the map opens at and resets to. `onViewChange` runs after every
- * committed view write, batched with it.
- */
-function setupInteraction(svg, full, home, onActivatePin, onViewChange) {
-  let view = { ...home };
-  const pointers = new Map();
-  let pinchStartDist = null;
-  let primaryDown = null; // {id, x, y, time} of the first pointer in a gesture
-  let multiTouch = false;
-  let lastTap = null; // {time, x, y}
-
-  // Zooming out runs all the way to the map's full width, so the whole extent
-  // -- both downtowns -- can be seen at once. Past the point where the square
-  // view is taller than the map, the map is centered in it and the frame's
-  // background (which matches the map's own paper color) fills above and
-  // below, reading as margin rather than as a hole.
-  const maxViewW = full.w;
-
-  // Pins and map labels are authored at home-view scale; counter-scaling them
-  // by how far the view has zoomed keeps them a constant size on screen, the
-  // way symbols and type behave on any real map. Without this, zooming in blew
-  // street names up to span a block while zooming out made pins vanish.
-  // Cached so panning (which doesn't change scale) doesn't touch every node.
-  const scalables = svg.querySelectorAll('.pin__scale, .map-label__scale');
-  let appliedScale = null;
-  let appliedLod = null;
-
-  // Level of detail: how much of the map's labelling survives at this zoom.
-  // The thresholds are view widths in meters. Wide views keep only the spine
-  // names; each step in adds arterials, then their repeats, then station
-  // names. See the lod rules in tools/make-map.mjs.
-  function lodForView(viewW) {
-    if (viewW > 7000) return 0;
-    if (viewW > 3600) return 1;
-    if (viewW > 1600) return 2;
-    return 3;
-  }
-
-  function updateOverlayScale() {
-    const scale = view.w / HOME_VIEW_M;
-    const lod = lodForView(view.w);
-    if (lod !== appliedLod) {
-      appliedLod = lod;
-      svg.dataset.lod = String(lod);
-    }
-    if (appliedScale !== null && Math.abs(scale - appliedScale) < 0.001) return;
-    appliedScale = scale;
-    const transform = `scale(${scale.toFixed(4)})`;
-    for (const g of scalables) g.setAttribute('transform', transform);
-  }
-
-  let pendingFrame = null;
-
-  function commit() {
-    svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
-    updateOverlayScale();
-    onViewChange(view);
-  }
-
-  // Gestures coalesce to one write per frame: a 120 Hz pointer stream would
-  // otherwise write the viewBox 120 times a second, and a transform on each of
-  // ~500 counter-scaled groups while pinching. Discrete input (keys, zoom
-  // buttons) still writes straight through, so it is done when it returns.
-  function scheduleCommit() {
-    if (pendingFrame !== null) return;
-    pendingFrame = requestAnimationFrame(() => {
-      pendingFrame = null;
-      commit();
-    });
-  }
-
-  function apply() {
-    if (pendingFrame !== null) {
-      cancelAnimationFrame(pendingFrame);
-      pendingFrame = null;
-    }
-    commit();
-  }
-
-  function clampPan() {
-    const maxX = full.x + full.w - view.w;
-    const maxY = full.y + full.h - view.h;
-    // Once the view is larger than the map on an axis there is nothing left to
-    // pan to, so center the map on that axis instead of pinning it to an edge.
-    view.x = view.w >= full.w ? full.x + (full.w - view.w) / 2 : Math.min(Math.max(view.x, full.x), maxX);
-    view.y = view.h >= full.h ? full.y + (full.h - view.h) / 2 : Math.min(Math.max(view.y, full.y), maxY);
-  }
-
-  function zoomBy(factor, focalX, focalY, write = apply) {
-    const newW = Math.min(maxViewW, Math.max(MIN_VIEW_M, view.w * factor));
-    const newH = newW; // square view
-    const fx = focalX === undefined ? 0.5 : (focalX - view.x) / view.w;
-    const fy = focalY === undefined ? 0.5 : (focalY - view.y) / view.h;
-    view.x = (focalX ?? view.x + view.w / 2) - fx * newW;
-    view.y = (focalY ?? view.y + view.h / 2) - fy * newH;
-    view.w = newW;
-    view.h = newH;
-    clampPan();
-    write();
-  }
-
-  function reset() {
-    view = { ...home };
-    clampPan();
-    apply();
-  }
-
-  function panBy(dx, dy) {
-    view.x += dx;
-    view.y += dy;
-    clampPan();
-    apply();
-  }
-
-  // Keyboard equivalent of drag-panning (mouse/touch drag has no keyboard
-  // analogue otherwise). Step is relative to the current viewport so it stays
-  // useful at any zoom level. A focused pin handles arrow keys itself, to move
-  // along the pin set, and stops them reaching this handler.
-  function onKeyDown(e) {
-    switch (e.key) {
-      case 'ArrowLeft':
-        e.preventDefault();
-        panBy(-view.w * KEYBOARD_PAN_FRACTION, 0);
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        panBy(view.w * KEYBOARD_PAN_FRACTION, 0);
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        panBy(0, -view.h * KEYBOARD_PAN_FRACTION);
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        panBy(0, view.h * KEYBOARD_PAN_FRACTION);
-        break;
-    }
-  }
-
-  function toSvgPoint(clientX, clientY) {
-    const rect = svg.getBoundingClientRect();
-    const px = (clientX - rect.left) / rect.width;
-    const py = (clientY - rect.top) / rect.height;
-    return { x: view.x + px * view.w, y: view.y + py * view.h };
-  }
-
-  function onPointerDown(e) {
-    svg.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 1) {
-      primaryDown = { id: e.pointerId, x: e.clientX, y: e.clientY, time: performance.now() };
-      multiTouch = false;
-    } else {
-      multiTouch = true;
-      pinchStartDist = null;
-    }
-  }
-
-  function onPointerMove(e) {
-    if (!pointers.has(e.pointerId)) return;
-    const prev = pointers.get(e.pointerId);
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-    if (pointers.size === 1) {
-      const rect = svg.getBoundingClientRect();
-      view.x -= ((e.clientX - prev.x) / rect.width) * view.w;
-      view.y -= ((e.clientY - prev.y) / rect.height) * view.h;
-      clampPan();
-      scheduleCommit();
-    } else if (pointers.size === 2) {
-      const pts = [...pointers.values()];
-      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
-      if (pinchStartDist != null && dist > 0) {
-        const focal = toSvgPoint(mid.x, mid.y);
-        zoomBy(pinchStartDist / dist, focal.x, focal.y, scheduleCommit);
-      }
-      pinchStartDist = dist;
-    }
-  }
-
-  function onPointerUp(e) {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) pinchStartDist = null;
-    // The gesture's last frame may still be queued; land it now so the view
-    // never sits one frame behind where the finger left it.
-    if (pendingFrame !== null) apply();
-
-    if (multiTouch || !primaryDown || primaryDown.id !== e.pointerId) {
-      if (pointers.size === 0) { primaryDown = null; multiTouch = false; }
-      return;
-    }
-    const moved = Math.hypot(e.clientX - primaryDown.x, e.clientY - primaryDown.y);
-    const elapsed = performance.now() - primaryDown.time;
-    primaryDown = null;
-    if (moved > TAP_MOVE_THRESHOLD || elapsed > 600) return;
-
-    // e.target is unreliable here: once setPointerCapture fires (above), the
-    // spec redirects event.target on subsequent pointer events to the
-    // capturing element (the svg itself), not whatever is under the pointer.
-    // elementFromPoint gives the real hit at the release coordinates instead.
-    const hitEl = document.elementFromPoint(e.clientX, e.clientY);
-    const pinEl = hitEl?.closest?.('.pin');
-    if (pinEl) {
-      onActivatePin(pinEl);
-      lastTap = null;
-      return;
-    }
-
-    const now = performance.now();
-    if (lastTap && now - lastTap.time < DOUBLE_TAP_MS && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DOUBLE_TAP_DIST) {
-      const focal = toSvgPoint(e.clientX, e.clientY);
-      const nearMaxZoom = view.w <= MIN_VIEW_M * 1.5;
-      if (nearMaxZoom) reset();
-      else zoomBy(0.5, focal.x, focal.y);
-      lastTap = null;
-    } else {
-      lastTap = { time: now, x: e.clientX, y: e.clientY };
-    }
-  }
-
-  svg.addEventListener('pointerdown', onPointerDown);
-  svg.addEventListener('pointermove', onPointerMove);
-  svg.addEventListener('pointerup', onPointerUp);
-  svg.addEventListener('pointercancel', onPointerUp);
-  svg.addEventListener('keydown', onKeyDown);
-
-  // The SVG ships with the full extent as its viewBox; narrow it to the home
-  // view before first paint so the map never flashes fully zoomed out.
-  clampPan();
-  apply();
-
-  return {
-    zoomIn: () => zoomBy(0.7),
-    zoomOut: () => zoomBy(1 / 0.7),
-    reset,
-    destroy() {
-      if (pendingFrame !== null) {
-        cancelAnimationFrame(pendingFrame);
-        pendingFrame = null;
-      }
-      svg.removeEventListener('pointerdown', onPointerDown);
-      svg.removeEventListener('pointermove', onPointerMove);
-      svg.removeEventListener('pointerup', onPointerUp);
-      svg.removeEventListener('pointercancel', onPointerUp);
-      svg.removeEventListener('keydown', onKeyDown);
-    },
-  };
-}
-
-const NO_CLEANUP = () => {};
-
-// Every visit to #/map used to re-fetch and re-parse 1.87 MB of SVG. It is
-// parsed once and cloned per visit instead; the cached copy stays pristine
-// because the clone is what gets the pins and the runtime attributes.
-let mapAssets = null;
+let calibrationCache = null;
 let transitStopsCache = null;
 
-async function loadMapAssets() {
-  if (mapAssets) return mapAssets;
-  const [svgText, calibration] = await Promise.all([
-    fetch('assets/map.svg').then((r) => {
-      if (!r.ok) throw new Error('map fetch failed');
-      return r.text();
-    }),
-    fetch('assets/map-calibration.json').then((r) => {
-      if (!r.ok) throw new Error('calibration fetch failed');
-      return r.json();
-    }),
-  ]);
-  // Inserting SVG markup into an HTML element correctly namespaces the
-  // children (supported in all evergreen browsers), so this is a plain
-  // innerHTML assignment rather than manual createElementNS plumbing. The
-  // holder is detached, so parsing costs no layout.
-  const holder = document.createElement('div');
-  holder.innerHTML = svgText;
-  const svg = holder.querySelector('#circuit-map') || holder.querySelector('svg');
-  // A response with no root element is not cached: a truncated body should be
-  // retried on the next visit, not remembered as a broken map forever.
-  if (!svg) return { svg: null, calibration };
-  mapAssets = { svg, calibration };
-  return mapAssets;
+async function loadCalibration() {
+  if (calibrationCache) return calibrationCache;
+  const r = await fetch('assets/map-calibration.json');
+  if (!r.ok) throw new Error('calibration fetch failed');
+  calibrationCache = await r.json();
+  return calibrationCache;
 }
 
-// Transit pins are an informational overlay, not core map infrastructure like
-// the street SVG/calibration above -- a failed or missing fetch just means no
-// transit pins render, not a broken map view, and the next visit retries.
+// Transit pins are an informational overlay, not core map infrastructure: a
+// failed fetch means no transit pins, not a broken map, and the next visit
+// retries. Same posture as the SVG implementation.
 async function loadTransitStops() {
   if (transitStopsCache) return transitStopsCache;
   try {
     const r = await fetch('assets/transit.json');
     if (r.ok) transitStopsCache = (await r.json()).stops ?? [];
   } catch {
-    // offline/missing transit.json: map still works without the overlay
+    /* offline/missing transit.json: the map still works without the overlay */
   }
   return transitStopsCache ?? [];
 }
 
+/**
+ * MapLibre zoom at which `meters` spans `pixels` of screen at this latitude.
+ *
+ * The familiar 156543.03392 m/px constant is for 256 px tiles. MapLibre's world
+ * is 512 px wide at zoom 0, so its zoom is one level coarser than the classic
+ * formula returns -- get this wrong and every view is exactly twice as tight as
+ * intended, which is subtle enough to look merely "a bit close" rather than wrong.
+ */
+function zoomForMeters(meters, pixels, lat) {
+  const mPerPixelAtZ0 = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2;
+  return Math.log2((mPerPixelAtZ0 * pixels) / meters);
+}
+
+/**
+ * A diamond pin as a canvas image for map.addImage(). The SVG map's pins are
+ * unstroked diamonds (no white keyline) except the generic sponsor pin, which is
+ * an outline; this reproduces both.
+ */
+function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
+  const pad = 2 + strokeWidth;
+  const size = Math.ceil((radius + pad) * 2 * dpr);
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const c = size / (2 * dpr);
+  ctx.beginPath();
+  ctx.moveTo(c, c - radius);
+  ctx.lineTo(c + radius, c);
+  ctx.lineTo(c, c + radius);
+  ctx.lineTo(c - radius, c);
+  ctx.closePath();
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke && strokeWidth) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = strokeWidth;
+    ctx.stroke();
+  }
+  return { data: ctx.getImageData(0, 0, size, size), pixelRatio: dpr };
+}
+
+// The three zooms every zoom-keyed stop below is pinned to: the full extent,
+// the home view, and the closest zoom. They follow from the calibration and the
+// view widths above -- roughly 10.4 / 12.8 / 17.5 on a phone-width frame.
+const Z_WIDE = 10.5;
+const Z_HOME = 12.8;
+const Z_CLOSE = 17.5;
+
+/** Zoom-interpolated line width, the engine's answer to the SVG's fixed map-unit strokes. */
+function widthByZoom(atWide, atHome, atClose) {
+  return ['interpolate', ['exponential', 1.5], ['zoom'], Z_WIDE, atWide, Z_HOME, atHome, Z_CLOSE, atClose];
+}
+
+/** The vector ground: streets, water, rail and labels from the OSM GeoJSON. */
+function groundLayersVector() {
+  return [
+    { id: 'paper', type: 'background', paint: { 'background-color': PAPER } },
+    {
+      id: 'water-line',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['==', ['get', 'kind'], 'water-line'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': WATER, 'line-width': widthByZoom(3, 9.5, 26) },
+    },
+    {
+      id: 'water-area',
+      type: 'fill',
+      source: 'mapdata',
+      filter: ['==', ['get', 'kind'], 'water-area'],
+      paint: { 'fill-color': WATER },
+    },
+    // Casing under fill for each road tier, matching the SVG's two-stroke roads.
+    {
+      id: 'motorway-casing',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'motorway']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#b4b4b2', 'line-width': widthByZoom(3.5, 9, 22), 'line-opacity': 0.6 },
+    },
+    {
+      id: 'motorway-fill',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'motorway']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#d9d9d9', 'line-width': widthByZoom(2.5, 7, 18), 'line-opacity': 0.6 },
+    },
+    {
+      id: 'arterial-casing',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'arterial']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#c4c4c2', 'line-width': widthByZoom(2.5, 7, 17) },
+    },
+    {
+      id: 'arterial-fill',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'arterial']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#dedede', 'line-width': widthByZoom(1.6, 5.2, 13) },
+    },
+    {
+      id: 'spine-casing',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'spine']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#a8a8a6', 'line-width': widthByZoom(3.5, 9.5, 24) },
+    },
+    {
+      id: 'spine-fill',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'spine']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#cfcfcf', 'line-width': widthByZoom(2.6, 7.8, 20) },
+    },
+    // One thick solid stroke per line, not two thin dashed ones: each direction
+    // is a separate OSM way, so thin dashes read as two railways.
+    {
+      id: 'rail-green',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'rail'], ['==', ['get', 'line'], 'green']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#2f7d4f', 'line-width': widthByZoom(2, 4.2, 9) },
+    },
+    {
+      id: 'rail-blue',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'rail'], ['==', ['get', 'line'], 'blue']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#2b5fa8', 'line-width': widthByZoom(2, 4.2, 9) },
+    },
+    {
+      id: 'station-dot',
+      type: 'circle',
+      source: 'mapdata',
+      filter: ['==', ['get', 'kind'], 'station'],
+      paint: {
+        'circle-radius': widthByZoom(2, 4, 7),
+        'circle-color': '#ffffff',
+        'circle-stroke-color': '#4a4a4a',
+        'circle-stroke-width': 1.2,
+      },
+    },
+  ];
+}
+
+/**
+ * Street and station labels. These are the half of the audition that pins can't
+ * show: the SVG map places every label once for the whole map and counter-scales
+ * it, so a close view can land between labels. `symbol-placement: line` re-runs
+ * placement at every zoom, repeating a name along the street as often as there
+ * is room and dropping the ones that collide.
+ */
+function labelLayers() {
+  // Order matters twice over, and in opposite directions. Later layers draw on
+  // top, but they are also placed FIRST -- MapLibre runs collision from the top
+  // of the layer stack down, so whatever is drawn last wins the space. The two
+  // spines therefore come last: listed first, they lost every contested slot to
+  // ordinary side streets and the map's two most important names never
+  // appeared at all.
+  return [
+    {
+      id: 'street-label-arterial',
+      type: 'symbol',
+      source: 'mapdata',
+      // Arterial names appear a step in, mirroring the SVG's level-of-detail
+      // rule that keeps a 10-mile view from carrying 400 street names. The SVG
+      // drops them above a ~7000 m view, which is this zoom on a phone frame.
+      minzoom: 11.6,
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'arterial'], ['has', 'name']],
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 180,
+        'text-field': ['get', 'name'],
+        'text-font': FONT_SEMIBOLD,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11.6, 9.5, Z_HOME, 11.5, Z_CLOSE, 13.5],
+        'text-max-angle': 40,
+      },
+      paint: { 'text-color': '#565654', 'text-halo-color': PAPER, 'text-halo-width': 1.5 },
+    },
+    {
+      id: 'station-label',
+      type: 'symbol',
+      source: 'mapdata',
+      // Station names one level further in again, as in the SVG's lod2.
+      minzoom: 12.5,
+      filter: ['==', ['get', 'kind'], 'station'],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT_SEMIBOLD,
+        'text-size': 11,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.7],
+      },
+      paint: { 'text-color': '#3d5c4d', 'text-halo-color': PAPER, 'text-halo-width': 1.5 },
+    },
+    {
+      id: 'street-label-spine',
+      type: 'symbol',
+      source: 'mapdata',
+      filter: ['all', ['==', ['get', 'kind'], 'street'], ['==', ['get', 'tier'], 'spine'], ['has', 'name']],
+      layout: {
+        'symbol-placement': 'line',
+        'symbol-spacing': 180,
+        'text-field': ['get', 'name'],
+        'text-font': FONT_BOLD,
+        'text-size': ['interpolate', ['linear'], ['zoom'], Z_WIDE, 10, Z_HOME, 12.5, Z_CLOSE, 15],
+        'text-max-angle': 40,
+      },
+      paint: { 'text-color': '#3f3f3f', 'text-halo-color': PAPER, 'text-halo-width': 1.5 },
+    },
+  ];
+}
+
+/** The raster ground: today's map.svg, rasterized, placed by four corners. */
+function groundLayersRaster() {
+  return [
+    { id: 'paper', type: 'background', paint: { 'background-color': PAPER } },
+    { id: 'artwork', type: 'raster', source: 'artwork', paint: { 'raster-fade-duration': 0 } },
+  ];
+}
+
+const NO_CLEANUP = () => {};
 let renderGeneration = 0;
 
 export async function renderMap(container, content) {
   const generation = ++renderGeneration;
   const youAreHereEnabled = content.settings.you_are_here_enabled === 'true';
+  const mode = pickMode();
 
   container.innerHTML = `
     <section class="view map-view">
-      <!-- Heading is visually hidden by request: the map itself is the title,
-           and the space it used to occupy is reserved for a future sponsor
-           logo. The h1 stays in the DOM so every route still exposes exactly
-           one heading for the route announcer and screen-reader navigation. -->
       <h1 class="sr-only">Map</h1>
       <div class="map-frame">
         <div class="map-svg-wrap" id="map-svg-wrap"><p class="map-loading">Loading map&hellip;</p></div>
@@ -425,10 +381,8 @@ export async function renderMap(container, content) {
           ${youAreHereEnabled ? `<button type="button" class="map-btn map-btn--locate" id="locate-btn" aria-label="Show my location">&#9678;</button>` : ''}
         </div>
       </div>
+      <p class="map-mode-note">Ground: <strong>${esc(mode)}</strong> (MapLibre spike &mdash; switch with <code>?map=vector</code>, <code>?map=raster</code>, <code>?map=hybrid</code>)</p>
       <div class="map-legend">
-        <!-- Visually hidden by request: the four labelled swatches read as a
-             legend without a heading telling you so. Kept in the DOM so the
-             list still has an accessible name. -->
         <h2 class="map-legend__title sr-only">Legend</h2>
         <ul class="map-legend__list">
           <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Venue</li>
@@ -442,17 +396,20 @@ export async function renderMap(container, content) {
       <ol class="venue-key-list" id="venue-key-list"></ol>
     </section>`;
 
-  // Tapping another tab mid-load wipes #view while these awaits are in
-  // flight. Anything the continuation wrote after that would land in a
-  // detached tree and leak its listeners, so every DOM reference is re-queried
-  // through here and a null answer ends the render.
+  // Tapping another tab mid-load wipes #view while these awaits are in flight;
+  // every DOM reference is re-queried through here and a null answer ends the
+  // render, so nothing lands in a detached tree.
   const mapWrap = () => (generation === renderGeneration ? container.querySelector('#map-svg-wrap') : null);
 
-  let assets;
+  const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
+  renderVenueKeyList(container, venues);
+
+  let engine;
+  let calibration;
   let stops;
   try {
-    assets = await loadMapAssets();
-    stops = await loadTransitStops();
+    injectEngineCss();
+    [engine, calibration, stops] = await Promise.all([loadEngine(), loadCalibration(), loadTransitStops()]);
   } catch {
     const failedWrap = mapWrap();
     if (failedWrap) {
@@ -463,21 +420,6 @@ export async function renderMap(container, content) {
 
   const wrap = mapWrap();
   if (!wrap) return NO_CLEANUP;
-  const calibration = assets.calibration;
-  if (!assets.svg) {
-    wrap.innerHTML = `<p class="empty-state">The map file is invalid.</p>`;
-    return NO_CLEANUP;
-  }
-  const svg = assets.svg.cloneNode(true);
-  wrap.replaceChildren(svg);
-  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  svg.classList.add('circuit-map-svg');
-  // Pan/zoom was pointer-only (drag + pinch + the on-screen zoom buttons);
-  // this makes the map itself a keyboard-operable control, panned with the
-  // arrow keys once focused -- the aria-label doubles as the usage hint.
-  svg.setAttribute('tabindex', '0');
-  svg.setAttribute('role', 'group');
-  svg.setAttribute('aria-label', 'Festival map. Use the arrow keys to pan, and the zoom buttons below to zoom in and out.');
 
   let projector;
   try {
@@ -487,158 +429,143 @@ export async function renderMap(container, content) {
     return NO_CLEANUP;
   }
 
-  // The map extent is anchored on the two downtowns, so its middle is NOT the
-  // festival's middle. The generator emits home_center (Hamline Park's
-  // projected position) alongside the control points; the viewBox center is
-  // only a fallback for an older calibration file. Needed here, before the
-  // pins, because transit pins are filtered by distance from it.
-  const vb0 = svg.viewBox.baseVal;
-  const homeCenter = calibration.home_center ?? { x: vb0.x + vb0.width / 2, y: vb0.y + vb0.height / 2 };
+  // The map's geographic frame comes entirely from the calibration file, run
+  // backwards through the same projector the SVG map uses forwards. Recalibrating
+  // to commissioned artwork stays a pure data change, exactly as before.
+  const [, , vbW, vbH] = calibration.svg_viewbox;
+  const corner = (x, y) => {
+    const { lat, lng } = projector.unproject(x, y);
+    return [lng, lat];
+  };
+  const nw = corner(0, 0);
+  const ne = corner(vbW, 0);
+  const se = corner(vbW, vbH);
+  const sw = corner(0, vbH);
+  const homeCenterSvg = calibration.home_center ?? { x: vbW / 2, y: vbH / 2 };
+  const home = corner(homeCenterSvg.x, homeCenterSvg.y);
 
-  const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
-  // Sponsor pins exist only for tiers emerald/ruby/sapphire ("Featured
-  // Destination") and topaz ("Sponsor") -- quartz never gets a pin -- and
-  // only when the sponsor has a location (CONTRACTS.md Map + geo contract).
-  const sponsors = content.sponsors.filter(
-    (s) => (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') && Number.isFinite(s.lat) && Number.isFinite(s.lng)
+  const west = Math.min(nw[0], sw[0]);
+  const east = Math.max(ne[0], se[0]);
+  const south = Math.min(sw[1], se[1]);
+  const north = Math.max(nw[1], ne[1]);
+  const extentMeters = (north - south) * 111320;
+
+  const framePx = wrap.clientWidth || 360;
+  const lat = home[1];
+  const minZoom = zoomForMeters(extentMeters, framePx, lat);
+  const maxZoom = zoomForMeters(MIN_VIEW_M, framePx, lat);
+  const homeZoom = zoomForMeters(HOME_VIEW_M, framePx, lat);
+  // Venues stop clustering once they would be drawn far enough apart to tap
+  // individually -- about a pin's width between the closest real pair. Capped
+  // at 17 because a GeoJSON source's own maxzoom is 18 and tiles above it are
+  // overzoomed: a clusterMaxZoom of 18 would bake clusters into the last real
+  // tile, so they would never break apart no matter how far you zoomed.
+  const clusterMaxZoom = Math.min(17, Math.round(zoomForMeters(210, framePx, lat)));
+
+  wrap.innerHTML = '<div class="map-gl" id="map-gl"></div>';
+  const glHost = wrap.querySelector('#map-gl');
+
+  const { Map: MlMap, LngLatBounds, Marker } = engine;
+
+  const sources = {};
+  let layers;
+  if (mode === 'vector') {
+    // The URL, not a parsed object: MapLibre hands it to the worker, so 2.6 MB
+    // of GeoJSON is fetched (from the service-worker cache, offline) and parsed
+    // off the main thread.
+    sources.mapdata = { type: 'geojson', data: 'assets/map-vector.geojson' };
+    layers = [...groundLayersVector(), ...labelLayers()];
+  } else {
+    sources.artwork = { type: 'image', url: 'assets/map-raster.webp', coordinates: [nw, ne, se, sw] };
+    layers = groundLayersRaster();
+    if (mode === 'hybrid') {
+      sources.mapdata = { type: 'geojson', data: 'assets/map-vector.geojson' };
+      layers = [...layers, ...labelLayers()];
+    }
+  }
+
+  const map = new MlMap({
+    container: glHost,
+    style: { version: 8, sources, layers },
+    center: home,
+    zoom: homeZoom,
+    minZoom,
+    maxZoom,
+    maxBounds: new LngLatBounds([west, south], [east, north]),
+    // North-up, like the SVG map and like the artwork Mode B stands in for.
+    dragRotate: false,
+    pitchWithRotate: false,
+    touchPitch: false,
+    // The site renders settings.map_attribution itself, below the frame.
+    attributionControl: false,
+    // Two-finger-only panning would fight a full-page-scroll layout; the map
+    // sits in a fixed-height frame, so one finger panning it is right.
+    cooperativeGestures: false,
+    fadeDuration: 0,
+  });
+  map.touchZoomRotate.disableRotation();
+  map.keyboard.enable();
+
+  const canvas = map.getCanvas();
+  canvas.setAttribute('role', 'group');
+  canvas.setAttribute(
+    'aria-label',
+    'Festival map. Use the arrow keys to pan, and the zoom buttons below to zoom in and out.'
   );
 
-  // SVG paints in document order, so the array a pin lands in decides what
-  // covers what where pins collide. Requested priority, lowest first:
-  // transit < featured destination < sponsor < venue (QA, 2026-08-09).
-  const transitPins = [];
-  const featuredPins = [];
-  const genericSponsorPins = [];
-  const venuePins = [];
+  // Spike-only handle: lets the verification pass drive the real map object,
+  // and lets Anthony poke at it from Safari's inspector during the audition.
+  // It is not one of the contract's test hooks and would not survive adoption.
+  window.__spikeMap = map;
 
-  // Every pin nests a .pin__scale group inside the positioned .pin group. The
-  // outer one places the pin; the inner one carries the zoom counter-scale, so
-  // resizing all pins is one attribute write per pin and never disturbs their
-  // coordinates.
-  venues.forEach((v, i) => {
-    const { x, y } = projector.project(v.lat, v.lng);
-    venuePins.push(`
-      <g class="pin pin--venue" data-testid="venue-pin" data-venue-id="${esc(v.id)}" transform="translate(${x} ${y})" role="button" tabindex="-1" aria-label="Venue ${i + 1}: ${esc(v.name)}">
-        <g class="pin__scale">
-          <polygon class="pin__hit" points="${diamondPoints(VENUE_HIT_R)}"></polygon>
-          <polygon class="pin__diamond" points="${diamondPoints(VENUE_PIN_R)}"></polygon>
-          <text class="pin__label" x="0" y="0">${i + 1}</text>
-        </g>
-      </g>`);
-  });
-  stops.forEach((s) => {
-    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lng) || !Array.isArray(s.lines) || s.lines.length === 0) return;
-    const { x, y } = projector.project(s.lat, s.lng);
-    // Only stops near the festival get a pin — see TRANSIT_PIN_RADIUS_M.
-    if (Math.hypot(x - homeCenter.x, y - homeCenter.y) > TRANSIT_PIN_RADIUS_M) return;
-    const lineNames = s.lines.map((l) => TRANSIT_LINE_NAME[l] || l).join(', ');
-    transitPins.push(`
-      <g class="pin pin--transit" data-testid="transit-pin" data-transit-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="-1" aria-label="${esc(s.name)}: ${esc(lineNames)}">
-        <g class="pin__scale">
-          <polygon class="pin__hit" points="${diamondPoints(TRANSIT_HIT_R)}"></polygon>
-          <polygon class="pin__diamond" points="${diamondPoints(TRANSIT_PIN_R)}"></polygon>
-          ${transitLabelMarkup(s.lines)}
-        </g>
-      </g>`);
-  });
-  sponsors.forEach((s) => {
-    const featured = FEATURED_SPONSOR_TIERS.has(s.tier_slug);
-    const r = featured ? SPONSOR_FEATURED_R : SPONSOR_GENERIC_R;
-    const hitR = featured ? SPONSOR_FEATURED_HIT_R : SPONSOR_GENERIC_HIT_R;
-    const kind = featured ? 'Featured Destination' : 'Sponsor';
-    const { x, y } = projector.project(s.lat, s.lng);
-    (featured ? featuredPins : genericSponsorPins).push(`
-      <g class="pin pin--sponsor-${featured ? 'featured' : 'generic'}" data-testid="sponsor-pin" data-sponsor-id="${esc(s.id)}" transform="translate(${x} ${y})" role="button" tabindex="-1" aria-label="${kind}: ${esc(s.name)}">
-        <g class="pin__scale">
-          <polygon class="pin__hit" points="${diamondPoints(hitR)}"></polygon>
-          <polygon class="pin__diamond" points="${diamondPoints(r)}"></polygon>
-        </g>
-      </g>`);
-  });
-  svg.insertAdjacentHTML(
-    'beforeend',
-    [...transitPins, ...featuredPins, ...genericSponsorPins, ...venuePins].join('')
-  );
+  const cleanupFns = [];
+  let removed = false;
+  const cleanup = () => {
+    if (removed) return;
+    removed = true;
+    if (window.__spikeMap === map) delete window.__spikeMap;
+    for (const fn of cleanupFns) {
+      try {
+        fn();
+      } catch {
+        /* teardown is best-effort */
+      }
+    }
+    map.remove();
+  };
 
-  // The "you are here" dot is created up front (idle, so invisible) rather
-  // than on first fix, for two reasons: it lands last in document order so it
-  // draws over every pin, and it exists before setupInteraction collects the
-  // nodes it counter-scales, so the dot holds a constant on-screen size like
-  // everything else instead of ballooning when zoomed in.
-  if (youAreHereEnabled) {
-    svg.insertAdjacentHTML(
-      'beforeend',
-      `<g class="you-are-here you-are-here--idle" data-testid="you-are-here">
-         <g class="pin__scale">
-           <circle class="you-are-here__pulse" r="192"></circle>
-           <circle class="you-are-here__core" r="71"></circle>
-         </g>
-       </g>`
-    );
+  // A route change during style load must still tear the map down, or its
+  // canvas and workers outlive the view that owns them.
+  if (generation !== renderGeneration) {
+    cleanup();
+    return NO_CLEANUP;
   }
 
   const transitById = new Map(stops.map((s) => [s.id, s]));
 
-  function activatePin(pinEl) {
-    if (pinEl.dataset.venueId) openVenueSheet(pinEl.dataset.venueId);
-    else if (pinEl.dataset.sponsorId) openSponsorSheet(pinEl.dataset.sponsorId);
-    else if (pinEl.dataset.transitId) {
-      const stop = transitById.get(pinEl.dataset.transitId);
-      if (stop) openTransitSheet(stop, stop.lines.map((l) => TRANSIT_LINE_NAME[l] || l));
-    }
-  }
-
-  // The pin set is one tab stop, not thirty-plus: reaching the venue list below
-  // the map used to mean tabbing past every pin, including the ones panned off
-  // screen. Arrow keys walk the pins that are actually in view; the map itself
-  // keeps arrow-key panning for when it, rather than a pin, has focus.
-  const pins = [...svg.querySelectorAll('.pin')].map((el) => {
-    const [x, y] = (el.getAttribute('transform').match(/-?[\d.]+/g) ?? ['0', '0']).map(Number);
-    return { el, x, y };
+  map.on('load', () => {
+    if (generation !== renderGeneration) return;
+    addPins(map, engine, { venues, stops, content, home, clusterMaxZoom });
+    wirePinTaps(map, { venues, transitById, content, maxZoom });
   });
-  let rovingPin = null;
 
-  function pinsInView(view) {
-    return pins.filter((p) => p.x >= view.x && p.x <= view.x + view.w && p.y >= view.y && p.y <= view.y + view.h);
+  wireControls(container, map, { home, homeZoom, maxZoom, cleanupFns });
+  if (youAreHereEnabled) {
+    wireLocate(container, map, Marker, { west, east, south, north, cleanupFns });
   }
 
-  function setRovingPin(pin) {
-    rovingPin = pin;
-    for (const p of pins) {
-      const tabindex = p === rovingPin ? '0' : '-1';
-      if (p.el.getAttribute('tabindex') !== tabindex) p.el.setAttribute('tabindex', tabindex);
-    }
-  }
+  return cleanup;
+}
 
-  let visiblePins = pins;
-  function onViewChange(view) {
-    visiblePins = pinsInView(view);
-    setRovingPin(visiblePins.includes(rovingPin) ? rovingPin : visiblePins[0] ?? null);
-  }
+/** `?map=` on the page URL, alongside the demo clock's `?t=`. */
+function pickMode() {
+  const value = new URLSearchParams(location.search).get('map');
+  return value === 'raster' || value === 'hybrid' ? value : 'vector';
+}
 
-  const ARROW_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
-  for (const pin of pins) {
-    pin.el.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        activatePin(pin.el);
-        return;
-      }
-      const step = ARROW_STEP[e.key];
-      if (step === undefined || !visiblePins.length) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const from = visiblePins.indexOf(pin);
-      const next = visiblePins[(from + step + visiblePins.length) % visiblePins.length];
-      setRovingPin(next);
-      next.el.focus();
-    });
-  }
-
+function renderVenueKeyList(container, venues) {
   const keyList = container.querySelector('#venue-key-list');
   keyList.innerHTML = venues
-    // Diamond, not a circle: this numbered badge is the key to the map pins,
-    // so it should be the same shape as the thing it refers to (QA, 2026-08-09).
     .map(
       (v, i) => `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}">
         <svg class="venue-key-btn__pin" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
@@ -650,52 +577,301 @@ export async function renderMap(container, content) {
   keyList.querySelectorAll('.venue-key-btn').forEach((btn) => {
     btn.addEventListener('click', () => openVenueSheet(btn.dataset.venueId));
   });
+}
 
-  const vb = svg.viewBox.baseVal;
-  const full = { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
-  const home = {
-    x: homeCenter.x - HOME_VIEW_M / 2,
-    y: homeCenter.y - HOME_VIEW_M / 2,
-    w: HOME_VIEW_M,
-    h: HOME_VIEW_M,
+function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom }) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  map.addImage('pin-venue', diamondImage(VENUE_R, { fill: PIN_VENUE }, dpr).data, { pixelRatio: dpr });
+  map.addImage('pin-cluster', diamondImage(CLUSTER_R, { fill: PIN_VENUE }, dpr).data, { pixelRatio: dpr });
+  map.addImage('pin-transit', diamondImage(SMALL_R, { fill: PIN_TRANSIT }, dpr).data, { pixelRatio: dpr });
+  map.addImage('pin-sponsor-featured', diamondImage(SMALL_R, { fill: PIN_SPONSOR }, dpr).data, { pixelRatio: dpr });
+  // Generic sponsor pins are outlined rather than filled, as in the SVG map.
+  map.addImage(
+    'pin-sponsor-generic',
+    diamondImage(SMALL_R, { fill: '#ffffff', stroke: PIN_SPONSOR, strokeWidth: 3 }, dpr).data,
+    { pixelRatio: dpr }
+  );
+
+  const homeSvgDistanceOk = makeTransitFilter(home);
+
+  map.addSource('venues', {
+    type: 'geojson',
+    cluster: true,
+    clusterRadius: 26,
+    clusterMaxZoom,
+    data: {
+      type: 'FeatureCollection',
+      features: venues.map((v, i) => ({
+        type: 'Feature',
+        properties: { id: v.id, label: String(i + 1), name: v.name },
+        geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
+      })),
+    },
+  });
+
+  map.addSource('transit', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features: stops
+        .filter(
+          (s) =>
+            Number.isFinite(s.lat) &&
+            Number.isFinite(s.lng) &&
+            Array.isArray(s.lines) &&
+            s.lines.length > 0 &&
+            homeSvgDistanceOk(s.lat, s.lng)
+        )
+        .map((s) => ({
+          type: 'Feature',
+          properties: {
+            id: s.id,
+            // Multi-line stops stack their letters, as the SVG pins do: "G/A"
+            // at pin size is less legible than two lines.
+            letters: s.lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean).join('\n'),
+          },
+          geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+        })),
+    },
+  });
+
+  // Sponsor pins exist only for emerald/ruby/sapphire ("Featured Destination")
+  // and topaz ("Sponsor") -- quartz never gets one -- and only with a location.
+  const sponsors = content.sponsors.filter(
+    (s) =>
+      (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') &&
+      Number.isFinite(s.lat) &&
+      Number.isFinite(s.lng)
+  );
+  map.addSource('sponsors', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features: sponsors.map((s) => ({
+        type: 'Feature',
+        properties: { id: s.id, featured: FEATURED_SPONSOR_TIERS.has(s.tier_slug) },
+        geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+      })),
+    },
+  });
+
+  // Layer order IS paint order, lowest first: transit, featured destination,
+  // sponsor, venue -- the priority the SVG map gets from document order.
+  // allow-overlap/ignore-placement keep every pin drawn: MapLibre's collision
+  // handling HIDES the loser, which would be worse than today's overlap. What
+  // stops venues piling up is the clustering above, not collision.
+  const pinLayout = { 'icon-allow-overlap': true, 'icon-ignore-placement': true };
+  const labelLayout = {
+    'text-allow-overlap': true,
+    'text-ignore-placement': true,
+    'text-font': FONT_BOLD,
   };
 
-  const interaction = setupInteraction(svg, full, home, activatePin, onViewChange);
-  container.querySelector('#zoom-in').addEventListener('click', () => interaction.zoomIn());
-  container.querySelector('#zoom-out').addEventListener('click', () => interaction.zoomOut());
-  container.querySelector('#zoom-reset').addEventListener('click', () => interaction.reset());
+  map.addLayer({
+    id: 'transit-pin',
+    type: 'symbol',
+    source: 'transit',
+    layout: {
+      ...pinLayout,
+      ...labelLayout,
+      'icon-image': 'pin-transit',
+      'text-field': ['get', 'letters'],
+      'text-size': 11,
+      'text-line-height': 0.95,
+    },
+    paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: 'sponsor-featured-pin',
+    type: 'symbol',
+    source: 'sponsors',
+    filter: ['==', ['get', 'featured'], true],
+    layout: { ...pinLayout, 'icon-image': 'pin-sponsor-featured' },
+  });
+  map.addLayer({
+    id: 'sponsor-generic-pin',
+    type: 'symbol',
+    source: 'sponsors',
+    filter: ['==', ['get', 'featured'], false],
+    layout: { ...pinLayout, 'icon-image': 'pin-sponsor-generic' },
+  });
+  map.addLayer({
+    id: 'venue-cluster',
+    type: 'symbol',
+    source: 'venues',
+    filter: ['has', 'point_count'],
+    layout: {
+      ...pinLayout,
+      ...labelLayout,
+      'icon-image': 'pin-cluster',
+      'text-field': ['get', 'point_count_abbreviated'],
+      'text-size': 15,
+    },
+    paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: 'venue-pin',
+    type: 'symbol',
+    source: 'venues',
+    filter: ['!', ['has', 'point_count']],
+    layout: {
+      ...pinLayout,
+      ...labelLayout,
+      'icon-image': 'pin-venue',
+      'text-field': ['get', 'label'],
+      'text-size': 14,
+    },
+    paint: { 'text-color': '#ffffff' },
+  });
+}
 
-  const locateBtn = container.querySelector('#locate-btn');
-  if (locateBtn) {
-    locateBtn.addEventListener('click', () => {
-      if (!('geolocation' in navigator)) {
-        showToast("This device doesn't support location.");
-        return;
-      }
-      locateBtn.disabled = true;
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          locateBtn.disabled = false;
-          const { latitude, longitude } = pos.coords;
-          const { x, y } = projector.project(latitude, longitude);
-          if (x < full.x || x > full.x + full.w || y < full.y || y > full.y + full.h) {
-            showToast("You're outside the map area.");
-            return;
-          }
-          const dot = svg.querySelector('.you-are-here');
-          if (!dot) return;
-          dot.setAttribute('transform', `translate(${x} ${y})`);
-          dot.classList.remove('you-are-here--idle');
-        },
-        (err) => {
-          locateBtn.disabled = false;
-          if (err.code === err.PERMISSION_DENIED) showToast('Location permission denied.');
-          else showToast("Couldn't get your location.");
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
+/**
+ * Transit pins are limited to stops near the festival. The SVG map measures that
+ * distance in projected SVG meters from home_center; measuring it in real meters
+ * from the same point is the same test, without needing the projector here.
+ */
+function makeTransitFilter(home) {
+  const [homeLng, homeLat] = home;
+  const mPerDegLat = 111320;
+  const mPerDegLng = mPerDegLat * Math.cos((homeLat * Math.PI) / 180);
+  return (lat, lng) =>
+    Math.hypot((lng - homeLng) * mPerDegLng, (lat - homeLat) * mPerDegLat) <= TRANSIT_PIN_RADIUS_M;
+}
+
+function wirePinTaps(map, { venues, transitById, content, maxZoom }) {
+  const venueById = new Map(venues.map((v) => [v.id, v]));
+  // Topmost first, so an overlap resolves the way the SVG map's paint order does.
+  const PIN_LAYERS = ['venue-pin', 'venue-cluster', 'sponsor-generic-pin', 'sponsor-featured-pin', 'transit-pin'];
+
+  const openTransit = (id) => {
+    const stop = transitById.get(id);
+    if (stop) openTransitSheet(stop, stop.lines.map((l) => TRANSIT_LINE_NAME[l] || l));
+  };
+
+  map.on('click', (e) => {
+    // A box around the touch point, not the pixel under it: this is how the SVG
+    // map's deliberately oversized diamond hit targets are reproduced without
+    // growing the icons themselves.
+    const box = [
+      [e.point.x - TAP_SLOP_PX, e.point.y - TAP_SLOP_PX],
+      [e.point.x + TAP_SLOP_PX, e.point.y + TAP_SLOP_PX],
+    ];
+    for (const layer of PIN_LAYERS) {
+      const hits = map.queryRenderedFeatures(box, { layers: [layer] });
+      if (!hits.length) continue;
+      const f = hits[0];
+      if (layer === 'venue-pin') openVenueSheet(f.properties.id);
+      else if (layer === 'venue-cluster') expandCluster(map, f, { venueById, maxZoom });
+      else if (layer === 'transit-pin') openTransit(f.properties.id);
+      else openSponsorSheet(f.properties.id);
+      return;
+    }
+  });
+
+  // Desktop affordance for the side-by-side comparison; harmless on touch.
+  for (const layer of PIN_LAYERS) {
+    map.on('mouseenter', layer, () => {
+      map.getCanvas().style.cursor = 'pointer';
+    });
+    map.on('mouseleave', layer, () => {
+      map.getCanvas().style.cursor = '';
     });
   }
+}
 
-  return () => interaction.destroy();
+/**
+ * Tapping a cluster zooms until its venues separate. When they can't -- two
+ * venues in this sheet share identical coordinates, and coincident points have
+ * no expansion zoom -- it lists them instead, so the pin underneath is reachable
+ * either way. That case is the whole reason the overlapping-pin item was open.
+ */
+function expandCluster(map, feature, { venueById, maxZoom }) {
+  const source = map.getSource('venues');
+  const clusterId = feature.properties.cluster_id;
+  const coords = feature.geometry.coordinates;
+
+  Promise.all([
+    source.getClusterExpansionZoom(clusterId),
+    source.getClusterLeaves(clusterId, Infinity, 0),
+  ])
+    .then(([zoom, leaves]) => {
+      if (zoom <= maxZoom && zoom > map.getZoom() + 0.01) {
+        map.easeTo({ center: coords, zoom, duration: 400 });
+        return;
+      }
+      const items = leaves.map((l) => ({ label: l.properties.name, id: l.properties.id }));
+      openPickerSheet(`${items.length} venues here`, items, (picked) => openVenueSheet(picked.id));
+    })
+    .catch(() => {
+      /* a cluster that can't be resolved just doesn't respond to the tap */
+    });
+}
+
+function wireControls(container, map, { home, homeZoom, maxZoom, cleanupFns }) {
+  const on = (id, handler) => {
+    const el = container.querySelector(id);
+    if (!el) return;
+    el.addEventListener('click', handler);
+    cleanupFns.push(() => el.removeEventListener('click', handler));
+  };
+  on('#zoom-in', () => map.zoomIn());
+  on('#zoom-out', () => map.zoomOut());
+  on('#zoom-reset', () => map.easeTo({ center: home, zoom: homeZoom, duration: 400 }));
+
+  // The engine's own double-tap zooms in; the SVG map additionally sends a
+  // double-tap at maximum zoom back to the home view, which is the only way out
+  // of a close view without pinching. Kept.
+  const onDblClick = (e) => {
+    if (map.getZoom() < maxZoom - 0.05) return;
+    e.preventDefault();
+    map.easeTo({ center: home, zoom: homeZoom, duration: 400 });
+  };
+  map.on('dblclick', onDblClick);
+  cleanupFns.push(() => map.off('dblclick', onDblClick));
+}
+
+function wireLocate(container, map, Marker, { west, east, south, north, cleanupFns }) {
+  const locateBtn = container.querySelector('#locate-btn');
+  if (!locateBtn) return;
+  let marker = null;
+
+  const handler = () => {
+    if (!('geolocation' in navigator)) {
+      showToast("This device doesn't support location.");
+      return;
+    }
+    locateBtn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        locateBtn.disabled = false;
+        const { latitude, longitude } = pos.coords;
+        if (longitude < west || longitude > east || latitude < south || latitude > north) {
+          showToast("You're outside the map area.");
+          return;
+        }
+        // A DOM marker rather than a circle layer: the pulse is CSS, so it keeps
+        // honoring prefers-reduced-motion the way the SVG map's dot does.
+        if (!marker) {
+          const el = document.createElement('div');
+          el.className = 'you-are-here-gl';
+          el.dataset.testid = 'you-are-here';
+          el.innerHTML = '<span class="you-are-here-gl__pulse"></span><span class="you-are-here-gl__core"></span>';
+          marker = new Marker({ element: el }).setLngLat([longitude, latitude]).addTo(map);
+        } else {
+          marker.setLngLat([longitude, latitude]);
+        }
+      },
+      (err) => {
+        locateBtn.disabled = false;
+        if (err.code === err.PERMISSION_DENIED) showToast('Location permission denied.');
+        else showToast("Couldn't get your location.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  };
+  locateBtn.addEventListener('click', handler);
+  cleanupFns.push(() => {
+    locateBtn.removeEventListener('click', handler);
+    if (marker) marker.remove();
+  });
 }

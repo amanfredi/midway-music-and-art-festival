@@ -792,6 +792,62 @@ html:has(dialog.sheet[open]) {
   display: block;
 }
 
+/* SPIKE (maplibre-spike branch): the MapLibre canvas host, sized by the same
+   square wrapper the inline SVG used, so the frame and its controls are
+   identical between the two implementations. */
+.map-gl {
+  width: 100%;
+  height: 100%;
+}
+
+.map-mode-note {
+  max-width: 560px;
+  margin: 0.4rem auto 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* The you-are-here dot is a DOM marker here rather than an SVG node, so the
+   pulse stays a CSS animation and keeps honoring prefers-reduced-motion. */
+.you-are-here-gl {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+
+.you-are-here-gl__core,
+.you-are-here-gl__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.you-are-here-gl__core {
+  background: #2f6fa0;
+  border: 2px solid #fff;
+}
+
+.you-are-here-gl__pulse {
+  background: rgba(47, 111, 160, 0.35);
+  animation: pulse 2s ease-out infinite;
+  transform-origin: center;
+}
+
+/* Buttons inside the picker sheet sit where links do in the venue sheet, so
+   they need the link's reset rather than the app's button chrome. */
+.sheet__picker-btn {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .map-loading {
   padding: 3rem 1rem;
   text-align: center;
@@ -994,7 +1050,8 @@ html:has(dialog.sheet[open]) {
 /* -- reduced motion: the only non-essential animation/transitions in the app
    are the you-are-here pulse and the toast fade/slide-in -- */
 @media (prefers-reduced-motion: reduce) {
-  .you-are-here__pulse {
+  .you-are-here__pulse,
+  .you-are-here-gl__pulse {
     animation: none;
   }
 

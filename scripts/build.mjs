@@ -49,6 +49,22 @@ const SPONSOR_TIERS = [
 const SPONSOR_TIER_BY_SLUG = new Map(SPONSOR_TIERS.map((t) => [t.slug, t]));
 
 const SOURCE_ORDER = ["venues", "events", "vendors", "sponsors", "settings"];
+const SOURCE_LABEL = {
+  venues: "venues.csv",
+  events: "events.csv",
+  vendors: "vendors.csv",
+  sponsors: "sponsors.csv",
+  settings: "settings.csv",
+};
+// The columns each tab must carry, per CONTRACTS.md. Extra columns beyond these
+// are still ignored — coordinators keep notes columns in the sheet.
+const EXPECTED_COLUMNS = {
+  venues: ["id", "name", "address", "location", "description", "url"],
+  events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description"],
+  vendors: ["id", "name", "type", "description", "location"],
+  sponsors: ["id", "name", "tier", "blurb", "logo", "url", "location"],
+  settings: ["key", "value"],
+};
 
 // ---------------------------------------------------------------------------
 // RFC 4180 CSV parsing
@@ -133,13 +149,42 @@ function rowsToRecords(rows) {
 // Loading sources (local file or https URL)
 // ---------------------------------------------------------------------------
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
+/**
+ * Sources are fetched over the public internet, where http:// content can be
+ * rewritten in transit — CONTRACTS.md requires https. Loopback is exempt because
+ * it never leaves the machine; the test suite serves its fixtures that way.
+ */
+function sourceSchemeError(key, value) {
+  if (!/^http:\/\//i.test(value)) return null;
+  let host;
+  try {
+    host = new URL(value).host.replace(/:\d+$/, "");
+  } catch {
+    host = "";
+  }
+  if (LOOPBACK_HOSTS.has(host)) return null;
+  return `source "${key}" (${value}) must use an https:// URL — http:// is not accepted for content sources.`;
+}
+
 async function loadSource(key, value) {
   const isUrl = /^https?:\/\//i.test(value);
   try {
     if (isUrl) {
+      const schemeError = sourceSchemeError(key, value);
+      if (schemeError) return { error: schemeError };
       const res = await fetch(value);
       if (!res.ok) {
         return { error: `source "${key}" (${value}) returned HTTP ${res.status}.` };
+      }
+      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim();
+      if (/^text\/html$/i.test(contentType)) {
+        return {
+          error:
+            `source "${key}" (${value}) returned an HTML page, not CSV (content-type "${contentType}"). ` +
+            `Check that the sheet tab is still published to the web as CSV and the link hasn't turned into a sign-in page.`,
+        };
       }
       const buffer = Buffer.from(await res.arrayBuffer());
       return { buffer, text: buffer.toString("utf8") };
@@ -161,6 +206,62 @@ async function loadSource(key, value) {
 
 function errorMsg(fileLabel, rowNum, identifier, message) {
   return `${fileLabel} row ${rowNum} ("${identifier}"): ${message}`;
+}
+
+/**
+ * Header cells become record keys verbatim, so a column renamed in the sheet is
+ * indistinguishable from a column added — and the renamed one comes out blank
+ * for every row with nothing to show for it. Extra columns stay legal, but a
+ * known column has to be spelled exactly.
+ */
+function validateHeader(key, header) {
+  const fileLabel = SOURCE_LABEL[key];
+  const expected = EXPECTED_COLUMNS[key];
+  const errors = [];
+  const present = new Set(header);
+  const normalize = (cell) => String(cell).toLowerCase().replace(/\s+/g, "");
+  const byNormalized = new Map(expected.map((column) => [normalize(column), column]));
+
+  // A near-miss explains the column it was meant to be, so that column isn't
+  // also reported as missing.
+  const explained = new Set();
+  for (const cell of header) {
+    if (present.has(cell) && expected.includes(cell)) continue;
+    const intended = byNormalized.get(normalize(cell));
+    if (!intended || present.has(intended)) continue;
+    errors.push(
+      `${fileLabel}: header column "${cell}" differs from the expected "${intended}" only in capitalization or spacing. ` +
+        `Column names must match exactly, so "${cell}" is read as an extra notes column and "${intended}" would come out blank on every row.`
+    );
+    explained.add(intended);
+  }
+
+  for (const column of expected) {
+    if (present.has(column) || explained.has(column)) continue;
+    errors.push(
+      `${fileLabel}: expected column "${column}" is missing from the header row (found: ${header.join(", ")}).`
+    );
+  }
+  return errors;
+}
+
+/**
+ * An emptied tab used to build clean and deploy an empty guide over a working
+ * one — the one case where "the last good version stays live" did not hold.
+ */
+function validateSourceShape(key, sourceValue, parsed) {
+  const fileLabel = SOURCE_LABEL[key];
+  if (parsed.header.length === 0) {
+    return [`${fileLabel} (${sourceValue}) is empty — no header row, no rows.`];
+  }
+  const errors = validateHeader(key, parsed.header);
+  if (parsed.records.length === 0) {
+    errors.push(
+      `${fileLabel} (${sourceValue}) has a header row but no data rows. ` +
+        `Publishing this would replace the live ${key} with nothing, so the build stops instead.`
+    );
+  }
+  return errors;
 }
 
 function identifierFor(record, field) {
@@ -423,7 +524,7 @@ function validateVendors(records) {
   return { errors, clean };
 }
 
-function validateEvents(records, venueIds, skipVenueRefCheck) {
+function validateEvents(records, venueIds) {
   const fileLabel = "events.csv";
   const errors = [
     ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "date", "start_time", "end_time"], "title"),
@@ -434,7 +535,7 @@ function validateEvents(records, venueIds, skipVenueRefCheck) {
   for (const rec of records) {
     const ident = identifierFor(rec, "title");
     const venueId = rec.fields.venue_id;
-    if (venueId && String(venueId).trim() !== "" && !skipVenueRefCheck && !venueIds.has(venueId)) {
+    if (venueId && String(venueId).trim() !== "" && !venueIds.has(venueId)) {
       errors.push(
         errorMsg(fileLabel, rec.rowNum, ident, `venue_id "${venueId}" doesn't match any venue in the venues tab.`)
       );
@@ -679,6 +780,13 @@ async function resolveSponsorLogos(records) {
 // Main
 // ---------------------------------------------------------------------------
 
+function reportErrorsAndExit(errors) {
+  console.error(`Found ${errors.length} content error(s):\n`);
+  for (const e of errors) console.error(`  - ${e}`);
+  console.error(`\nFix the field(s) above in the spreadsheet/CSV and re-run the build.`);
+  process.exit(1);
+}
+
 /**
  * Accepts the config path either positionally or as --config, and the output
  * root as --out; tests build into a temp dir so they never overwrite the
@@ -749,7 +857,13 @@ async function main() {
   const parsed = {};
   for (const key of SOURCE_ORDER) {
     parsed[key] = loaded[key] ? rowsToRecords(parseCSV(loaded[key].text)) : { header: [], records: [] };
+    if (loaded[key]) errors.push(...validateSourceShape(key, sources[key], parsed[key]));
   }
+
+  // A source that wouldn't load, a header that can't be read, or an emptied tab
+  // makes every row-level message downstream a misreading of the file, so those
+  // are reported on their own rather than buried under hundreds of them.
+  if (errors.length > 0) reportErrorsAndExit(errors);
 
   // Before any validation: ids and venue_id references become slugs, so
   // duplicate detection and the foreign-key check below compare like with like.
@@ -765,7 +879,7 @@ async function main() {
   const sponsorFieldErrors = validateSponsorFields(parsed.sponsors.records);
 
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
-  const eventsResult = validateEvents(parsed.events.records, venueIds, loaded.venues === null);
+  const eventsResult = validateEvents(parsed.events.records, venueIds);
 
   const { errors: logoErrors, resolved: logoFiles } = await resolveSponsorLogos(parsed.sponsors.records);
 
@@ -778,12 +892,7 @@ async function main() {
     ...logoErrors
   );
 
-  if (errors.length > 0) {
-    console.error(`Found ${errors.length} content error(s):\n`);
-    for (const e of errors) console.error(`  - ${e}`);
-    console.error(`\nFix the field(s) above in the spreadsheet/CSV and re-run the build.`);
-    process.exit(1);
-  }
+  if (errors.length > 0) reportErrorsAndExit(errors);
 
   // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
   // tier rewritten from the CSV slug to its display label + intrinsic rank).

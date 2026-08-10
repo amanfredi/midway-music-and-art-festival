@@ -56,13 +56,23 @@ including `site/assets/transit.json`.
 
 Each value is a repo-relative file path **or** an `https://` URL (a Google Sheet
 tab "published to web" as CSV). `build.mjs` must treat both identically after
-loading. Swapping placeholder → real sheet changes only this file.
+loading. Swapping placeholder → real sheet changes only this file. `http://` is
+rejected, except on loopback hosts — the test suite serves fixtures that way.
+A fetched source whose content-type is `text/html` is rejected: that is a
+sign-in or error page, not the tab.
 
 ## CSV schemas (Google Sheet tab shapes)
 
 Header row required, exact snake_case column names. Extra columns are ignored
-(coordinators may keep notes columns). All CSV parsing is RFC 4180 (quoted
-fields, embedded commas/newlines/quotes).
+(coordinators may keep notes columns), but every column listed below must be
+present and spelled exactly: a missing one is a build error, and one that
+matches only case- or whitespace-insensitively (`Description`, `url `) is a
+build error naming both spellings — otherwise a rename is indistinguishable
+from a notes column and silently blanks that field for every row. All CSV
+parsing is RFC 4180 (quoted fields, embedded commas/newlines/quotes).
+
+A source that yields no data rows is a build error too: an emptied tab must not
+publish an empty guide over a working one.
 
 **Ids are normalized, not rejected.** Every `id` — and `events.venue_id` — is
 slugified at build time: lowercased, with everything outside `[a-z0-9-]`
@@ -98,10 +108,10 @@ rows that slugify to the same id. The build prints every rewrite it made.
 - `venue_id` must exist in venues.
 - `kind`: one of `music|art|performance|literary|vendor|other` (optional,
   default `music`).
-- `tickets`: optional, exact values (sheet dropdown enforces): `General
-  Admission` (default when blank or column missing) · `General Admission
-  (limited capacity)` · `Free Ticket Required` · `Paid Ticket Required`. Any
-  other value is a build error.
+- `tickets`: the column is required, its value optional — exact values (sheet
+  dropdown enforces): `General Admission` (default when blank) · `General
+  Admission (limited capacity)` · `Free Ticket Required` · `Paid Ticket
+  Required`. Any other value is a build error.
 - `age_limit`: optional, blank (the default — all ages) or exactly `18+` or
   `21+`. Any other value is a build error. Blank stays blank in content.json;
   the two set values render a badge in every event row.
@@ -147,7 +157,10 @@ rows that slugify to the same id. The build prints every rewrite it made.
 Any violation **fails the build (exit 1)** with messages a non-programmer can
 act on. Format: `events.csv row 14 ("Sunset Set"): venue_id "blue-moon" doesn't
 match any venue in the venues tab.` Row numbers are spreadsheet rows (header =
-row 1). Check: required fields, duplicate ids, unknown venue_id references,
+row 1). Structural problems — a source that wouldn't load, a header missing or
+misspelling a known column, a tab with no data rows — are reported together and
+stop the build before row checks run, because every row message downstream of
+them is a misreading of the file. Row checks: required fields, duplicate ids, unknown venue_id references,
 date/time format and calendar validity, `end_time` equal to `start_time`,
 `location` parseable (decimal pair or plus code) and resolving inside bbox
 [44.94..44.98, -93.20..-93.13] (catches swapped lat/lng), unknown

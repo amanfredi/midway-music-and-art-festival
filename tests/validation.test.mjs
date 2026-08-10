@@ -9,12 +9,21 @@
 
 import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { makeFixtureSet, setCell } from "./fixture-sets.mjs";
+import {
+  addColumn,
+  dropColumn,
+  dropDataRows,
+  makeFixtureSet,
+  renameHeader,
+  replaceBody,
+  setCell,
+} from "./fixture-sets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -41,6 +50,53 @@ function runBuild(configPath) {
     encoding: "utf8",
   });
   return Object.assign(result, { outDir, contentPath: path.join(outDir, "data/content.json") });
+}
+
+/**
+ * The async twin of runBuild, for the cases whose sources are served by the
+ * loopback server below: spawnSync would block this process's event loop, and
+ * the server that has to answer the child's fetch lives in it.
+ */
+function runBuildAsync(configPath) {
+  const outDir = path.join(TMP_ROOT, `out-${++outCounter}`);
+  const child = spawn(process.execPath, [BUILD_SCRIPT, configPath, "--out", outDir], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  child.stderr.on("data", (chunk) => (stderr += chunk));
+  return new Promise((resolve) => {
+    child.on("close", (status) =>
+      resolve({ status, stdout, stderr, outDir, contentPath: path.join(outDir, "data/content.json") })
+    );
+  });
+}
+
+/**
+ * Serves fixed responses on loopback so the fetch paths (content sources and
+ * sponsor logo URLs) can be exercised without reaching the network.
+ * `routes` maps a path to `{ type, body }`.
+ */
+async function withLocalServer(routes, run) {
+  const server = createServer((req, res) => {
+    const route = routes[req.url];
+    if (!route) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, { "content-type": route.type });
+    res.end(route.body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    return await run(origin);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 // Hermetic all-local config: the default content/config.json points the venues
@@ -327,4 +383,92 @@ describe("bad fixtures", () => {
       assert.ok(!result.stderr.includes("undefined"), `"${name}" stderr should not contain "undefined"`);
     });
   }
+});
+
+describe("source shape and headers", () => {
+  test("a header respelled only in capitalization names both spellings", () => {
+    const config = makeFixtureSet(TMP_ROOT, "header-case", [renameHeader("venues.csv", "description", "Description")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a respelled header should fail the build");
+    assert.match(result.stderr, /venues\.csv/);
+    assert.ok(result.stderr.includes('"Description"'), `stderr should quote the sheet's spelling\n${result.stderr}`);
+    assert.ok(result.stderr.includes('"description"'), `stderr should quote the expected spelling\n${result.stderr}`);
+  });
+
+  test("a header with stray whitespace names both spellings", () => {
+    const config = makeFixtureSet(TMP_ROOT, "header-space", [renameHeader("events.csv", "start_time", "start_time ")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a space-padded header should fail the build");
+    assert.ok(result.stderr.includes('"start_time "'), `stderr should quote the padded spelling\n${result.stderr}`);
+    assert.ok(result.stderr.includes('"start_time"'), `stderr should quote the expected spelling\n${result.stderr}`);
+  });
+
+  test("a known column missing from the header fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "header-missing", [dropColumn("vendors.csv", "type")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a missing column should fail the build");
+    assert.match(result.stderr, /vendors\.csv/);
+    assert.ok(result.stderr.includes('"type"'), `stderr should name the missing column\n${result.stderr}`);
+  });
+
+  test("columns the schema doesn't know about are still ignored", () => {
+    // Coordinators keep notes columns in the sheet; only known columns are
+    // spell-checked.
+    const config = makeFixtureSet(TMP_ROOT, "extra-column", [
+      addColumn("venues.csv", "coordinator notes", "call before 9am"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.ok(!("coordinator notes" in content.venues[0]), "unknown columns should not reach content.json");
+  });
+
+  test("a tab emptied of its rows fails instead of publishing an empty guide", () => {
+    const config = makeFixtureSet(TMP_ROOT, "no-rows", [dropDataRows("vendors.csv")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a header-only source should fail the build");
+    assert.match(result.stderr, /vendors\.csv/);
+    assert.match(result.stderr, /no data rows/);
+  });
+
+  test("a completely empty source is reported as empty", () => {
+    const config = makeFixtureSet(TMP_ROOT, "empty-file", [replaceBody("settings.csv", "")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an empty source should fail the build");
+    assert.match(result.stderr, /settings\.csv/);
+    assert.match(result.stderr, /empty/);
+  });
+
+  test("a source that answers with an HTML page is rejected as not-CSV", async () => {
+    await withLocalServer(
+      { "/venues": { type: "text/html; charset=utf-8", body: "<!doctype html><title>Sign in</title>" } },
+      async (origin) => {
+        const config = makeFixtureSet(TMP_ROOT, "html-source", [], { venues: `${origin}/venues` });
+        const result = await runBuildAsync(config);
+        assert.notEqual(result.status, 0, "an HTML body should fail the build");
+        assert.match(result.stderr, /HTML page/);
+        assert.match(result.stderr, /published to the web as CSV/);
+      }
+    );
+  });
+
+  test("a CSV served over the network builds like a local file", async () => {
+    const venuesCsv = readFileSync(path.join(REPO_ROOT, "content/fixtures/venues.csv"), "utf8");
+    await withLocalServer({ "/venues.csv": { type: "text/csv", body: venuesCsv } }, async (origin) => {
+      const config = makeFixtureSet(TMP_ROOT, "csv-source", [], { venues: `${origin}/venues.csv` });
+      const result = await runBuildAsync(config);
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+      const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+      assert.ok(content.venues.length > 0);
+    });
+  });
+
+  test("an http:// source that isn't loopback is rejected", () => {
+    const config = makeFixtureSet(TMP_ROOT, "http-source", [], {
+      venues: "http://sheets.example.com/venues.csv",
+    });
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an http:// source should fail the build");
+    assert.match(result.stderr, /https:\/\//);
+  });
 });

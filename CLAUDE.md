@@ -40,9 +40,10 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
   `content/fixtures/venues.csv` is only a committed snapshot of it.
 - Events/vendors/sponsors/settings are still placeholder fixtures; swapping
   each to the sheet is a one-line change in `content/config.json`.
-- Test code builds from local fixtures (`tests/fixtures-good/`,
-  `tests/fixtures-bad/`) — keep tests off the network. `npm test`'s initial
-  `npm run build` still fetches the live venues sheet.
+- Tests build from local fixtures only — keep them off the network. `npm test`
+  builds `site/` from `tests/fixtures-good/config.json`; the broken cases are
+  generated from the good fixtures by `tests/fixture-sets.mjs` into temp dirs.
+  `npm run build` (live sheet) is what the deploy workflow runs.
 
 ## Conventions
 

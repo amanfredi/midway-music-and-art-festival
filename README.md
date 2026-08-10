@@ -30,7 +30,8 @@ dependencies; `npm install` is only needed for the test tooling (Playwright).
 
 ```sh
 npm install            # one-time, dev tooling only
-npm run build          # CSV fixtures -> site/data/content.json + site/sw.js
+npm run build          # content sources -> site/data/content.json + site/sw.js
+                       # (venues comes from the live sheet; the rest are fixtures)
 npm run serve          # http://localhost:4173
 ```
 
@@ -47,13 +48,22 @@ While developing:
 
 ```sh
 npx playwright install chromium   # one-time browser download
-npm test                          # build + unit tests + Playwright offline test
+npm test                          # fixture build + unit tests + Playwright offline test
 ```
+
+`npm test` needs no network: it builds `site/` from the local fixtures
+(`npm run build:fixtures`, content and service worker together) and serves that
+to Playwright, so the suite runs on a tree one build actually produced. Run
+`npm run build` afterwards to put the live sheet's content back.
 
 The Playwright suite is the automated acceptance test: it loads the site, waits
 for the service worker, stars an event, goes offline, reloads, and asserts
 the schedule, map, sponsor logos, and the star all still work. Run it before
 trusting any change to caching or the build.
+
+The build tests run `scripts/build.mjs` against generated copies of the good
+fixtures — one deliberately broken cell each (`tests/fixture-sets.mjs`) — into
+throwaway output directories, so they never disturb `site/`.
 
 ## Deploy
 
@@ -105,7 +115,9 @@ the 6-hour schedule in `.github/workflows/rebuild-content.yml` or on demand
 Run workflow). Validation errors —
 misspelled venue ids, bad dates, missing fields — fail the build with a
 message naming the tab, row, and problem; the live site stays on the last
-good version.
+good version. A renamed or space-padded column header, a tab emptied of its
+rows, and a publish link that starts answering with a sign-in page fail the
+same way rather than quietly publishing a hole.
 
 ### During the festival
 

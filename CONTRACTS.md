@@ -407,6 +407,11 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 
 - Plain ES modules, no runtime deps. `package.json` is owned by
   the orchestrator — agents report needed devDependencies instead of editing it.
-- npm scripts: `build` (content+sw), `serve`, `test` (node --test + Playwright).
+- npm scripts: `build` (content+sw from `content/config.json`), `build:fixtures`
+  (the same, from the local fixtures — what `test` uses so it needs no
+  network), `serve`, `test` (node --test + Playwright).
+- `build.mjs` takes `--config <path>` (or a positional path) and `--out <dir>`;
+  `build-sw.mjs` takes `--site <dir>`. Both default to `site/`, so tests build
+  into temp dirs without disturbing the deployable tree.
 - Mobile-first, light theme, system fonts, 44px+ touch targets, WCAG AA contrast.
 - Content that is intentionally placeholder should not refer to real businesses or artists, because that would inappropriately connect real people to an event that they are not necessarily involved in on a public website.

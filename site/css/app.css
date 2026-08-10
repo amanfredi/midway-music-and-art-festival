@@ -54,6 +54,14 @@
    lets the banner and logo scroll off while `position: sticky` control bars
    pin to the top of the viewport. Don't reintroduce a height constraint here
    (QA, 2026-08-08). */
+/* The tab bar is fixed over the bottom of the page, so a control scrolled
+   flush with the window bottom lands underneath it. Reserving its height
+   keeps the browser's own scroll-into-view — the one that runs on Tab —
+   clear of the bar. */
+html {
+  scroll-padding-bottom: calc(var(--tab-bar-height) + var(--safe-bottom) + 8px);
+}
+
 body {
   margin: 0;
   min-height: 100dvh;

@@ -214,6 +214,32 @@ test('the map opens at the home view, not the full extent, and can pan in every 
   expect((await parseVb())[2]).toBeGreaterThan(w0);
 });
 
+// The map view is where this reproduces — its venue key list is the longest
+// run of focusables below the fold — but the mechanism is generic: the tab
+// bar is fixed over the bottom of every route.
+test('tabbing down the map view never parks focus behind the fixed tab bar', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/' + T + '#/map');
+  await expect(page.locator('#circuit-map')).toBeVisible();
+
+  const obscured = [];
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Tab');
+    const covered = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      const r = el.getBoundingClientRect();
+      if (!r.width && !r.height) return null;
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (hit && (hit === el || el.contains(hit))) return null;
+      return `${el.getAttribute('aria-label') || el.textContent.trim().slice(0, 40) || el.tagName} (covered by ${hit ? hit.tagName + '.' + hit.className : 'nothing — off screen'})`;
+    });
+    if (covered) obscured.push(covered);
+  }
+
+  expect(obscured).toEqual([]);
+});
+
 test('map canvas is keyboard-focusable and arrow keys pan it once zoomed in', async ({ page }) => {
   await page.goto('/' + T + '#/map');
   const svg = page.locator('#circuit-map');

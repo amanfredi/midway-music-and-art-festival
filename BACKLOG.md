@@ -145,6 +145,8 @@ Events, vendors, sponsors and settings are still placeholder fixtures. Each
 becomes real with a one-line change in `content/config.json` pointing at a
 published sheet tab.
 
+- Should we try to translate the content to multiple languages? Limited English Proficiency languages in Saint Paul are Spanish, Hmong, Karen, and Somali.
+
 ## Needs a real device
 
 None of these can be checked from the screenshot harness or the test suite.

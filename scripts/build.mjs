@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 // Reads content/config.json, loads the 5 content CSVs (local file or https URL),
-// validates them per CONTRACTS.md, and emits site/data/content.json plus
-// copies of sponsor logos into site/assets/sponsors/. Zero npm dependencies.
+// validates them per CONTRACTS.md, and emits <out>/data/content.json plus
+// copies of sponsor logos into <out>/assets/sponsors/. Zero npm dependencies.
 //
-// Usage: node scripts/build.mjs [path/to/config.json]   (defaults to content/config.json)
+// Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
+//   config defaults to content/config.json, out defaults to site/
 
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { parseLocation } from "./location.mjs";
 
 const CWD = process.cwd();
 const LOGOS_DIR = path.join(CWD, "content/fixtures/logos");
-const SITE_DATA_DIR = path.join(CWD, "site/data");
-const SPONSORS_OUT_DIR = path.join(CWD, "site/assets/sponsors");
-const CONTENT_JSON_PATH = path.join(SITE_DATA_DIR, "content.json");
+const DEFAULT_CONFIG = "content/config.json";
+const DEFAULT_OUT_DIR = "site";
 
 const BBOX = { latMin: 44.94, latMax: 44.98, lngMin: -93.2, lngMax: -93.13 };
 const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
@@ -678,9 +679,45 @@ async function resolveSponsorLogos(records) {
 // Main
 // ---------------------------------------------------------------------------
 
+/**
+ * Accepts the config path either positionally or as --config, and the output
+ * root as --out; tests build into a temp dir so they never overwrite the
+ * deployable site/ tree.
+ */
+function parseArgs(argv) {
+  let configArg = null;
+  let outArg = null;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--config" || arg === "--out") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("--")) return { error: `${arg} needs a path.` };
+      if (arg === "--config") configArg = value;
+      else outArg = value;
+      i += 1;
+    } else if (arg.startsWith("--")) {
+      return { error: `unknown option "${arg}" (supported: --config <path>, --out <dir>).` };
+    } else if (configArg === null) {
+      configArg = arg;
+    } else {
+      return { error: `unexpected argument "${arg}".` };
+    }
+  }
+  return { configArg: configArg ?? DEFAULT_CONFIG, outArg: outArg ?? DEFAULT_OUT_DIR };
+}
+
 async function main() {
-  const configArg = process.argv[2] || "content/config.json";
+  const args = parseArgs(process.argv.slice(2));
+  if (args.error) {
+    console.error(`Cannot start the build: ${args.error}`);
+    process.exit(1);
+  }
+  const { configArg, outArg } = args;
   const configPath = path.resolve(CWD, configArg);
+  const outDir = path.resolve(CWD, outArg);
+  const siteDataDir = path.join(outDir, "data");
+  const sponsorsOutDir = path.join(outDir, "assets/sponsors");
+  const contentJsonPath = path.join(siteDataDir, "content.json");
 
   let config;
   try {
@@ -793,21 +830,28 @@ async function main() {
     sponsors,
   };
 
-  mkdirSync(SITE_DATA_DIR, { recursive: true });
-  mkdirSync(SPONSORS_OUT_DIR, { recursive: true });
-  writeFileSync(CONTENT_JSON_PATH, JSON.stringify(content, null, 2) + "\n");
+  mkdirSync(siteDataDir, { recursive: true });
+  mkdirSync(sponsorsOutDir, { recursive: true });
+  writeFileSync(contentJsonPath, JSON.stringify(content, null, 2) + "\n");
 
   for (const { filename, buffer } of logoFiles.values()) {
-    writeFileSync(path.join(SPONSORS_OUT_DIR, filename), buffer);
+    writeFileSync(path.join(sponsorsOutDir, filename), buffer);
   }
 
+  const relativeOut = path.relative(CWD, contentJsonPath);
+  const shownPath = relativeOut && !relativeOut.startsWith("..") ? relativeOut : contentJsonPath;
   console.log(
-    `Built site/data/content.json: ${content.venues.length} venues, ${content.events.length} events, ` +
+    `Built ${shownPath}: ${content.venues.length} venues, ${content.events.length} events, ` +
       `${content.vendors.length} vendors, ${content.sponsors.length} sponsors, version ${version}`
   );
 }
 
-main().catch((err) => {
-  console.error(`Unexpected build error: ${err.stack || err.message}`);
-  process.exit(1);
-});
+// Only build when run as a script; tests import this module for its CSV parser.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => {
+    console.error(`Unexpected build error: ${err.stack || err.message}`);
+    process.exit(1);
+  });
+}
+
+export { parseCSV, rowsToRecords };

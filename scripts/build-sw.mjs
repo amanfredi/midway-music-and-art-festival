@@ -1,17 +1,20 @@
-// Generates site/sw.js from scripts/sw.template.js: precache list of every file
-// in site/ plus a version hash, so any content or code change produces a new
-// service worker and a coherent full re-precache on clients.
+// Generates <site>/sw.js from scripts/sw.template.js: precache list of every file
+// in the site tree plus a version hash, so any content or code change produces a
+// new service worker and a coherent full re-precache on clients.
+//
+// Usage: node scripts/build-sw.mjs [--site dir]   (defaults to site/)
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SITE = join(ROOT, 'site');
+const siteFlag = process.argv.indexOf('--site');
+const SITE = siteFlag === -1 ? join(ROOT, 'site') : resolve(process.cwd(), process.argv[siteFlag + 1] ?? '');
 
 if (!existsSync(join(SITE, 'data', 'content.json'))) {
-  console.error('site/data/content.json is missing — run `node scripts/build.mjs` first.');
+  console.error(`${join(SITE, 'data', 'content.json')} is missing — run \`node scripts/build.mjs\` first.`);
   process.exit(1);
 }
 

@@ -7,10 +7,11 @@
 //    build fail (non-zero exit) with a human-readable message that names the
 //    offending file, row, and value.
 
-import { describe, test } from "node:test";
+import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,13 +19,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const BUILD_SCRIPT = path.join(REPO_ROOT, "scripts/build.mjs");
 
+const TMP_ROOT = mkdtempSync(path.join(os.tmpdir(), "mmaf-validation-"));
+after(() => rmSync(TMP_ROOT, { recursive: true, force: true }));
+
+let outCounter = 0;
+
+/**
+ * Runs the build in a throwaway output directory: the deployable site/ tree is
+ * built once by `npm run build:fixtures` and then served to Playwright, so unit
+ * tests must not write into it.
+ * Returns the spawn result with the output directory attached.
+ */
 function runBuild(configPath) {
+  const outDir = path.join(TMP_ROOT, `out-${++outCounter}`);
   const args = [BUILD_SCRIPT];
   if (configPath) args.push(configPath);
-  return spawnSync(process.execPath, args, {
+  args.push("--out", outDir);
+  const result = spawnSync(process.execPath, args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
   });
+  return Object.assign(result, { outDir, contentPath: path.join(outDir, "data/content.json") });
 }
 
 // Hermetic all-local config: the default content/config.json points the venues
@@ -35,11 +50,10 @@ describe("good fixtures", () => {
   test("build succeeds and emits a schema-shaped content.json", () => {
     const result = runBuild(GOOD_CONFIG);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
-    assert.match(result.stdout, /Built site\/data\/content\.json/);
+    assert.match(result.stdout, /Built .*data\/content\.json/);
 
-    const contentPath = path.join(REPO_ROOT, "site/data/content.json");
-    assert.ok(existsSync(contentPath), "site/data/content.json should exist");
-    const content = JSON.parse(readFileSync(contentPath, "utf8"));
+    assert.ok(existsSync(result.contentPath), "data/content.json should exist in the output directory");
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
 
     for (const key of ["version", "settings", "venues", "events", "vendors", "sponsors"]) {
       assert.ok(key in content, `content.json missing top-level key "${key}"`);
@@ -136,7 +150,7 @@ describe("good fixtures", () => {
       }
       if (sponsor.logo) {
         assert.match(sponsor.logo, /^assets\/sponsors\/.+/);
-        assert.ok(existsSync(path.join(REPO_ROOT, "site", sponsor.logo)), `${sponsor.logo} should exist on disk`);
+        assert.ok(existsSync(path.join(result.outDir, sponsor.logo)), `${sponsor.logo} should exist on disk`);
       }
     }
 
@@ -159,10 +173,9 @@ describe("good fixtures", () => {
 
   test("rebuilding unchanged content is byte-identical (stable service-worker version)", () => {
     const first = runBuild(GOOD_CONFIG);
-    const contentPath = path.join(REPO_ROOT, "site/data/content.json");
-    const bytes1 = readFileSync(contentPath, "utf8");
+    const bytes1 = readFileSync(first.contentPath, "utf8");
     const second = runBuild(GOOD_CONFIG);
-    const bytes2 = readFileSync(contentPath, "utf8");
+    const bytes2 = readFileSync(second.contentPath, "utf8");
     assert.equal(first.status, 0);
     assert.equal(second.status, 0);
     // Byte-identity is what keeps the generated sw.js version (a hash of all
@@ -184,7 +197,7 @@ describe("id normalization", () => {
     assert.match(result.stdout, /Normalized 2 id\(s\)/);
     assert.match(result.stdout, /"Mamas Market & Deli" -> "mamasmarketdeli"/);
 
-    const content = JSON.parse(readFileSync(path.join(REPO_ROOT, "site/data/content.json"), "utf8"));
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
     const venue = content.venues.find((v) => v.id === "mamasmarketdeli");
     assert.ok(venue, "venue id should have been slugified to mamasmarketdeli");
 

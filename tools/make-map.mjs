@@ -547,7 +547,6 @@ const STYLE = `
   .street-label  { font-family:${FONT}; text-anchor:middle; paint-order:stroke; stroke:${PAPER}; stroke-width:${t(1.1)}; stroke-linejoin:round; }
   .street-label.spine    { font-size:${t(14)}px; font-weight:700; fill:#3f3f3f; }
   .street-label.arterial { font-size:${t(11)}px; font-weight:600; fill:#565654; }
-  .attribution { font-family:${FONT}; font-size:${t(8)}px; fill:#8c8c8a; }
 
   /* Level of detail. Every label carries a lod class; the UI sets data-lod on
      the root as the user zooms, hiding anything above that level. Zoomed out,
@@ -632,9 +631,6 @@ function buildSvg({ tiers, rail, stations, labels, waterAreas = [], waterLines =
     );
   }
 
-  parts.push(
-    `<text class="attribution" x="${s(8)}" y="${(H - s(8)).toFixed(1)}">Map data © OpenStreetMap contributors</text>`
-  );
   parts.push('</svg>');
   return parts.join('\n') + '\n';
 }

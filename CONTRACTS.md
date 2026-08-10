@@ -228,7 +228,10 @@ it has no `location`, and numbers when it does.
   as a hatched blob next to the Franklin Avenue yard. Relations also identify
   the line, so Green (`#2f7d4f`) and Blue (`#2b5fa8`) draw in their own colors,
   as one thick solid stroke rather than two thin dashed ones (each direction is
-  a separate way, so thin dashes read as two railways).
+  a separate way, so thin dashes read as two railways). Both lines carry a
+  stroke swatch and their name in the HTML legend below the map; `app.css`
+  restates the two colors as `--rail-green`/`--rail-blue`, since `map.svg`
+  declares them in its own `<style>` block, and a test asserts the two agree.
 - **Level of detail.** Every map label carries a `lod0`–`lod3` class and the UI
   sets `data-lod` on the root as the view widens, hiding anything above it.
   Roughly: spines always; arterials one step in; repeats of the same street and
@@ -392,8 +395,39 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   pins currently in view, and pins panned off screen leave the tab order. So
   arrows pan when the map itself has focus and move between pins when a pin
   does.
-- **WCAG AA contrast** everywhere, including the six kind-badge tints and any
-  new pin/legend colors.
+- **Color is never the only means** of conveying information. Pins carry a
+  number, a line letter, or a fill-vs-outline difference as well as a color;
+  kind badges carry the kind word; and every symbol the map draws is named in
+  the legend below it — including the two rail lines, which are drawn at
+  identical weight and would otherwise be told apart by hue alone.
+- **Contrast, stated in full.** Text needs 4.5:1, or 3:1 for large text —
+  ≥24px, or ≥18.66px bold, **as rendered on screen**. Map type is authored in
+  map units inside a counter-scaled group, so its rendered size is
+  `units × frame ÷ 3000` and tops out at the 560px frame cap; it is never
+  large text at any frame width, whatever the authored number says. Non-text
+  needs 3:1: UI component boundaries and states, and graphical objects needed
+  to understand the content. In scope: the six kind-badge tints, every pin and
+  legend color, the star button's pressed state, and every `<text>` element in
+  `site/assets/map.svg` — whose colors live in that file's own `<style>`
+  block, not in `app.css`.
+- **Reflow and text spacing at 320px.** No two-dimensional scrolling on any
+  route at a 320px viewport, and applying the four WCAG text-spacing overrides
+  (line-height 1.5, letter 0.12em, word 0.16em, paragraph 2em) must not push
+  content out of its box or off the page. A control bar wider than the
+  viewport scrolls within itself; it never widens the document. The map frame
+  is within the criterion's two-dimensional-layout exception — the legend,
+  attribution and venue key list below it are not.
+- **Focus is never obscured.** `.tab-bar` is fixed over the bottom of every
+  route, so `html` carries a `scroll-padding-bottom` covering the bar's height
+  plus the safe-area inset. Without it the browser's own scroll-into-view
+  parks a newly focused control underneath the bar.
+- **No orientation lock.** `manifest.webmanifest` declares no `orientation`
+  member, so an installed app follows the device.
+- **Target size** is 44px+ for app-shell controls and 24px minimum for
+  everything else, unless targets are spaced 24px apart centre-to-centre or
+  the same function is reachable from an equivalent full-size control. Known
+  deviation, tracked in BACKLOG: non-venue map pins render 22.7px at a 320px
+  viewport, and clustered pins defeat the spacing exception.
 
 ## Test hooks (UI must provide, offline test depends on them)
 

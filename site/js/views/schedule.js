@@ -1,7 +1,7 @@
-import { esc } from '../util.js';
+import { esc, groupBy } from '../util.js';
 import { now as clockNow, parseWall, formatTime, shortDayLabel, dateKey } from '../time.js';
 import { navigate } from '../router.js';
-import { eventRowHtml, bindEventRowStars } from './event-row.js';
+import { eventRowHtml, eventGroupHtml, venueGroupsHtml, bindEventRowStars } from './event-row.js';
 
 // Canonical kind order (matches scripts/build.mjs VALID_KINDS) — the "by
 // category" group order. There is deliberately no kind *filter*: grouping by
@@ -9,6 +9,7 @@ import { eventRowHtml, bindEventRowStars } from './event-row.js';
 // (QA, 2026-08-08).
 const KINDS = ['music', 'art', 'performance', 'literary', 'vendor', 'other'];
 const GROUPS = ['time', 'venue', 'category'];
+const GROUP_LABELS = { time: 'By time', venue: 'By venue', category: 'By category' };
 
 function kindLabel(kind) {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
@@ -24,62 +25,25 @@ function uniqueDays(events) {
   return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, date]) => ({ key, date }));
 }
 
-function renderByTime(events, venuesById) {
-  const sorted = [...events].sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
-  const groups = [];
-  let lastStart = null;
-  for (const e of sorted) {
-    if (e.start !== lastStart) {
-      groups.push({ start: e.start, events: [] });
-      lastStart = e.start;
-    }
-    groups[groups.length - 1].events.push(e);
-  }
-  return groups
-    .map(
-      (g) => `
-      <div class="time-group">
-        <h3 class="time-group__title">${esc(formatTime(parseWall(g.start)))}</h3>
-        <div class="event-list">${g.events.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
-      </div>`
-    )
-    .join('');
+function rowsHtml(events, venuesById) {
+  return events.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('');
 }
 
-function renderByVenue(events, venuesById) {
-  const groups = new Map();
-  for (const e of events) {
-    if (!groups.has(e.venue_id)) groups.set(e.venue_id, []);
-    groups.get(e.venue_id).push(e);
-  }
-  return [...groups.entries()]
-    .map(([venueId, evs]) => ({ venue: venuesById.get(venueId), events: evs.sort((a, b) => a.start.localeCompare(b.start)) }))
-    .sort((a, b) => (a.venue?.name ?? '').localeCompare(b.venue?.name ?? ''))
-    .map(
-      (g) => `
-      <div class="venue-group">
-        <h3 class="venue-group__title">${esc(g.venue?.name ?? 'Venue')}</h3>
-        <div class="event-list">${g.events.map((e) => eventRowHtml(e, { venue: g.venue, showVenue: false })).join('')}</div>
-      </div>`
-    )
+function renderByTime(events, venuesById) {
+  const sorted = [...events].sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title));
+  return [...groupBy(sorted, (e) => e.start)]
+    .map(([start, startEvents]) => eventGroupHtml(formatTime(parseWall(start)), rowsHtml(startEvents, venuesById)))
     .join('');
 }
 
 function renderByCategory(events, venuesById) {
-  const groups = new Map();
-  for (const e of events) {
-    const kind = e.kind || 'music';
-    if (!groups.has(kind)) groups.set(kind, []);
-    groups.get(kind).push(e);
-  }
+  const groups = groupBy(events, (e) => e.kind || 'music');
   return KINDS.filter((kind) => groups.has(kind))
-    .map((kind) => ({ kind, events: groups.get(kind).sort((a, b) => a.start.localeCompare(b.start)) }))
-    .map(
-      (g) => `
-      <div class="category-group">
-        <h3 class="category-group__title">${esc(kindLabel(g.kind))}</h3>
-        <div class="event-list">${g.events.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('')}</div>
-      </div>`
+    .map((kind) =>
+      eventGroupHtml(
+        kindLabel(kind),
+        rowsHtml(groups.get(kind).sort((a, b) => a.start.localeCompare(b.start)), venuesById)
+      )
     )
     .join('');
 }
@@ -87,7 +51,7 @@ function renderByCategory(events, venuesById) {
 export function renderSchedule(container, content, route) {
   const days = uniqueDays(content.events);
   if (!days.length) {
-    container.innerHTML = `<section class="view"><p class="empty-state">No schedule published yet.</p></section>`;
+    container.innerHTML = `<section class="view"><h1 class="sr-only">Schedule</h1><p class="empty-state">No schedule published yet.</p></section>`;
     return;
   }
 
@@ -104,7 +68,7 @@ export function renderSchedule(container, content, route) {
   const dayEvents = content.events.filter((e) => dateKey(parseWall(e.start)) === activeDayKey);
   const bodyHtml =
     group === 'venue'
-      ? renderByVenue(dayEvents, venuesById)
+      ? venueGroupsHtml(dayEvents, venuesById)
       : group === 'category'
         ? renderByCategory(dayEvents, venuesById)
         : renderByTime(dayEvents, venuesById);
@@ -134,9 +98,10 @@ export function renderSchedule(container, content, route) {
             .join('')}
         </div>
         <div class="group-toggle" role="group" aria-label="Group by">
-          <button type="button" class="toggle-btn ${group === 'time' ? 'is-active' : ''}" data-group="time">By time</button>
-          <button type="button" class="toggle-btn ${group === 'venue' ? 'is-active' : ''}" data-group="venue">By venue</button>
-          <button type="button" class="toggle-btn ${group === 'category' ? 'is-active' : ''}" data-group="category">By category</button>
+          ${GROUPS.map(
+            (mode) =>
+              `<button type="button" class="toggle-btn ${group === mode ? 'is-active' : ''}" aria-pressed="${group === mode}" data-group="${mode}">${GROUP_LABELS[mode]}</button>`
+          ).join('')}
         </div>
       </div>
       <div data-testid="schedule-list" class="schedule-list">

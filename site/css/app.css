@@ -474,7 +474,7 @@ img {
    is above it. --sticky-stack-top is set per view (see schedule.js) from the
    measured control-bar height; it falls back to the bare safe-area inset on
    views that have no control bar, like Now. */
-.venue-group__title, .time-group__title {
+.event-group__title {
   position: sticky;
   top: var(--sticky-stack-top, var(--safe-top));
   z-index: 5;
@@ -1236,20 +1236,4 @@ a:focus-visible, button:focus-visible {
   background: #f9e3e3;
   color: #8f1b1e;
   font-variant-numeric: tabular-nums;
-}
-
-/* -- "by category" grouping: same look as .venue-group/.time-group,
-   duplicated rather than added to their shared selector to keep this
-   section purely additive. -- */
-.category-group__title {
-  position: sticky;
-  top: var(--sticky-stack-top, var(--safe-top));
-  z-index: 5;
-  background: var(--color-bg);
-  padding: 0.4rem 0;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--color-primary-dark);
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 0.6rem;
 }

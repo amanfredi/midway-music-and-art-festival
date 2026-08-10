@@ -1,4 +1,4 @@
-import { esc } from '../util.js';
+import { esc, groupBy, safeHref } from '../util.js';
 
 // Tier-specific card layout (logo size, whether a logo/blurb renders at all).
 // Emerald gets its own spotlight markup below rather than a size class.
@@ -10,12 +10,13 @@ const TIER_CARD_CLASS = {
 
 /**
  * Renders a link where one is expected, or the same text as inert plain text
- * when the sponsor has no url — so the slot a link would occupy never just
- * silently disappears, but also never offers a non-functional control.
+ * when the sponsor has no usable url — so the slot a link would occupy never
+ * just silently disappears, but also never offers a non-functional control.
  */
 function linkOrPlain(url, label, linkClass) {
-  return url
-    ? `<a class="${linkClass}" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`
+  const href = safeHref(url);
+  return href
+    ? `<a class="${linkClass}" href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`
     : `<span class="${linkClass} sponsor-link--plain">${esc(label)}</span>`;
 }
 
@@ -50,22 +51,22 @@ function quartzListHtml(sponsors) {
 
 export function renderSponsors(container, content) {
   const sponsors = [...content.sponsors].sort((a, b) => a.tier_order - b.tier_order || a.name.localeCompare(b.name));
-  const { donation_url: donationUrl, donation_label: donationLabel } = content.settings;
+  const donateHref = safeHref(content.settings.donation_url);
+  const donationLabel = content.settings.donation_label;
 
-  const byTier = new Map();
-  for (const s of sponsors) {
-    if (!byTier.has(s.tier_slug)) {
-      byTier.set(s.tier_slug, { label: s.tier, slug: s.tier_slug, order: s.tier_order, sponsors: [] });
-    }
-    byTier.get(s.tier_slug).sponsors.push(s);
-  }
-  const tiers = [...byTier.values()].sort((a, b) => a.order - b.order);
+  // Sponsors are already sorted by tier_order, so the grouped tiers come out
+  // in display order without a second sort.
+  const tiers = [...groupBy(sponsors, (s) => s.tier_slug)].map(([slug, tierSponsors]) => ({
+    slug,
+    label: tierSponsors[0].tier,
+    sponsors: tierSponsors,
+  }));
 
   container.innerHTML = `
     <section data-testid="sponsor-list" class="view sponsors-view">
       <h1 class="view-title">Thank you to our sponsors</h1>
-      ${donationUrl
-        ? `<a class="btn btn--primary donate-link" data-testid="donate-link" href="${esc(donationUrl)}" target="_blank" rel="noopener">${esc(donationLabel || 'Donate')}</a>`
+      ${donateHref
+        ? `<a class="btn btn--primary donate-link" data-testid="donate-link" href="${esc(donateHref)}" target="_blank" rel="noopener">${esc(donationLabel || 'Donate')}</a>`
         : ''}
       <p class="sponsors-intro">${esc(content.settings.festival_name || 'This festival')} wouldn't happen without the generous support of the neighbors and businesses below.</p>
       ${tiers

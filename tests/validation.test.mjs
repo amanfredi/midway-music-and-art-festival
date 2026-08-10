@@ -3,43 +3,118 @@
 // Verifies scripts/build.mjs end-to-end by running it as a child process:
 //  - the committed good fixtures build successfully into a content.json that
 //    matches the CONTRACTS.md schema shape, sort order, and version format.
-//  - each deliberately broken fixture set in tests/fixtures-bad/ makes the
-//    build fail (non-zero exit) with a human-readable message that names the
-//    offending file, row, and value.
+//  - a deliberately broken copy of those fixtures (one mutated cell per case,
+//    see tests/fixture-sets.mjs) makes the build fail (non-zero exit) with a
+//    human-readable message that names the offending file, row, and value.
 
-import { describe, test } from "node:test";
+import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  addColumn,
+  dropColumn,
+  dropDataRows,
+  makeFixtureSet,
+  renameHeader,
+  replaceBody,
+  setCell,
+} from "./fixture-sets.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const BUILD_SCRIPT = path.join(REPO_ROOT, "scripts/build.mjs");
 
+const TMP_ROOT = mkdtempSync(path.join(os.tmpdir(), "mmaf-validation-"));
+after(() => rmSync(TMP_ROOT, { recursive: true, force: true }));
+
+let outCounter = 0;
+
+/**
+ * Runs the build in a throwaway output directory: the deployable site/ tree is
+ * built once by `npm run build:fixtures` and then served to Playwright, so unit
+ * tests must not write into it.
+ * Returns the spawn result with the output directory attached.
+ */
 function runBuild(configPath) {
+  const outDir = path.join(TMP_ROOT, `out-${++outCounter}`);
   const args = [BUILD_SCRIPT];
   if (configPath) args.push(configPath);
-  return spawnSync(process.execPath, args, {
+  args.push("--out", outDir);
+  const result = spawnSync(process.execPath, args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
   });
+  return Object.assign(result, { outDir, contentPath: path.join(outDir, "data/content.json") });
+}
+
+/**
+ * The async twin of runBuild, for the cases whose sources are served by the
+ * loopback server below: spawnSync would block this process's event loop, and
+ * the server that has to answer the child's fetch lives in it.
+ */
+function runBuildAsync(configPath) {
+  const outDir = path.join(TMP_ROOT, `out-${++outCounter}`);
+  const child = spawn(process.execPath, [BUILD_SCRIPT, configPath, "--out", outDir], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => (stdout += chunk));
+  child.stderr.on("data", (chunk) => (stderr += chunk));
+  return new Promise((resolve) => {
+    child.on("close", (status) =>
+      resolve({ status, stdout, stderr, outDir, contentPath: path.join(outDir, "data/content.json") })
+    );
+  });
+}
+
+/**
+ * Serves fixed responses on loopback so the fetch paths (content sources and
+ * sponsor logo URLs) can be exercised without reaching the network.
+ * `routes` maps a path to `{ type, body }`.
+ */
+async function withLocalServer(routes, run) {
+  const server = createServer((req, res) => {
+    const route = routes[req.url];
+    // A route may be a function, so a case can answer differently per request.
+    const answer = typeof route === "function" ? route() : route;
+    if (!answer) {
+      res.writeHead(404, { "content-type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    res.writeHead(answer.status ?? 200, { "content-type": answer.type });
+    res.end(answer.body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  try {
+    return await run(origin);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 // Hermetic all-local config: the default content/config.json points the venues
 // tab at the live Google Sheet, which tests must not depend on.
 const GOOD_CONFIG = "tests/fixtures-good/config.json";
 
+const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
 describe("good fixtures", () => {
   test("build succeeds and emits a schema-shaped content.json", () => {
     const result = runBuild(GOOD_CONFIG);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
-    assert.match(result.stdout, /Built site\/data\/content\.json/);
+    assert.match(result.stdout, /Built .*data\/content\.json/);
 
-    const contentPath = path.join(REPO_ROOT, "site/data/content.json");
-    assert.ok(existsSync(contentPath), "site/data/content.json should exist");
-    const content = JSON.parse(readFileSync(contentPath, "utf8"));
+    assert.ok(existsSync(result.contentPath), "data/content.json should exist in the output directory");
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
 
     for (const key of ["version", "settings", "venues", "events", "vendors", "sponsors"]) {
       assert.ok(key in content, `content.json missing top-level key "${key}"`);
@@ -48,10 +123,12 @@ describe("good fixtures", () => {
     assert.equal(content.version.length, 12, "version should be 12 hex chars");
     assert.match(content.version, /^[0-9a-f]{12}$/, "version should be lowercase hex");
 
-    assert.equal(content.venues.length, 9);
-    assert.equal(content.events.length, 60);
-    assert.equal(content.vendors.length, 15);
-    assert.equal(content.sponsors.length, 11);
+    // Counts are deliberately not pinned: venues.csv is a snapshot of a sheet
+    // coordinators keep editing, and a refreshed snapshot must not fail here.
+    for (const key of ["venues", "events", "vendors", "sponsors"]) {
+      assert.ok(Array.isArray(content[key]), `${key} should be an array`);
+      assert.ok(content[key].length > 0, `${key} should not be empty`);
+    }
 
     // spot-check a venue (fixture is a committed snapshot of the real sheet)
     const venue = content.venues.find((v) => v.id === "midwaysaloon");
@@ -98,22 +175,17 @@ describe("good fixtures", () => {
     assert.equal(pastMidnight.start, "2026-10-03T23:30");
     assert.equal(pastMidnight.end, "2026-10-04T00:15");
 
-    // event kind distribution covers the full six-value enum
-    const byKind = {};
-    for (const e of content.events) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
-    assert.equal(byKind.music, 35);
-    assert.equal(byKind.art, 7);
-    assert.equal(byKind.performance, 5);
-    assert.equal(byKind.literary, 3);
-    assert.equal(byKind.vendor, 2);
-    assert.equal(byKind.other, 8);
+    // every event's kind is in the enum, and the fixtures exercise more than
+    // the default one
+    const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
+    const kinds = new Set(content.events.map((e) => e.kind));
+    for (const kind of kinds) assert.ok(VALID_KINDS.has(kind), `unexpected kind ${JSON.stringify(kind)}`);
+    assert.ok(kinds.size > 1, "fixtures should cover more than one kind");
 
-    // each venue hosts 6-9 events
-    const byVenue = {};
-    for (const e of content.events) byVenue[e.venue_id] = (byVenue[e.venue_id] ?? 0) + 1;
-    assert.equal(Object.keys(byVenue).length, 9);
-    for (const [venueId, count] of Object.entries(byVenue)) {
-      assert.ok(count >= 6 && count <= 9, `venue ${venueId} hosts ${count} events, expected 6-9`);
+    // every event lands on a venue that exists
+    const venueIds = new Set(content.venues.map((v) => v.id));
+    for (const e of content.events) {
+      assert.ok(venueIds.has(e.venue_id), `event ${e.id} references unknown venue ${e.venue_id}`);
     }
 
     // sponsors: sorted by tier_order then name; logo rewritten + bundled file exists
@@ -136,7 +208,7 @@ describe("good fixtures", () => {
       }
       if (sponsor.logo) {
         assert.match(sponsor.logo, /^assets\/sponsors\/.+/);
-        assert.ok(existsSync(path.join(REPO_ROOT, "site", sponsor.logo)), `${sponsor.logo} should exist on disk`);
+        assert.ok(existsSync(path.join(result.outDir, sponsor.logo)), `${sponsor.logo} should exist on disk`);
       }
     }
 
@@ -159,10 +231,9 @@ describe("good fixtures", () => {
 
   test("rebuilding unchanged content is byte-identical (stable service-worker version)", () => {
     const first = runBuild(GOOD_CONFIG);
-    const contentPath = path.join(REPO_ROOT, "site/data/content.json");
-    const bytes1 = readFileSync(contentPath, "utf8");
+    const bytes1 = readFileSync(first.contentPath, "utf8");
     const second = runBuild(GOOD_CONFIG);
-    const bytes2 = readFileSync(contentPath, "utf8");
+    const bytes2 = readFileSync(second.contentPath, "utf8");
     assert.equal(first.status, 0);
     assert.equal(second.status, 0);
     // Byte-identity is what keeps the generated sw.js version (a hash of all
@@ -173,18 +244,27 @@ describe("good fixtures", () => {
 });
 
 describe("id normalization", () => {
+  const isMamas = (fields) => fields.name.startsWith("Mamas Market");
+
   // Ids are machine keys typed by hand into a spreadsheet. Rather than failing
   // the whole build over punctuation, build.mjs slugifies them — and slugifies
   // events.venue_id the same way, so the two tabs agree however each was typed.
   test("punctuated ids are slugified, and venue references still resolve", () => {
-    const result = runBuild("tests/fixtures-normalize/config.json");
+    // One venue id written as prose, then referenced by two events that spell it
+    // differently: the punctuated spelling and the already-clean slug.
+    const config = makeFixtureSet(TMP_ROOT, "normalize", [
+      setCell("venues.csv", isMamas, "id", "Mamas Market & Deli"),
+      setCell("events.csv", 2, "venue_id", "Mamas Market & Deli"),
+      setCell("events.csv", 3, "venue_id", "mamasmarketdeli"),
+    ]);
+    const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
 
     // The rewriting is reported, not silent.
     assert.match(result.stdout, /Normalized 2 id\(s\)/);
     assert.match(result.stdout, /"Mamas Market & Deli" -> "mamasmarketdeli"/);
 
-    const content = JSON.parse(readFileSync(path.join(REPO_ROOT, "site/data/content.json"), "utf8"));
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
     const venue = content.venues.find((v) => v.id === "mamasmarketdeli");
     assert.ok(venue, "venue id should have been slugified to mamasmarketdeli");
 
@@ -197,91 +277,433 @@ describe("id normalization", () => {
   test("normalization is a no-op for ids that are already valid", () => {
     // Guards the property that makes this safe to apply to events: a starred
     // event id or a shared #/event/<id> link can never be invalidated by it.
-    const result = runBuild(GOOD_CONFIG);
-    assert.equal(result.status, 0);
+    // The venues snapshot carries one punctuated id straight from the sheet, so
+    // this case spells that one id cleanly and expects total silence.
+    const config = makeFixtureSet(TMP_ROOT, "clean-ids", [
+      setCell("venues.csv", isMamas, "id", "mamasmarketdeli"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     assert.doesNotMatch(result.stdout, /Normalized/);
   });
 });
 
 describe("bad fixtures", () => {
+  // Each case is the good fixtures with one cell changed, named for the mistake
+  // a coordinator would have made in the spreadsheet.
   const cases = [
     {
-      dir: "bad-venue-ref",
+      name: "venue_id pointing at no venue",
+      mutations: [setCell("events.csv", 2, "venue_id", "blue-moon-lounge")],
       mustInclude: ["events.csv", "row 2", "blue-moon-lounge", "venue_id"],
     },
     {
-      dir: "bad-date",
+      name: "US-style date instead of YYYY-MM-DD",
+      mutations: [setCell("events.csv", 2, "date", "10/02/2026")],
       mustInclude: ["events.csv", "row 2", "10/02/2026"],
     },
     {
-      dir: "missing-field",
+      name: "blank required field",
+      mutations: [setCell("venues.csv", 2, "address", "")],
       mustInclude: ["venues.csv", "row 2", "address"],
     },
     {
-      dir: "dup-id",
+      name: "two rows sharing an id",
+      mutations: [setCell("events.csv", 3, "id", "midway-strays")],
       mustInclude: ["events.csv", "row 3", "midway-strays", "duplicate"],
     },
     {
-      dir: "equal-start-end",
+      name: "end_time equal to start_time",
+      mutations: [setCell("events.csv", 2, "end_time", "17:00")],
       mustInclude: ["events.csv", "row 2", "differ"],
     },
     {
-      dir: "bad-latlng",
+      name: "swapped lat/lng",
+      mutations: [setCell("venues.csv", 2, "location", "-93.1668, 44.9557")],
       mustInclude: ["venues.csv", "row 2", "swapped"],
     },
     {
-      dir: "bad-location-text",
+      name: "location written as prose",
+      mutations: [setCell("venues.csv", 2, "location", "by the big tree")],
       mustInclude: ["venues.csv", "row 2", "by the big tree", "plus code"],
     },
     {
-      dir: "bad-kind",
+      name: "kind outside the enum",
+      mutations: [setCell("events.csv", 2, "kind", "dance")],
       mustInclude: ["events.csv", "row 2", "dance", "unknown kind"],
     },
     {
-      dir: "missing-logo",
+      name: "logo filename that isn't in the logos folder",
+      mutations: [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")],
       mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg"],
     },
     {
-      dir: "bad-tickets",
+      name: "tickets value outside the enum",
+      mutations: [setCell("events.csv", 2, "tickets", "VIP Pass")],
       mustInclude: ["events.csv", "row 2", "VIP Pass", "unknown tickets"],
     },
     {
-      dir: "bad-age-limit",
+      name: "age_limit written as prose",
+      mutations: [setCell("events.csv", 2, "age_limit", "over 21")],
       mustInclude: ["events.csv", "row 2", "over 21", "unknown age_limit"],
     },
     {
       // Ids are normalized rather than rejected, so the only id that can still
       // fail is one with nothing to normalize.
-      dir: "bad-id-unusable",
+      name: "id with nothing to normalize",
+      mutations: [setCell("venues.csv", 2, "id", "&&& ")],
       mustInclude: ["venues.csv", "row 2", "no letters or numbers"],
     },
     {
-      dir: "bad-tier",
+      name: "sponsor tier outside the enum",
+      mutations: [setCell("sponsors.csv", 2, "tier", "platinum")],
       mustInclude: ["sponsors.csv", "row 2", "platinum", "unknown tier"],
     },
     {
-      dir: "emerald-limit-exceeded",
+      name: "a second emerald sponsor",
+      mutations: [setCell("sponsors.csv", 3, "tier", "emerald")],
       mustInclude: ["sponsors.csv", "row 3", "emerald", "at most 1"],
     },
   ];
 
-  for (const { dir, mustInclude } of cases) {
-    test(`${dir} fails the build with a readable, actionable error`, () => {
-      const configPath = `tests/fixtures-bad/${dir}/config.json`;
-      const result = runBuild(configPath);
-      assert.notEqual(result.status, 0, `expected a non-zero exit for ${dir}`);
+  for (const { name, mutations, mustInclude } of cases) {
+    test(`${name} fails the build with a readable, actionable error`, () => {
+      const config = makeFixtureSet(TMP_ROOT, `bad-${slug(name)}`, mutations);
+      const result = runBuild(config);
+      assert.notEqual(result.status, 0, `expected a non-zero exit for "${name}"`);
       for (const needle of mustInclude) {
         assert.ok(
           result.stderr.includes(needle),
-          `expected stderr for "${dir}" to mention ${JSON.stringify(needle)}\n--- stderr ---\n${result.stderr}`
+          `expected stderr for "${name}" to mention ${JSON.stringify(needle)}\n--- stderr ---\n${result.stderr}`
         );
       }
       // human-readable: no raw JS stack traces / "undefined" leaking into the message
       assert.ok(
         !/^\s*at .+:\d+:\d+/m.test(result.stderr),
-        `${dir} stderr should read as a message, not a stack trace`
+        `"${name}" stderr should read as a message, not a stack trace`
       );
-      assert.ok(!result.stderr.includes("undefined"), `${dir} stderr should not contain "undefined"`);
+      assert.ok(!result.stderr.includes("undefined"), `"${name}" stderr should not contain "undefined"`);
     });
   }
+});
+
+describe("source shape and headers", () => {
+  test("a header respelled only in capitalization names both spellings", () => {
+    const config = makeFixtureSet(TMP_ROOT, "header-case", [renameHeader("venues.csv", "description", "Description")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a respelled header should fail the build");
+    assert.match(result.stderr, /venues\.csv/);
+    assert.ok(result.stderr.includes('"Description"'), `stderr should quote the sheet's spelling\n${result.stderr}`);
+    assert.ok(result.stderr.includes('"description"'), `stderr should quote the expected spelling\n${result.stderr}`);
+  });
+
+  test("a header with stray whitespace names both spellings", () => {
+    const config = makeFixtureSet(TMP_ROOT, "header-space", [renameHeader("events.csv", "start_time", "start_time ")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a space-padded header should fail the build");
+    assert.ok(result.stderr.includes('"start_time "'), `stderr should quote the padded spelling\n${result.stderr}`);
+    assert.ok(result.stderr.includes('"start_time"'), `stderr should quote the expected spelling\n${result.stderr}`);
+  });
+
+  test("a known column missing from the header fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "header-missing", [dropColumn("vendors.csv", "type")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a missing column should fail the build");
+    assert.match(result.stderr, /vendors\.csv/);
+    assert.ok(result.stderr.includes('"type"'), `stderr should name the missing column\n${result.stderr}`);
+  });
+
+  test("columns the schema doesn't know about are still ignored", () => {
+    // Coordinators keep notes columns in the sheet; only known columns are
+    // spell-checked.
+    const config = makeFixtureSet(TMP_ROOT, "extra-column", [
+      addColumn("venues.csv", "coordinator notes", "call before 9am"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.ok(!("coordinator notes" in content.venues[0]), "unknown columns should not reach content.json");
+  });
+
+  test("a tab emptied of its rows fails instead of publishing an empty guide", () => {
+    const config = makeFixtureSet(TMP_ROOT, "no-rows", [dropDataRows("vendors.csv")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a header-only source should fail the build");
+    assert.match(result.stderr, /vendors\.csv/);
+    assert.match(result.stderr, /no data rows/);
+  });
+
+  test("a completely empty source is reported as empty", () => {
+    const config = makeFixtureSet(TMP_ROOT, "empty-file", [replaceBody("settings.csv", "")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an empty source should fail the build");
+    assert.match(result.stderr, /settings\.csv/);
+    assert.match(result.stderr, /empty/);
+  });
+
+  test("a source that answers with an HTML page is rejected as not-CSV", async () => {
+    await withLocalServer(
+      { "/venues": { type: "text/html; charset=utf-8", body: "<!doctype html><title>Sign in</title>" } },
+      async (origin) => {
+        const config = makeFixtureSet(TMP_ROOT, "html-source", [], { venues: `${origin}/venues` });
+        const result = await runBuildAsync(config);
+        assert.notEqual(result.status, 0, "an HTML body should fail the build");
+        assert.match(result.stderr, /HTML page/);
+        assert.match(result.stderr, /published to the web as CSV/);
+      }
+    );
+  });
+
+  test("a CSV served over the network builds like a local file", async () => {
+    const venuesCsv = readFileSync(path.join(REPO_ROOT, "content/fixtures/venues.csv"), "utf8");
+    await withLocalServer({ "/venues.csv": { type: "text/csv", body: venuesCsv } }, async (origin) => {
+      const config = makeFixtureSet(TMP_ROOT, "csv-source", [], { venues: `${origin}/venues.csv` });
+      const result = await runBuildAsync(config);
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+      const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+      assert.ok(content.venues.length > 0);
+    });
+  });
+
+  test("a transient server error on a source is retried, not fatal", async () => {
+    // One bad minute at Google used to fail the whole deploy, including a
+    // code-only deploy, since every deploy path rebuilds content.
+    const venuesCsv = readFileSync(path.join(REPO_ROOT, "content/fixtures/venues.csv"), "utf8");
+    let calls = 0;
+    await withLocalServer(
+      {
+        "/venues.csv": () =>
+          ++calls === 1 ? { status: 500, type: "text/plain", body: "try again" } : { type: "text/csv", body: venuesCsv },
+      },
+      async (origin) => {
+        const config = makeFixtureSet(TMP_ROOT, "flaky-source", [], { venues: `${origin}/venues.csv` });
+        const result = await runBuildAsync(config);
+        assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+        assert.equal(calls, 2, "the source should have been fetched again after the 500");
+      }
+    );
+  });
+
+  test("a 404 on a source is not retried", async () => {
+    // An unpublished or mistyped link is permanent; retrying only delays the
+    // message.
+    let calls = 0;
+    await withLocalServer(
+      {
+        "/venues.csv": () => {
+          calls++;
+          return { status: 404, type: "text/plain", body: "gone" };
+        },
+      },
+      async (origin) => {
+        const config = makeFixtureSet(TMP_ROOT, "missing-source", [], { venues: `${origin}/venues.csv` });
+        const result = await runBuildAsync(config);
+        assert.notEqual(result.status, 0, "a 404 source should fail the build");
+        assert.match(result.stderr, /HTTP 404/);
+        assert.equal(calls, 1, "a 404 should be reported on the first try");
+      }
+    );
+  });
+
+  test("an http:// source that isn't loopback is rejected", () => {
+    const config = makeFixtureSet(TMP_ROOT, "http-source", [], {
+      venues: "http://sheets.example.com/venues.csv",
+    });
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an http:// source should fail the build");
+    assert.match(result.stderr, /https:\/\//);
+  });
+});
+
+describe("sponsor logos", () => {
+  const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+  const EMERALD_SPONSOR = "Shortline Credit Union"; // sponsors.csv row 2
+
+  // Every fetched-logo case points the same sponsor row at the local server.
+  function logoConfig(name, routes, urlPath) {
+    return withLocalServer(routes, async (origin) => {
+      const config = makeFixtureSet(TMP_ROOT, name, [setCell("sponsors.csv", 2, "logo", `${origin}${urlPath}`)]);
+      return { result: await runBuildAsync(config) };
+    });
+  }
+
+  test("a fetched logo is bundled under the sponsor's id, not the URL's filename", async () => {
+    const { result } = await logoConfig("logo-ok", { "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG } }, "/logo.svg");
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const sponsor = content.sponsors.find((s) => s.name === EMERALD_SPONSOR);
+    // Two sponsors whose URLs both end /logo.svg would otherwise overwrite each
+    // other's file.
+    assert.equal(sponsor.logo, "assets/sponsors/shortline-credit-union.svg");
+    assert.ok(existsSync(path.join(result.outDir, sponsor.logo)));
+  });
+
+  test("a logo served as HTML is rejected by content type", async () => {
+    const { result } = await logoConfig(
+      "logo-html",
+      { "/logo.svg": { type: "text/html", body: "<!doctype html><script>alert(1)</script>" } },
+      "/logo.svg"
+    );
+    assert.notEqual(result.status, 0, "an HTML logo body should fail the build");
+    assert.match(result.stderr, /content-type "text\/html"/);
+    assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  test("an oversized logo is rejected with the limit in the message", async () => {
+    const { result } = await logoConfig(
+      "logo-huge",
+      { "/logo.png": { type: "image/png", body: Buffer.alloc(600 * 1024, 7) } },
+      "/logo.png"
+    );
+    assert.notEqual(result.status, 0, "an oversized logo should fail the build");
+    assert.match(result.stderr, /512 KB/);
+    assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  for (const [label, body] of [
+    ["a <script> element", `<svg xmlns="http://www.w3.org/2000/svg"><script>fetch('/steal')</script></svg>`],
+    [
+      "a <foreignObject> element",
+      `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><body xmlns="http://www.w3.org/1999/xhtml"/></foreignObject></svg>`,
+    ],
+    ["an event handler attribute", `<svg xmlns="http://www.w3.org/2000/svg"><rect onload="alert(1)"/></svg>`],
+    [
+      "a javascript: link",
+      `<svg xmlns="http://www.w3.org/2000/svg"><a xlink:href="javascript:alert(1)"><rect/></a></svg>`,
+    ],
+    [
+      "a data: link to markup",
+      `<svg xmlns="http://www.w3.org/2000/svg"><a href="data:text/html,<script>alert(1)</script>"><rect/></a></svg>`,
+    ],
+  ]) {
+    test(`an SVG logo carrying ${label} is rejected`, async () => {
+      const { result } = await logoConfig(
+        `logo-svg-${slug(label)}`,
+        { "/logo.svg": { type: "image/svg+xml", body } },
+        "/logo.svg"
+      );
+      assert.notEqual(result.status, 0, `an SVG with ${label} should fail the build`);
+      assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
+      assert.match(result.stderr, /can run code/);
+    });
+  }
+
+  test("an SVG logo embedding a raster image still builds", async () => {
+    // Real wordmarks do this; only script-capable payloads are rejected.
+    const body =
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">` +
+      `<image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="10" height="10"/></svg>`;
+    const { result } = await logoConfig("logo-svg-raster", { "/logo.svg": { type: "image/svg+xml", body } }, "/logo.svg");
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+
+  test("the committed placeholder logos pass the SVG check", () => {
+    // Guards against a rule so strict that real logos trip it.
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+
+  for (const escape of ["../../../../etc/hostname", "..%2Fsecrets", "subdir/logo.svg"]) {
+    test(`a local logo path of ${JSON.stringify(escape)} is refused`, () => {
+      const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [setCell("sponsors.csv", 2, "logo", escape)]);
+      const result = runBuild(config);
+      assert.notEqual(result.status, 0, "a logo path outside the logos folder should fail the build");
+      assert.match(result.stderr, /plain filename inside content\/fixtures\/logos/);
+    });
+  }
+});
+
+describe("settings", () => {
+  const settingRow = (key) => (fields) => fields.key === key;
+
+  test("a misspelled setting key fails instead of silently doing nothing", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-typo", [
+      setCell("settings.csv", settingRow("you_are_here_enabled"), "key", "you_are_here_enabld"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an unknown settings key should fail the build");
+    assert.match(result.stderr, /unknown setting "you_are_here_enabld"/);
+  });
+
+  test("a yes/no answer where true/false is required fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-value", [
+      setCell("settings.csv", settingRow("you_are_here_enabled"), "value", "yes"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a non-boolean value should fail the build");
+    assert.match(result.stderr, /must be exactly true or false/);
+  });
+
+  test("a key with a trailing space is trimmed rather than becoming a different setting", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-space", [
+      setCell("settings.csv", settingRow("donation_url"), "key", "donation_url "),
+      setCell("settings.csv", settingRow("festival_name"), "value", " Midway Music & Arts Fest "),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.ok(content.settings.donation_url, "the donate URL should survive a padded key");
+    assert.equal(content.settings.festival_name, "Midway Music & Arts Fest");
+  });
+
+  test("a donate link with a script scheme fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "settings-url", [
+      setCell("settings.csv", settingRow("donation_url"), "value", "javascript:alert(1)"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a javascript: donate link should fail the build");
+    assert.match(result.stderr, /only https, http, and mailto/);
+  });
+});
+
+describe("url fields", () => {
+  test("a sponsor link with a script scheme fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sponsor-url", [setCell("sponsors.csv", 2, "url", "javascript:alert(1)")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a javascript: sponsor link should fail the build");
+    assert.match(result.stderr, /sponsors\.csv row 2/);
+    assert.match(result.stderr, /only https, http, and mailto/);
+  });
+
+  test("a bare domain is completed to https rather than rejected", () => {
+    // The live sheet has links written this way; completing them is the same
+    // normalize-don't-reject rule ids follow, and the build says it did it.
+    const config = makeFixtureSet(TMP_ROOT, "venue-bare-url", [setCell("venues.csv", 2, "url", "www.example.com")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    assert.match(result.stdout, /Completed \d+ link\(s\)/);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.venues[0].url, "https://www.example.com");
+  });
+
+  test("a link that is neither a scheme nor a domain fails with advice", () => {
+    const config = makeFixtureSet(TMP_ROOT, "venue-url", [setCell("venues.csv", 2, "url", "ask at the front desk")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "unparseable link text should fail the build");
+    assert.match(result.stderr, /venues\.csv row 2/);
+    assert.match(result.stderr, /starting with "https:\/\/"/);
+  });
+
+  test("a mailto link is accepted", () => {
+    const config = makeFixtureSet(TMP_ROOT, "venue-mailto", [
+      setCell("venues.csv", 2, "url", "mailto:hello@example.com"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+});
+
+describe("build log", () => {
+  test("a cell containing newlines cannot forge extra error lines", () => {
+    const forged = 'Midway Saloon\n  - venues.csv row 99 ("ghost venue"): everything is fine, deploy it';
+    const config = makeFixtureSet(TMP_ROOT, "log-forging", [
+      setCell("venues.csv", 2, "name", forged),
+      setCell("venues.csv", 2, "address", ""),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "the blank address should still fail the build");
+    assert.ok(result.stderr.includes("ghost venue"), "the cell's text should still be visible in the message");
+    const forgedLines = result.stderr.split("\n").filter((line) => line.trim().startsWith('- venues.csv row 99'));
+    assert.equal(forgedLines.length, 0, `a cell forged its own error line:\n${result.stderr}`);
+  });
 });

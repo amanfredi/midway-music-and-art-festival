@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 // Reads content/config.json, loads the 5 content CSVs (local file or https URL),
-// validates them per CONTRACTS.md, and emits site/data/content.json plus
-// copies of sponsor logos into site/assets/sponsors/. Zero npm dependencies.
+// validates them per CONTRACTS.md, and emits <out>/data/content.json plus
+// copies of sponsor logos into <out>/assets/sponsors/. Zero npm dependencies.
 //
-// Usage: node scripts/build.mjs [path/to/config.json]   (defaults to content/config.json)
+// Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
+//   config defaults to content/config.json, out defaults to site/
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 import { parseLocation } from "./location.mjs";
 
 const CWD = process.cwd();
 const LOGOS_DIR = path.join(CWD, "content/fixtures/logos");
-const SITE_DATA_DIR = path.join(CWD, "site/data");
-const SPONSORS_OUT_DIR = path.join(CWD, "site/assets/sponsors");
-const CONTENT_JSON_PATH = path.join(SITE_DATA_DIR, "content.json");
+const DEFAULT_CONFIG = "content/config.json";
+const DEFAULT_OUT_DIR = "site";
 
 const BBOX = { latMin: 44.94, latMax: 44.98, lngMin: -93.2, lngMax: -93.13 };
 const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
@@ -30,6 +31,22 @@ const DEFAULT_TICKETS = "General Admission";
 // in content.json so the UI can test it falsily; only these two values render
 // a badge.
 const VALID_AGE_LIMITS = new Set(["18+", "21+"]);
+// The settings the app actually reads, with the values it can make sense of.
+// An unknown key is a typo — and a typo here is invisible at runtime, since the
+// app just falls back to its default.
+const SETTINGS_KEYS = {
+  festival_name: {},
+  festival_dates_label: {},
+  banner_id: {},
+  banner_text: {},
+  you_are_here_enabled: { oneOf: ["true", "false"] },
+  map_attribution: {},
+  donation_url: { isUrl: true },
+  donation_label: {},
+};
+// esc() in the app stops attribute breakout but is not a URL sanitizer, so the
+// scheme is constrained here, where a bad sheet edit fails loudly.
+const ALLOWED_URL_SCHEMES = new Set(["https:", "http:", "mailto:"]);
 const ID_RE = /^[a-z0-9-]+$/;
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_ONLY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -48,6 +65,22 @@ const SPONSOR_TIERS = [
 const SPONSOR_TIER_BY_SLUG = new Map(SPONSOR_TIERS.map((t) => [t.slug, t]));
 
 const SOURCE_ORDER = ["venues", "events", "vendors", "sponsors", "settings"];
+const SOURCE_LABEL = {
+  venues: "venues.csv",
+  events: "events.csv",
+  vendors: "vendors.csv",
+  sponsors: "sponsors.csv",
+  settings: "settings.csv",
+};
+// The columns each tab must carry, per CONTRACTS.md. Extra columns beyond these
+// are still ignored — coordinators keep notes columns in the sheet.
+const EXPECTED_COLUMNS = {
+  venues: ["id", "name", "address", "location", "description", "url"],
+  events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description"],
+  vendors: ["id", "name", "type", "description", "location"],
+  sponsors: ["id", "name", "tier", "blurb", "logo", "url", "location"],
+  settings: ["key", "value"],
+};
 
 // ---------------------------------------------------------------------------
 // RFC 4180 CSV parsing
@@ -132,13 +165,84 @@ function rowsToRecords(rows) {
 // Loading sources (local file or https URL)
 // ---------------------------------------------------------------------------
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
+const FETCH_TIMEOUT_MS = 45_000;
+const FETCH_RETRIES = 2;
+
+/** A hung sheet must not hang the deploy: every fetch gets a hard deadline. */
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Content sources are retried because a single transient 500 from Google Sheets
+ * would otherwise fail the whole deploy — including a code-only deploy, since
+ * every deploy path rebuilds content. Same shape as tools/make-map.mjs.
+ */
+async function fetchSourceWithRetries(key, url) {
+  let lastErr;
+  let lastRes = null;
+  for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+    if (attempt > 0) {
+      console.warn(`  source "${key}": retry ${attempt}/${FETCH_RETRIES}...`);
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+    }
+    try {
+      const res = await fetchWithTimeout(url);
+      // 5xx and 429 are the sheet being briefly unavailable; a 4xx means the
+      // link is wrong or no longer published, which retrying cannot fix.
+      if (res.status < 500 && res.status !== 429) return res;
+      lastRes = res;
+      console.warn(`  source "${key}": attempt ${attempt + 1} returned HTTP ${res.status}`);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`  source "${key}": attempt ${attempt + 1} failed: ${err.message}`);
+    }
+  }
+  if (lastRes) return lastRes;
+  throw lastErr;
+}
+
+/**
+ * Sources are fetched over the public internet, where http:// content can be
+ * rewritten in transit — CONTRACTS.md requires https. Loopback is exempt because
+ * it never leaves the machine; the test suite serves its fixtures that way.
+ */
+function sourceSchemeError(key, value) {
+  if (!/^http:\/\//i.test(value)) return null;
+  let host;
+  try {
+    host = new URL(value).host.replace(/:\d+$/, "");
+  } catch {
+    host = "";
+  }
+  if (LOOPBACK_HOSTS.has(host)) return null;
+  return `source "${key}" (${value}) must use an https:// URL — http:// is not accepted for content sources.`;
+}
+
 async function loadSource(key, value) {
   const isUrl = /^https?:\/\//i.test(value);
   try {
     if (isUrl) {
-      const res = await fetch(value);
+      const schemeError = sourceSchemeError(key, value);
+      if (schemeError) return { error: schemeError };
+      const res = await fetchSourceWithRetries(key, value);
       if (!res.ok) {
         return { error: `source "${key}" (${value}) returned HTTP ${res.status}.` };
+      }
+      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim();
+      if (/^text\/html$/i.test(contentType)) {
+        return {
+          error:
+            `source "${key}" (${value}) returned an HTML page, not CSV (content-type "${contentType}"). ` +
+            `Check that the sheet tab is still published to the web as CSV and the link hasn't turned into a sign-in page.`,
+        };
       }
       const buffer = Buffer.from(await res.arrayBuffer());
       return { buffer, text: buffer.toString("utf8") };
@@ -162,6 +266,71 @@ function errorMsg(fileLabel, rowNum, identifier, message) {
   return `${fileLabel} row ${rowNum} ("${identifier}"): ${message}`;
 }
 
+/**
+ * Every message the build prints can quote a spreadsheet cell, and the build log
+ * is public in Actions. Flattening control characters keeps a cell containing
+ * newlines from forging extra log lines.
+ */
+function oneLine(text) {
+  return String(text).replace(/[\u0000-\u001f\u007f]+/g, " ");
+}
+
+/**
+ * Header cells become record keys verbatim, so a column renamed in the sheet is
+ * indistinguishable from a column added — and the renamed one comes out blank
+ * for every row with nothing to show for it. Extra columns stay legal, but a
+ * known column has to be spelled exactly.
+ */
+function validateHeader(key, header) {
+  const fileLabel = SOURCE_LABEL[key];
+  const expected = EXPECTED_COLUMNS[key];
+  const errors = [];
+  const present = new Set(header);
+  const normalize = (cell) => String(cell).toLowerCase().replace(/\s+/g, "");
+  const byNormalized = new Map(expected.map((column) => [normalize(column), column]));
+
+  // A near-miss explains the column it was meant to be, so that column isn't
+  // also reported as missing.
+  const explained = new Set();
+  for (const cell of header) {
+    if (present.has(cell) && expected.includes(cell)) continue;
+    const intended = byNormalized.get(normalize(cell));
+    if (!intended || present.has(intended)) continue;
+    errors.push(
+      `${fileLabel}: header column "${cell}" differs from the expected "${intended}" only in capitalization or spacing. ` +
+        `Column names must match exactly, so "${cell}" is read as an extra notes column and "${intended}" would come out blank on every row.`
+    );
+    explained.add(intended);
+  }
+
+  for (const column of expected) {
+    if (present.has(column) || explained.has(column)) continue;
+    errors.push(
+      `${fileLabel}: expected column "${column}" is missing from the header row (found: ${header.join(", ")}).`
+    );
+  }
+  return errors;
+}
+
+/**
+ * An emptied tab used to build clean and deploy an empty guide over a working
+ * one — the one case where "the last good version stays live" did not hold.
+ */
+function validateSourceShape(key, sourceValue, parsed) {
+  const fileLabel = SOURCE_LABEL[key];
+  if (parsed.header.length === 0) {
+    return [`${fileLabel} (${sourceValue}) is empty — no header row, no rows.`];
+  }
+  const errors = validateHeader(key, parsed.header);
+  if (parsed.records.length === 0) {
+    errors.push(
+      `${fileLabel} (${sourceValue}) has a header row but no data rows. ` +
+        `Publishing this would replace the live ${key} with nothing, so the build stops instead.`
+    );
+  }
+  return errors;
+}
+
 function identifierFor(record, field) {
   const val = record.fields[field];
   if (val && String(val).trim() !== "") return val;
@@ -180,6 +349,33 @@ function validateRequiredFields(fileLabel, records, requiredFields, identifierFi
           errorMsg(fileLabel, rec.rowNum, identifierFor(rec, identifierField), `missing required field "${field}".`)
         );
       }
+    }
+  }
+  return errors;
+}
+
+/** Describes what's wrong with a URL cell, or null when it's fine (blank included). */
+function urlValueError(value) {
+  const raw = String(value ?? "").trim();
+  if (raw === "") return null;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return `isn't a complete web address — write it out in full, starting with "https://" (or "mailto:" for an email address).`;
+  }
+  if (!ALLOWED_URL_SCHEMES.has(parsed.protocol)) {
+    return `uses the "${parsed.protocol}" scheme; only https, http, and mailto addresses are allowed.`;
+  }
+  return null;
+}
+
+function validateUrlField(fileLabel, records, identifierField, field = "url") {
+  const errors = [];
+  for (const rec of records) {
+    const problem = urlValueError(rec.fields[field]);
+    if (problem) {
+      errors.push(errorMsg(fileLabel, rec.rowNum, identifierFor(rec, identifierField), `${field} "${rec.fields[field]}" ${problem}`));
     }
   }
   return errors;
@@ -270,6 +466,40 @@ function normalizeIds(parsed) {
   rewrite("sponsors.csv", parsed.sponsors.records, "id", "name");
   rewrite("events.csv", parsed.events.records, "id", "title");
   rewrite("events.csv", parsed.events.records, "venue_id", "title");
+  return notes;
+}
+
+/**
+ * Coordinators paste links the way they read them out loud
+ * ("blackgarnetbooks.com") — two of the live venues sheet's links are written
+ * that way today. A bare domain is unambiguous, so the build completes it to
+ * https:// rather than failing, following the same normalize-don't-reject rule
+ * ids do. Anything carrying a scheme is left exactly as typed, for
+ * validateUrlField to accept or reject.
+ */
+const BARE_DOMAIN_RE = /^[^\s/:?#]+\.[^\s/:?#]+(?:[/?#]\S*)?$/;
+
+function normalizeUrls(parsed) {
+  const notes = [];
+  const rewrite = (fileLabel, records, field, identifierField) => {
+    for (const rec of records) {
+      const raw = String(rec.fields[field] ?? "").trim();
+      if (raw === "" || !BARE_DOMAIN_RE.test(raw)) continue;
+      const completed = `https://${raw}`;
+      notes.push(
+        `${fileLabel} row ${rec.rowNum} (${identifierFor(rec, identifierField)}): ${field} "${raw}" -> "${completed}"`
+      );
+      rec.fields[field] = completed;
+    }
+  };
+  rewrite("venues.csv", parsed.venues.records, "url", "name");
+  rewrite("sponsors.csv", parsed.sponsors.records, "url", "name");
+  rewrite(
+    "settings.csv",
+    parsed.settings.records.filter((rec) => String(rec.fields.key ?? "").trim() === "donation_url"),
+    "value",
+    "key"
+  );
   return notes;
 }
 
@@ -377,6 +607,7 @@ function validateVenues(records) {
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
     ...validateLocation(fileLabel, records, "name"),
+    ...validateUrlField(fileLabel, records, "name"),
   ];
   const clean = records.map((rec) => ({
     id: rec.fields.id ?? "",
@@ -422,7 +653,7 @@ function validateVendors(records) {
   return { errors, clean };
 }
 
-function validateEvents(records, venueIds, skipVenueRefCheck) {
+function validateEvents(records, venueIds) {
   const fileLabel = "events.csv";
   const errors = [
     ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "date", "start_time", "end_time"], "title"),
@@ -433,7 +664,7 @@ function validateEvents(records, venueIds, skipVenueRefCheck) {
   for (const rec of records) {
     const ident = identifierFor(rec, "title");
     const venueId = rec.fields.venue_id;
-    if (venueId && String(venueId).trim() !== "" && !skipVenueRefCheck && !venueIds.has(venueId)) {
+    if (venueId && String(venueId).trim() !== "" && !venueIds.has(venueId)) {
       errors.push(
         errorMsg(fileLabel, rec.rowNum, ident, `venue_id "${venueId}" doesn't match any venue in the venues tab.`)
       );
@@ -550,6 +781,7 @@ function validateSponsorFields(records) {
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
     ...validateLocation(fileLabel, records, "name"),
+    ...validateUrlField(fileLabel, records, "name"),
   ];
 
   const seenByTier = new Map(); // tier slug -> row numbers seen so far, in order
@@ -602,13 +834,49 @@ function validateSponsorFields(records) {
 
 function validateSettings(records) {
   const fileLabel = "settings.csv";
+  // Trimmed before anything else: a trailing space made "donation_url " a
+  // different key, and the donate button silently disappeared.
+  for (const rec of records) {
+    rec.fields.key = String(rec.fields.key ?? "").trim();
+    rec.fields.value = String(rec.fields.value ?? "").trim();
+  }
+
   const errors = [
     ...validateRequiredFields(fileLabel, records, ["key"], "key"),
     ...validateDuplicateIds(fileLabel, records, "key", "key"),
   ];
+
+  const knownKeys = Object.keys(SETTINGS_KEYS);
+  for (const rec of records) {
+    const key = rec.fields.key;
+    if (key === "") continue; // reported by the required-field check
+    const spec = SETTINGS_KEYS[key];
+    if (!spec) {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          key,
+          `unknown setting "${key}" — the site would ignore it. Expected one of: ${knownKeys.join(", ")}.`
+        )
+      );
+      continue;
+    }
+    const value = rec.fields.value;
+    if (spec.oneOf && !spec.oneOf.includes(value)) {
+      errors.push(
+        errorMsg(fileLabel, rec.rowNum, key, `value "${value}" must be exactly ${spec.oneOf.join(" or ")}.`)
+      );
+    }
+    if (spec.isUrl) {
+      const problem = urlValueError(value);
+      if (problem) errors.push(errorMsg(fileLabel, rec.rowNum, key, `value "${value}" ${problem}`));
+    }
+  }
+
   const clean = {};
   for (const rec of records) {
-    if (rec.fields.key) clean[rec.fields.key] = rec.fields.value ?? "";
+    if (rec.fields.key) clean[rec.fields.key] = rec.fields.value;
   }
   return { errors, clean };
 }
@@ -617,23 +885,72 @@ function validateSettings(records) {
 // Sponsor logo resolution (copies bundled/downloaded bytes for later writing)
 // ---------------------------------------------------------------------------
 
-function filenameFromUrl(url, sponsorId, contentType) {
-  try {
-    const u = new URL(url);
-    const base = path.basename(u.pathname);
-    if (base && /\.[a-z0-9]+$/i.test(base)) return base;
-  } catch {
-    // fall through to content-type based naming
+// A logo is served from the festival's own origin and precached onto every
+// attendee's phone, so both what it may contain and how big it may be are
+// constrained here rather than trusted from the sheet.
+const LOGO_TYPE_EXTENSIONS = {
+  "image/svg+xml": "svg",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+const LOGO_FILE_EXTENSIONS = { svg: "svg", png: "png", jpg: "jpg", jpeg: "jpg", webp: "webp" };
+// 512 KB: comfortably above any real vector or bitmap wordmark (the placeholder
+// logos are ~1 KB), and small enough that a sponsor list of them stays inside
+// an offline precache a phone downloads over festival-grounds cell service.
+const LOGO_MAX_BYTES = 512 * 1024;
+
+/**
+ * SVG is a script-capable format, and a logo served from our origin runs in our
+ * origin — same scope as the service worker and the attendee's starred events.
+ * Bad SVGs are rejected rather than sanitized: stripping tags silently ships an
+ * altered logo, and a sponsor whose file trips this needs to hear about it.
+ *
+ * `data:` links are allowed only for raster payloads. A base64 bitmap inside a
+ * wordmark is a real pattern with no way to execute; `data:image/svg+xml` and
+ * `data:text/html` are not, and are rejected with everything else.
+ */
+const SVG_SCRIPT_PATTERNS = [
+  { re: /<\s*script\b/i, found: "a <script> element" },
+  { re: /<\s*foreignObject\b/i, found: "a <foreignObject> element" },
+  { re: /\son[a-z][a-z0-9_-]*\s*=/i, found: "an inline event handler attribute (on…=)" },
+  { re: /(?:xlink:)?href\s*=\s*["']?\s*javascript:/i, found: 'a "javascript:" link' },
+  {
+    re: /(?:xlink:)?href\s*=\s*["']?\s*data:(?!image\/(?:png|jpeg|gif|webp)[;,])/i,
+    found: 'a "data:" link that is not a raster image',
+  },
+];
+
+function svgScriptError(text) {
+  for (const { re, found } of SVG_SCRIPT_PATTERNS) {
+    if (re.test(text)) return found;
   }
-  const extMap = {
-    "image/svg+xml": "svg",
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-    "image/gif": "gif",
-  };
-  const ext = extMap[(contentType || "").split(";")[0].trim()] || "png";
-  return `${sponsorId}.${ext}`;
+  return null;
+}
+
+function logoSizeError(buffer) {
+  if (buffer.length <= LOGO_MAX_BYTES) return null;
+  const kb = Math.round(buffer.length / 1024);
+  return (
+    `is ${kb} KB, over the ${LOGO_MAX_BYTES / 1024} KB limit for a sponsor logo ` +
+    `(every logo is precached onto every attendee's phone for offline use).`
+  );
+}
+
+/**
+ * A local `logo` is a bare filename inside content/fixtures/logos/. path.join
+ * resolves "..", so an unchecked value could read any file the build can — the
+ * runner's checkout and its credentials included.
+ */
+function localLogoPath(logoValue) {
+  if (/[\\/]/.test(logoValue) || logoValue.includes("..")) {
+    return { error: `must be a plain filename inside content/fixtures/logos/ (no folders, no "..").` };
+  }
+  const resolved = path.resolve(LOGOS_DIR, logoValue);
+  if (!resolved.startsWith(LOGOS_DIR + path.sep)) {
+    return { error: `resolves outside content/fixtures/logos/.` };
+  }
+  return { resolved };
 }
 
 async function resolveSponsorLogos(records) {
@@ -646,30 +963,73 @@ async function resolveSponsorLogos(records) {
     // validateSponsorFields, not here.
     if (!logoValue) continue;
     const ident = identifierFor(rec, "name");
+    // Ids are slugified and uniqueness-checked, so naming the bundled file after
+    // the sponsor keeps two sponsors whose URLs both end /logo.svg apart.
     const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
+    const fail = (message) => errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, message));
+
+    let ext;
+    let buffer;
+    let origin; // how the message refers to the file
+
     if (/^https?:\/\//i.test(logoValue)) {
+      origin = `logo URL "${logoValue}"`;
+      let res;
       try {
-        const res = await fetch(logoValue);
-        if (!res.ok) {
-          errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, `logo URL "${logoValue}" returned HTTP ${res.status}.`));
-          continue;
-        }
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const filename = filenameFromUrl(logoValue, sponsorId, res.headers.get("content-type"));
-        resolved.set(rec.rowNum, { filename, buffer });
+        res = await fetchWithTimeout(logoValue);
       } catch (err) {
-        errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, `logo URL "${logoValue}" could not be fetched (${err.message}).`));
+        fail(`${origin} could not be fetched (${err.message}).`);
+        continue;
       }
-    } else {
-      const localPath = path.join(LOGOS_DIR, logoValue);
-      if (!existsSync(localPath)) {
-        errors.push(
-          errorMsg("sponsors.csv", rec.rowNum, ident, `logo file "${logoValue}" not found in content/fixtures/logos/.`)
+      if (!res.ok) {
+        fail(`${origin} returned HTTP ${res.status}.`);
+        continue;
+      }
+      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      ext = LOGO_TYPE_EXTENSIONS[contentType];
+      if (!ext) {
+        fail(
+          `${origin} returned content-type "${contentType || "(none)"}" — a logo must be an SVG, PNG, JPEG, or WebP image.`
         );
         continue;
       }
-      resolved.set(rec.rowNum, { filename: path.basename(logoValue), buffer: readFileSync(localPath) });
+      buffer = Buffer.from(await res.arrayBuffer());
+    } else {
+      origin = `logo file "${logoValue}"`;
+      const local = localLogoPath(logoValue);
+      if (local.error) {
+        fail(`${origin} ${local.error}`);
+        continue;
+      }
+      if (!existsSync(local.resolved)) {
+        fail(`${origin} not found in content/fixtures/logos/.`);
+        continue;
+      }
+      ext = LOGO_FILE_EXTENSIONS[path.extname(logoValue).slice(1).toLowerCase()];
+      if (!ext) {
+        fail(`${origin} must be an .svg, .png, .jpg, or .webp file.`);
+        continue;
+      }
+      buffer = readFileSync(local.resolved);
     }
+
+    const sizeError = logoSizeError(buffer);
+    if (sizeError) {
+      fail(`${origin} ${sizeError}`);
+      continue;
+    }
+    if (ext === "svg") {
+      const found = svgScriptError(buffer.toString("utf8"));
+      if (found) {
+        fail(
+          `${origin} contains ${found}. An SVG served from the festival's own site can run code there, ` +
+            `so logos carrying script are rejected — ask the sponsor for a plain vector or PNG logo.`
+        );
+        continue;
+      }
+    }
+
+    resolved.set(rec.rowNum, { filename: `${sponsorId}.${ext}`, buffer });
   }
   return { errors, resolved };
 }
@@ -678,9 +1038,52 @@ async function resolveSponsorLogos(records) {
 // Main
 // ---------------------------------------------------------------------------
 
+function reportErrorsAndExit(errors) {
+  console.error(`Found ${errors.length} content error(s):\n`);
+  for (const e of errors) console.error(`  - ${oneLine(e)}`);
+  console.error(`\nFix the field(s) above in the spreadsheet/CSV and re-run the build.`);
+  process.exit(1);
+}
+
+/**
+ * Accepts the config path either positionally or as --config, and the output
+ * root as --out; tests build into a temp dir so they never overwrite the
+ * deployable site/ tree.
+ */
+function parseArgs(argv) {
+  let configArg = null;
+  let outArg = null;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--config" || arg === "--out") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("--")) return { error: `${arg} needs a path.` };
+      if (arg === "--config") configArg = value;
+      else outArg = value;
+      i += 1;
+    } else if (arg.startsWith("--")) {
+      return { error: `unknown option "${arg}" (supported: --config <path>, --out <dir>).` };
+    } else if (configArg === null) {
+      configArg = arg;
+    } else {
+      return { error: `unexpected argument "${arg}".` };
+    }
+  }
+  return { configArg: configArg ?? DEFAULT_CONFIG, outArg: outArg ?? DEFAULT_OUT_DIR };
+}
+
 async function main() {
-  const configArg = process.argv[2] || "content/config.json";
+  const args = parseArgs(process.argv.slice(2));
+  if (args.error) {
+    console.error(`Cannot start the build: ${args.error}`);
+    process.exit(1);
+  }
+  const { configArg, outArg } = args;
   const configPath = path.resolve(CWD, configArg);
+  const outDir = path.resolve(CWD, outArg);
+  const siteDataDir = path.join(outDir, "data");
+  const sponsorsOutDir = path.join(outDir, "assets/sponsors");
+  const contentJsonPath = path.join(siteDataDir, "content.json");
 
   let config;
   try {
@@ -712,14 +1115,26 @@ async function main() {
   const parsed = {};
   for (const key of SOURCE_ORDER) {
     parsed[key] = loaded[key] ? rowsToRecords(parseCSV(loaded[key].text)) : { header: [], records: [] };
+    if (loaded[key]) errors.push(...validateSourceShape(key, sources[key], parsed[key]));
   }
+
+  // A source that wouldn't load, a header that can't be read, or an emptied tab
+  // makes every row-level message downstream a misreading of the file, so those
+  // are reported on their own rather than buried under hundreds of them.
+  if (errors.length > 0) reportErrorsAndExit(errors);
 
   // Before any validation: ids and venue_id references become slugs, so
   // duplicate detection and the foreign-key check below compare like with like.
   const idNotes = normalizeIds(parsed);
   if (idNotes.length) {
     console.log(`Normalized ${idNotes.length} id(s):`);
-    for (const n of idNotes) console.log(`  - ${n}`);
+    for (const n of idNotes) console.log(`  - ${oneLine(n)}`);
+  }
+
+  const urlNotes = normalizeUrls(parsed);
+  if (urlNotes.length) {
+    console.log(`Completed ${urlNotes.length} link(s) to https://:`);
+    for (const n of urlNotes) console.log(`  - ${oneLine(n)}`);
   }
 
   const venuesResult = validateVenues(parsed.venues.records);
@@ -728,7 +1143,7 @@ async function main() {
   const sponsorFieldErrors = validateSponsorFields(parsed.sponsors.records);
 
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
-  const eventsResult = validateEvents(parsed.events.records, venueIds, loaded.venues === null);
+  const eventsResult = validateEvents(parsed.events.records, venueIds);
 
   const { errors: logoErrors, resolved: logoFiles } = await resolveSponsorLogos(parsed.sponsors.records);
 
@@ -741,12 +1156,7 @@ async function main() {
     ...logoErrors
   );
 
-  if (errors.length > 0) {
-    console.error(`Found ${errors.length} content error(s):\n`);
-    for (const e of errors) console.error(`  - ${e}`);
-    console.error(`\nFix the field(s) above in the spreadsheet/CSV and re-run the build.`);
-    process.exit(1);
-  }
+  if (errors.length > 0) reportErrorsAndExit(errors);
 
   // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
   // tier rewritten from the CSV slug to its display label + intrinsic rank).
@@ -793,21 +1203,32 @@ async function main() {
     sponsors,
   };
 
-  mkdirSync(SITE_DATA_DIR, { recursive: true });
-  mkdirSync(SPONSORS_OUT_DIR, { recursive: true });
-  writeFileSync(CONTENT_JSON_PATH, JSON.stringify(content, null, 2) + "\n");
+  mkdirSync(siteDataDir, { recursive: true });
+  // Rebuilt from scratch: a logo dropped from the sheet, or renamed by an id
+  // change, would otherwise linger here and stay in the service worker's
+  // precache long after nothing references it.
+  rmSync(sponsorsOutDir, { recursive: true, force: true });
+  mkdirSync(sponsorsOutDir, { recursive: true });
+  writeFileSync(contentJsonPath, JSON.stringify(content, null, 2) + "\n");
 
   for (const { filename, buffer } of logoFiles.values()) {
-    writeFileSync(path.join(SPONSORS_OUT_DIR, filename), buffer);
+    writeFileSync(path.join(sponsorsOutDir, filename), buffer);
   }
 
+  const relativeOut = path.relative(CWD, contentJsonPath);
+  const shownPath = relativeOut && !relativeOut.startsWith("..") ? relativeOut : contentJsonPath;
   console.log(
-    `Built site/data/content.json: ${content.venues.length} venues, ${content.events.length} events, ` +
+    `Built ${shownPath}: ${content.venues.length} venues, ${content.events.length} events, ` +
       `${content.vendors.length} vendors, ${content.sponsors.length} sponsors, version ${version}`
   );
 }
 
-main().catch((err) => {
-  console.error(`Unexpected build error: ${err.stack || err.message}`);
-  process.exit(1);
-});
+// Only build when run as a script; tests import this module for its CSV parser.
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  main().catch((err) => {
+    console.error(`Unexpected build error: ${err.stack || err.message}`);
+    process.exit(1);
+  });
+}
+
+export { parseCSV, rowsToRecords };

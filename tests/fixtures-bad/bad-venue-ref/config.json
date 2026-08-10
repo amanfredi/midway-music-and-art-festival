@@ -1,9 +1,0 @@
-{
-  "sources": {
-    "venues": "tests/fixtures-bad/bad-venue-ref/venues.csv",
-    "events": "tests/fixtures-bad/bad-venue-ref/events.csv",
-    "vendors": "tests/fixtures-bad/bad-venue-ref/vendors.csv",
-    "sponsors": "tests/fixtures-bad/bad-venue-ref/sponsors.csv",
-    "settings": "tests/fixtures-bad/bad-venue-ref/settings.csv"
-  }
-}

@@ -1,17 +1,20 @@
-// Generates site/sw.js from scripts/sw.template.js: precache list of every file
-// in site/ plus a version hash, so any content or code change produces a new
-// service worker and a coherent full re-precache on clients.
+// Generates <site>/sw.js from scripts/sw.template.js: precache list of every file
+// in the site tree plus a version hash, so any content or code change produces a
+// new service worker and a coherent full re-precache on clients.
+//
+// Usage: node scripts/build-sw.mjs [--site dir]   (defaults to site/)
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SITE = join(ROOT, 'site');
+const siteFlag = process.argv.indexOf('--site');
+const SITE = siteFlag === -1 ? join(ROOT, 'site') : resolve(process.cwd(), process.argv[siteFlag + 1] ?? '');
 
 if (!existsSync(join(SITE, 'data', 'content.json'))) {
-  console.error('site/data/content.json is missing — run `node scripts/build.mjs` first.');
+  console.error(`${join(SITE, 'data', 'content.json')} is missing — run \`node scripts/build.mjs\` first.`);
   process.exit(1);
 }
 
@@ -40,9 +43,13 @@ const version = hash.digest('hex').slice(0, 12);
 
 const urls = files.map((f) => './' + f.split(sep).join('/'));
 const template = await readFile(join(ROOT, 'scripts', 'sw.template.js'), 'utf8');
+// Function replacements: as a string, `$&` and friends inside a filename would
+// be expanded by String.replace, and a precache entry for a file that doesn't
+// exist makes cache.addAll reject — the worker never activates and offline
+// stops working site-wide while the online site looks fine.
 const sw = template
-  .replace('__VERSION__', version)
-  .replace('__PRECACHE__', JSON.stringify(urls, null, 2));
+  .replace('__VERSION__', () => version)
+  .replace('__PRECACHE__', () => JSON.stringify(urls, null, 2));
 
 await writeFile(join(SITE, 'sw.js'), sw);
 console.log(`sw.js generated: version ${version}, ${urls.length} precached files`);

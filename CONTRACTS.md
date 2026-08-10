@@ -56,13 +56,23 @@ including `site/assets/transit.json`.
 
 Each value is a repo-relative file path **or** an `https://` URL (a Google Sheet
 tab "published to web" as CSV). `build.mjs` must treat both identically after
-loading. Swapping placeholder → real sheet changes only this file.
+loading. Swapping placeholder → real sheet changes only this file. `http://` is
+rejected, except on loopback hosts — the test suite serves fixtures that way.
+A fetched source whose content-type is `text/html` is rejected: that is a
+sign-in or error page, not the tab.
 
 ## CSV schemas (Google Sheet tab shapes)
 
 Header row required, exact snake_case column names. Extra columns are ignored
-(coordinators may keep notes columns). All CSV parsing is RFC 4180 (quoted
-fields, embedded commas/newlines/quotes).
+(coordinators may keep notes columns), but every column listed below must be
+present and spelled exactly: a missing one is a build error, and one that
+matches only case- or whitespace-insensitively (`Description`, `url `) is a
+build error naming both spellings — otherwise a rename is indistinguishable
+from a notes column and silently blanks that field for every row. All CSV
+parsing is RFC 4180 (quoted fields, embedded commas/newlines/quotes).
+
+A source that yields no data rows is a build error too: an emptied tab must not
+publish an empty guide over a working one.
 
 **Ids are normalized, not rejected.** Every `id` — and `events.venue_id` — is
 slugified at build time: lowercased, with everything outside `[a-z0-9-]`
@@ -75,6 +85,13 @@ typed are kept. Two consequences worth relying on:
 
 Build errors remain for a value that slugifies to nothing (`&&&`) and for two
 rows that slugify to the same id. The build prints every rewrite it made.
+
+**Links follow the same rule.** Every URL field (`venues.url`,
+`sponsors.url`, `settings.donation_url`) may use only `https:`, `http:`, or
+`mailto:` — anything else, `javascript:` included, is a build error. A bare
+domain (`blackgarnetbooks.com`) is completed to `https://` rather than
+rejected, and the completion is printed like an id rewrite. Text that is
+neither is a build error.
 
 **venues.csv** — `id, name, address, location, description, url`
 - `id`: unique, normalized as above; `url` optional, others required.
@@ -98,10 +115,10 @@ rows that slugify to the same id. The build prints every rewrite it made.
 - `venue_id` must exist in venues.
 - `kind`: one of `music|art|performance|literary|vendor|other` (optional,
   default `music`).
-- `tickets`: optional, exact values (sheet dropdown enforces): `General
-  Admission` (default when blank or column missing) · `General Admission
-  (limited capacity)` · `Free Ticket Required` · `Paid Ticket Required`. Any
-  other value is a build error.
+- `tickets`: the column is required, its value optional — exact values (sheet
+  dropdown enforces): `General Admission` (default when blank) · `General
+  Admission (limited capacity)` · `Free Ticket Required` · `Paid Ticket
+  Required`. Any other value is a build error.
 - `age_limit`: optional, blank (the default — all ages) or exactly `18+` or
   `21+`. Any other value is a build error. Blank stays blank in content.json;
   the two set values render a badge in every event row.
@@ -126,14 +143,24 @@ rows that slugify to the same id. The build prints every rewrite it made.
 
 - `logo`: filename in `content/fixtures/logos/` **or** an `https://` URL
   fetched at build time; either way it is bundled into `site/assets/sponsors/`
-  and the JSON gets the local path. Required for `emerald`–`topaz`; optional
-  (and unused if given) for `quartz`.
+  as `<sponsor id>.<ext>` (named from the id so two sponsors whose URLs both
+  end `/logo.svg` can't overwrite each other) and the JSON gets the local path.
+  Required for `emerald`–`topaz`; optional (and unused if given) for `quartz`.
+  Must be SVG, PNG, JPEG, or WebP and at most 512 KB — it is precached onto
+  every attendee's phone. A local filename must be bare: folders and `..` are
+  build errors. An SVG carrying script (`<script>`, `<foreignObject>`, an
+  `on…=` attribute, a `javascript:` or non-raster `data:` link) is **rejected,
+  not sanitized** — it would run in the site's own origin, and silently
+  altering a sponsor's logo is worse than telling them.
 - `location`: optional, same formats and bbox check as venues.csv, validated
   only when present. A sponsor's map pin (see Map contract) depends on having
   one.
 - `url`, `blurb` optional.
 
-**settings.csv** — two columns `key, value`, one setting per row:
+**settings.csv** — two columns `key, value`, one setting per row. Keys and
+values are trimmed (a trailing space used to make a different, silently ignored
+key); a key outside the list below is a build error, since the site would ignore
+it; `you_are_here_enabled` must be exactly `true` or `false`:
 - `festival_name`, `festival_dates_label` (display text), `banner_id`,
   `banner_text` (both empty = no banner; `banner_id` changing re-shows a
   dismissed banner), `you_are_here_enabled` (`true`/`false`),
@@ -147,7 +174,10 @@ rows that slugify to the same id. The build prints every rewrite it made.
 Any violation **fails the build (exit 1)** with messages a non-programmer can
 act on. Format: `events.csv row 14 ("Sunset Set"): venue_id "blue-moon" doesn't
 match any venue in the venues tab.` Row numbers are spreadsheet rows (header =
-row 1). Check: required fields, duplicate ids, unknown venue_id references,
+row 1). Structural problems — a source that wouldn't load, a header missing or
+misspelling a known column, a tab with no data rows — are reported together and
+stop the build before row checks run, because every row message downstream of
+them is a misreading of the file. Row checks: required fields, duplicate ids, unknown venue_id references,
 date/time format and calendar validity, `end_time` equal to `start_time`,
 `location` parseable (decimal pair or plus code) and resolving inside bbox
 [44.94..44.98, -93.20..-93.13] (catches swapped lat/lng), unknown
@@ -382,6 +412,11 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 
 - Plain ES modules, no runtime deps. `package.json` is owned by
   the orchestrator — agents report needed devDependencies instead of editing it.
-- npm scripts: `build` (content+sw), `serve`, `test` (node --test + Playwright).
+- npm scripts: `build` (content+sw from `content/config.json`), `build:fixtures`
+  (the same, from the local fixtures — what `test` uses so it needs no
+  network), `serve`, `test` (node --test + Playwright).
+- `build.mjs` takes `--config <path>` (or a positional path) and `--out <dir>`;
+  `build-sw.mjs` takes `--site <dir>`. Both default to `site/`, so tests build
+  into temp dirs without disturbing the deployable tree.
 - Mobile-first, light theme, system fonts, 44px+ touch targets, WCAG AA contrast.
 - Content that is intentionally placeholder should not refer to real businesses or artists, because that would inappropriately connect real people to an event that they are not necessarily involved in on a public website.

@@ -62,6 +62,23 @@ describe("service worker generation", () => {
     assert.match(sw, /const VERSION = '[0-9a-f]{12}'/);
   });
 
+  test("a content change moves the version", () => {
+    // The version is the whole update mechanism: it names the cache, so a new
+    // one is what makes an installed worker re-precache and a phone see the
+    // change. A version that didn't move on a content change would leave every
+    // returning visitor on the old schedule with a green deploy.
+    const version = (sw) => /const VERSION = '([0-9a-f]{12})'/.exec(sw)[1];
+    const site = makeSiteTree("content-change");
+    runBuildSw(site);
+    const before = version(readFileSync(path.join(site, "sw.js"), "utf8"));
+
+    writeFileSync(path.join(site, "data/content.json"), '{"version":"ffffffffffff"}\n');
+    runBuildSw(site);
+    const after = version(readFileSync(path.join(site, "sw.js"), "utf8"));
+
+    assert.notEqual(after, before, "changed site bytes must produce a new worker version");
+  });
+
   test("an unchanged tree regenerates the same version", () => {
     const site = makeSiteTree("stable");
     runBuildSw(site);

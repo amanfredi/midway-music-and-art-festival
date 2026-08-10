@@ -425,7 +425,9 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   (the same, from the local fixtures — what `test` uses so it needs no
   network), `serve`, `test` (node --test + Playwright).
 - `build.mjs` takes `--config <path>` (or a positional path) and `--out <dir>`;
-  `build-sw.mjs` takes `--site <dir>`. Both default to `site/`, so tests build
-  into temp dirs without disturbing the deployable tree.
+  `build-sw.mjs` takes `--site <dir>`; `serve.mjs` takes `--root <dir>` and
+  `--port <n>` (`0` binds an ephemeral port and the startup line names it).
+  All default to `site/`, so tests build into temp dirs and serve them without
+  disturbing the deployable tree.
 - Mobile-first, light theme, system fonts, 44px+ touch targets, WCAG AA contrast.
 - Content that is intentionally placeholder should not refer to real businesses or artists, because that would inappropriately connect real people to an event that they are not necessarily involved in on a public website.

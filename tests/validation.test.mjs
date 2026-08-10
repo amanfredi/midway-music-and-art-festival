@@ -472,3 +472,101 @@ describe("source shape and headers", () => {
     assert.match(result.stderr, /https:\/\//);
   });
 });
+
+describe("sponsor logos", () => {
+  const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+  const EMERALD_SPONSOR = "Shortline Credit Union"; // sponsors.csv row 2
+
+  // Every fetched-logo case points the same sponsor row at the local server.
+  function logoConfig(name, routes, urlPath) {
+    return withLocalServer(routes, async (origin) => {
+      const config = makeFixtureSet(TMP_ROOT, name, [setCell("sponsors.csv", 2, "logo", `${origin}${urlPath}`)]);
+      return { result: await runBuildAsync(config) };
+    });
+  }
+
+  test("a fetched logo is bundled under the sponsor's id, not the URL's filename", async () => {
+    const { result } = await logoConfig("logo-ok", { "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG } }, "/logo.svg");
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const sponsor = content.sponsors.find((s) => s.name === EMERALD_SPONSOR);
+    // Two sponsors whose URLs both end /logo.svg would otherwise overwrite each
+    // other's file.
+    assert.equal(sponsor.logo, "assets/sponsors/shortline-credit-union.svg");
+    assert.ok(existsSync(path.join(result.outDir, sponsor.logo)));
+  });
+
+  test("a logo served as HTML is rejected by content type", async () => {
+    const { result } = await logoConfig(
+      "logo-html",
+      { "/logo.svg": { type: "text/html", body: "<!doctype html><script>alert(1)</script>" } },
+      "/logo.svg"
+    );
+    assert.notEqual(result.status, 0, "an HTML logo body should fail the build");
+    assert.match(result.stderr, /content-type "text\/html"/);
+    assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  test("an oversized logo is rejected with the limit in the message", async () => {
+    const { result } = await logoConfig(
+      "logo-huge",
+      { "/logo.png": { type: "image/png", body: Buffer.alloc(600 * 1024, 7) } },
+      "/logo.png"
+    );
+    assert.notEqual(result.status, 0, "an oversized logo should fail the build");
+    assert.match(result.stderr, /512 KB/);
+    assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  for (const [label, body] of [
+    ["a <script> element", `<svg xmlns="http://www.w3.org/2000/svg"><script>fetch('/steal')</script></svg>`],
+    [
+      "a <foreignObject> element",
+      `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><body xmlns="http://www.w3.org/1999/xhtml"/></foreignObject></svg>`,
+    ],
+    ["an event handler attribute", `<svg xmlns="http://www.w3.org/2000/svg"><rect onload="alert(1)"/></svg>`],
+    [
+      "a javascript: link",
+      `<svg xmlns="http://www.w3.org/2000/svg"><a xlink:href="javascript:alert(1)"><rect/></a></svg>`,
+    ],
+    [
+      "a data: link to markup",
+      `<svg xmlns="http://www.w3.org/2000/svg"><a href="data:text/html,<script>alert(1)</script>"><rect/></a></svg>`,
+    ],
+  ]) {
+    test(`an SVG logo carrying ${label} is rejected`, async () => {
+      const { result } = await logoConfig(
+        `logo-svg-${slug(label)}`,
+        { "/logo.svg": { type: "image/svg+xml", body } },
+        "/logo.svg"
+      );
+      assert.notEqual(result.status, 0, `an SVG with ${label} should fail the build`);
+      assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
+      assert.match(result.stderr, /can run code/);
+    });
+  }
+
+  test("an SVG logo embedding a raster image still builds", async () => {
+    // Real wordmarks do this; only script-capable payloads are rejected.
+    const body =
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">` +
+      `<image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="10" height="10"/></svg>`;
+    const { result } = await logoConfig("logo-svg-raster", { "/logo.svg": { type: "image/svg+xml", body } }, "/logo.svg");
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+
+  test("the committed placeholder logos pass the SVG check", () => {
+    // Guards against a rule so strict that real logos trip it.
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+
+  for (const escape of ["../../../../etc/hostname", "..%2Fsecrets", "subdir/logo.svg"]) {
+    test(`a local logo path of ${JSON.stringify(escape)} is refused`, () => {
+      const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [setCell("sponsors.csv", 2, "logo", escape)]);
+      const result = runBuild(config);
+      assert.notEqual(result.status, 0, "a logo path outside the logos folder should fail the build");
+      assert.match(result.stderr, /plain filename inside content\/fixtures\/logos/);
+    });
+  }
+});

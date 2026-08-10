@@ -6,7 +6,7 @@
 // Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
 //   config defaults to content/config.json, out defaults to site/
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -150,6 +150,41 @@ function rowsToRecords(rows) {
 // ---------------------------------------------------------------------------
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
+const FETCH_TIMEOUT_MS = 45_000;
+const FETCH_RETRIES = 2;
+
+/** A hung sheet must not hang the deploy: every fetch gets a hard deadline. */
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Content sources are retried because a single transient 500 from Google Sheets
+ * would otherwise fail the whole deploy — including a code-only deploy, since
+ * every deploy path rebuilds content. Same shape as tools/make-map.mjs.
+ */
+async function fetchSourceWithRetries(key, url) {
+  let lastErr;
+  for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
+    if (attempt > 0) {
+      console.warn(`  source "${key}": retry ${attempt}/${FETCH_RETRIES}...`);
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+    }
+    try {
+      return await fetchWithTimeout(url);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`  source "${key}": attempt ${attempt + 1} failed: ${err.message}`);
+    }
+  }
+  throw lastErr;
+}
 
 /**
  * Sources are fetched over the public internet, where http:// content can be
@@ -174,7 +209,7 @@ async function loadSource(key, value) {
     if (isUrl) {
       const schemeError = sourceSchemeError(key, value);
       if (schemeError) return { error: schemeError };
-      const res = await fetch(value);
+      const res = await fetchSourceWithRetries(key, value);
       if (!res.ok) {
         return { error: `source "${key}" (${value}) returned HTTP ${res.status}.` };
       }
@@ -719,23 +754,72 @@ function validateSettings(records) {
 // Sponsor logo resolution (copies bundled/downloaded bytes for later writing)
 // ---------------------------------------------------------------------------
 
-function filenameFromUrl(url, sponsorId, contentType) {
-  try {
-    const u = new URL(url);
-    const base = path.basename(u.pathname);
-    if (base && /\.[a-z0-9]+$/i.test(base)) return base;
-  } catch {
-    // fall through to content-type based naming
+// A logo is served from the festival's own origin and precached onto every
+// attendee's phone, so both what it may contain and how big it may be are
+// constrained here rather than trusted from the sheet.
+const LOGO_TYPE_EXTENSIONS = {
+  "image/svg+xml": "svg",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+const LOGO_FILE_EXTENSIONS = { svg: "svg", png: "png", jpg: "jpg", jpeg: "jpg", webp: "webp" };
+// 512 KB: comfortably above any real vector or bitmap wordmark (the placeholder
+// logos are ~1 KB), and small enough that a sponsor list of them stays inside
+// an offline precache a phone downloads over festival-grounds cell service.
+const LOGO_MAX_BYTES = 512 * 1024;
+
+/**
+ * SVG is a script-capable format, and a logo served from our origin runs in our
+ * origin — same scope as the service worker and the attendee's starred events.
+ * Bad SVGs are rejected rather than sanitized: stripping tags silently ships an
+ * altered logo, and a sponsor whose file trips this needs to hear about it.
+ *
+ * `data:` links are allowed only for raster payloads. A base64 bitmap inside a
+ * wordmark is a real pattern with no way to execute; `data:image/svg+xml` and
+ * `data:text/html` are not, and are rejected with everything else.
+ */
+const SVG_SCRIPT_PATTERNS = [
+  { re: /<\s*script\b/i, found: "a <script> element" },
+  { re: /<\s*foreignObject\b/i, found: "a <foreignObject> element" },
+  { re: /\son[a-z][a-z0-9_-]*\s*=/i, found: "an inline event handler attribute (on…=)" },
+  { re: /(?:xlink:)?href\s*=\s*["']?\s*javascript:/i, found: 'a "javascript:" link' },
+  {
+    re: /(?:xlink:)?href\s*=\s*["']?\s*data:(?!image\/(?:png|jpeg|gif|webp)[;,])/i,
+    found: 'a "data:" link that is not a raster image',
+  },
+];
+
+function svgScriptError(text) {
+  for (const { re, found } of SVG_SCRIPT_PATTERNS) {
+    if (re.test(text)) return found;
   }
-  const extMap = {
-    "image/svg+xml": "svg",
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-    "image/gif": "gif",
-  };
-  const ext = extMap[(contentType || "").split(";")[0].trim()] || "png";
-  return `${sponsorId}.${ext}`;
+  return null;
+}
+
+function logoSizeError(buffer) {
+  if (buffer.length <= LOGO_MAX_BYTES) return null;
+  const kb = Math.round(buffer.length / 1024);
+  return (
+    `is ${kb} KB, over the ${LOGO_MAX_BYTES / 1024} KB limit for a sponsor logo ` +
+    `(every logo is precached onto every attendee's phone for offline use).`
+  );
+}
+
+/**
+ * A local `logo` is a bare filename inside content/fixtures/logos/. path.join
+ * resolves "..", so an unchecked value could read any file the build can — the
+ * runner's checkout and its credentials included.
+ */
+function localLogoPath(logoValue) {
+  if (/[\\/]/.test(logoValue) || logoValue.includes("..")) {
+    return { error: `must be a plain filename inside content/fixtures/logos/ (no folders, no "..").` };
+  }
+  const resolved = path.resolve(LOGOS_DIR, logoValue);
+  if (!resolved.startsWith(LOGOS_DIR + path.sep)) {
+    return { error: `resolves outside content/fixtures/logos/.` };
+  }
+  return { resolved };
 }
 
 async function resolveSponsorLogos(records) {
@@ -748,30 +832,73 @@ async function resolveSponsorLogos(records) {
     // validateSponsorFields, not here.
     if (!logoValue) continue;
     const ident = identifierFor(rec, "name");
+    // Ids are slugified and uniqueness-checked, so naming the bundled file after
+    // the sponsor keeps two sponsors whose URLs both end /logo.svg apart.
     const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
+    const fail = (message) => errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, message));
+
+    let ext;
+    let buffer;
+    let origin; // how the message refers to the file
+
     if (/^https?:\/\//i.test(logoValue)) {
+      origin = `logo URL "${logoValue}"`;
+      let res;
       try {
-        const res = await fetch(logoValue);
-        if (!res.ok) {
-          errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, `logo URL "${logoValue}" returned HTTP ${res.status}.`));
-          continue;
-        }
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const filename = filenameFromUrl(logoValue, sponsorId, res.headers.get("content-type"));
-        resolved.set(rec.rowNum, { filename, buffer });
+        res = await fetchWithTimeout(logoValue);
       } catch (err) {
-        errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, `logo URL "${logoValue}" could not be fetched (${err.message}).`));
+        fail(`${origin} could not be fetched (${err.message}).`);
+        continue;
       }
-    } else {
-      const localPath = path.join(LOGOS_DIR, logoValue);
-      if (!existsSync(localPath)) {
-        errors.push(
-          errorMsg("sponsors.csv", rec.rowNum, ident, `logo file "${logoValue}" not found in content/fixtures/logos/.`)
+      if (!res.ok) {
+        fail(`${origin} returned HTTP ${res.status}.`);
+        continue;
+      }
+      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      ext = LOGO_TYPE_EXTENSIONS[contentType];
+      if (!ext) {
+        fail(
+          `${origin} returned content-type "${contentType || "(none)"}" — a logo must be an SVG, PNG, JPEG, or WebP image.`
         );
         continue;
       }
-      resolved.set(rec.rowNum, { filename: path.basename(logoValue), buffer: readFileSync(localPath) });
+      buffer = Buffer.from(await res.arrayBuffer());
+    } else {
+      origin = `logo file "${logoValue}"`;
+      const local = localLogoPath(logoValue);
+      if (local.error) {
+        fail(`${origin} ${local.error}`);
+        continue;
+      }
+      if (!existsSync(local.resolved)) {
+        fail(`${origin} not found in content/fixtures/logos/.`);
+        continue;
+      }
+      ext = LOGO_FILE_EXTENSIONS[path.extname(logoValue).slice(1).toLowerCase()];
+      if (!ext) {
+        fail(`${origin} must be an .svg, .png, .jpg, or .webp file.`);
+        continue;
+      }
+      buffer = readFileSync(local.resolved);
     }
+
+    const sizeError = logoSizeError(buffer);
+    if (sizeError) {
+      fail(`${origin} ${sizeError}`);
+      continue;
+    }
+    if (ext === "svg") {
+      const found = svgScriptError(buffer.toString("utf8"));
+      if (found) {
+        fail(
+          `${origin} contains ${found}. An SVG served from the festival's own site can run code there, ` +
+            `so logos carrying script are rejected — ask the sponsor for a plain vector or PNG logo.`
+        );
+        continue;
+      }
+    }
+
+    resolved.set(rec.rowNum, { filename: `${sponsorId}.${ext}`, buffer });
   }
   return { errors, resolved };
 }
@@ -940,6 +1067,10 @@ async function main() {
   };
 
   mkdirSync(siteDataDir, { recursive: true });
+  // Rebuilt from scratch: a logo dropped from the sheet, or renamed by an id
+  // change, would otherwise linger here and stay in the service worker's
+  // precache long after nothing references it.
+  rmSync(sponsorsOutDir, { recursive: true, force: true });
   mkdirSync(sponsorsOutDir, { recursive: true });
   writeFileSync(contentJsonPath, JSON.stringify(content, null, 2) + "\n");
 

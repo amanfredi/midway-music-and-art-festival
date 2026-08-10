@@ -136,8 +136,15 @@ rows that slugify to the same id. The build prints every rewrite it made.
 
 - `logo`: filename in `content/fixtures/logos/` **or** an `https://` URL
   fetched at build time; either way it is bundled into `site/assets/sponsors/`
-  and the JSON gets the local path. Required for `emerald`–`topaz`; optional
-  (and unused if given) for `quartz`.
+  as `<sponsor id>.<ext>` (named from the id so two sponsors whose URLs both
+  end `/logo.svg` can't overwrite each other) and the JSON gets the local path.
+  Required for `emerald`–`topaz`; optional (and unused if given) for `quartz`.
+  Must be SVG, PNG, JPEG, or WebP and at most 512 KB — it is precached onto
+  every attendee's phone. A local filename must be bare: folders and `..` are
+  build errors. An SVG carrying script (`<script>`, `<foreignObject>`, an
+  `on…=` attribute, a `javascript:` or non-raster `data:` link) is **rejected,
+  not sanitized** — it would run in the site's own origin, and silently
+  altering a sponsor's logo is worse than telling them.
 - `location`: optional, same formats and bbox check as venues.csv, validated
   only when present. A sponsor's map pin (see Map contract) depends on having
   one.

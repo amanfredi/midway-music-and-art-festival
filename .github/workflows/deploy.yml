@@ -24,7 +24,19 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # The browser download is the slowest step and changes only when
+      # @playwright/test does, so it is keyed on the lockfile.
+      - id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      # System libraries live outside the cached directory, so they are
+      # installed even on a hit.
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
       - run: npm test
 
   deploy:

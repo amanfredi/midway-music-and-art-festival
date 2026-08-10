@@ -95,6 +95,12 @@ Test infrastructure / CI:
 - [ ] Generate `fixtures-bad/*` from the good fixtures with one documented
       mutation each; drop exact-count/histogram asserts; refresh the 9→14
       venue snapshot in `content/fixtures/venues.csv` (P2/P3)
+- [ ] Pin every remote GitHub Action to its latest release by full commit SHA,
+      human-readable version as a trailing comment in the Dependabot-supported
+      format (not from the review; added 2026-08-09)
+- [ ] Set up Dependabot version updates (`.github/dependabot.yml`) so the
+      SHA-pinned actions — and the lone npm devDependency — get bump PRs
+      (not from the review; added 2026-08-09)
 
 App / content:
 

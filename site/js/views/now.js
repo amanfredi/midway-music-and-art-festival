@@ -79,13 +79,17 @@ export function renderNow(container, content) {
     return `
       <section data-testid="now-view" class="view now-view">
         <h1 class="view-title">On now</h1>
-        ${onNow.length
-          ? venueGroupsHtml(onNow, venuesById, { relativeTo: t })
-          : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
+        <div data-testid="on-now-list">
+          ${onNow.length
+            ? venueGroupsHtml(onNow, venuesById, { relativeTo: t })
+            : '<p class="empty-state">Nothing on right now &mdash; see Up next below.</p>'}
+        </div>
         <h2 class="view-subtitle">Up next</h2>
-        ${upNext.length
-          ? venueGroupsHtml(upNext, venuesById, { relativeTo: t })
-          : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
+        <div data-testid="up-next-list">
+          ${upNext.length
+            ? venueGroupsHtml(upNext, venuesById, { relativeTo: t })
+            : '<p class="empty-state">That is a wrap for now &mdash; browse the full Schedule.</p>'}
+        </div>
         ${install}
       </section>`;
   }

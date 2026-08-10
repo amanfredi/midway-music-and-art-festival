@@ -9,31 +9,26 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * The two lists as rendered. now.js emits them as flat siblings under one
- * <h1>On now</h1> / <h2>Up next</h2> pair with no container of their own, so
- * they are separated by walking the section and switching buckets at each
- * heading rather than by a selector.
+ * The two lists as rendered, read through their container hooks
+ * (CONTRACTS.md test hooks). Titles are sorted because these assertions are
+ * about set membership; venue headings stay in DOM order, which is what the
+ * per-venue fallback's alphabetical ordering is asserted on.
  */
 async function readNowView(page) {
   await expect(page.locator('[data-testid="now-view"]')).toBeVisible();
   return page.evaluate(() => {
-    const section = document.querySelector('[data-testid="now-view"]');
-    const result = {
-      onNow: { titles: [], venues: [], emptyState: null },
-      upNext: { titles: [], venues: [], emptyState: null },
+    const read = (testid) => {
+      const list = document.querySelector(`[data-testid="${testid}"]`);
+      if (!list) throw new Error(`no [data-testid="${testid}"] — the Now view is not on its during-the-festival branch`);
+      const text = (selector) => [...list.querySelectorAll(selector)].map((el) => el.textContent.trim());
+      const empty = list.querySelector('.empty-state');
+      return {
+        titles: text('.event-row__title').sort(),
+        venues: text('.event-group__title'),
+        emptyState: empty ? empty.textContent.trim() : null,
+      };
     };
-    let bucket = null;
-    for (const child of section.children) {
-      if (child.tagName === 'H1') { bucket = result.onNow; continue; }
-      if (child.tagName === 'H2') { bucket = result.upNext; continue; }
-      if (!bucket) continue;
-      if (child.classList.contains('empty-state')) bucket.emptyState = child.textContent.trim();
-      for (const el of child.querySelectorAll('.event-group__title')) bucket.venues.push(el.textContent.trim());
-      for (const el of child.querySelectorAll('.event-row__title')) bucket.titles.push(el.textContent.trim());
-    }
-    result.onNow.titles.sort();
-    result.upNext.titles.sort();
-    return result;
+    return { onNow: read('on-now-list'), upNext: read('up-next-list') };
   });
 }
 

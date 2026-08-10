@@ -40,26 +40,19 @@ likewise unspecified.
 
 The August review's follow-ups landed 2026-08-09 in three waves — build/CI
 integrity, app fixes, test coverage. PROGRESS.md has the summary; the full
-report with finding IDs is `reviews/2026-08-code-and-test-review.md`. What
-remains:
+report with finding IDs is `reviews/2026-08-code-and-test-review.md`. All four
+remaining items are now done; nothing here is open.
 
-- [ ] **A `content-updated` message can be dropped by a booting page**
-      (hypothesis, surfaced by the SW-update test work): `app.js` attaches its
-      service-worker message listener only after `loadContent()` resolves, so
-      a revalidation that finishes first posts to no listener and an open page
-      stays stale until reload. The symptom was observed in the test; the
-      mechanism is unverified. Candidate fix: attach the listener before
-      awaiting content. This is the urgent-banner path — confirm before
-      festival weekend.
-- [ ] Set up Dependabot version updates (`.github/dependabot.yml`) so the
-      SHA-pinned actions — and the lone npm devDependency — get bump PRs.
-- [ ] Test-hook gaps: the Now view's on-now/up-next lists have no container
-      testids (the spec walks sibling headings to tell them apart); the
-      schedule specs lean on `.day-tab[data-day]`, `.toggle-btn[data-group]`,
-      and `.event-group__title`, which are absent from CONTRACTS.md's
-      test-hook list, so nothing stops a rename.
-- [ ] `serve.mjs --root` flag, so the SW-update spec can reuse it instead of
-      carrying its own ~25-line static server.
+Still worth knowing about the last of them: the dropped-`content-updated`
+hypothesis was **wrong about the mechanism**. The listener really was attached
+too late, and a message posted before a listener exists really is dropped
+rather than queued — but that was never reached, because the worker threw
+first. It passed the same `Response` to `respondWith` and to
+`revalidateContent`, and serving a response consumes its body, so the later
+`clone()` threw into a bare `catch`. Stale-while-revalidate had therefore never
+revalidated at all: content only ever reached a phone through the next
+version's precache. Both halves are fixed and the SW-update spec now asserts
+the in-place refresh on the load that performs the update.
 
 Deferred — uncertain or bigger than a follow-up:
 

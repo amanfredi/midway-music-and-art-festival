@@ -148,6 +148,12 @@ function renderOfflineError(retry) {
   viewEl.querySelector('#retry-load').addEventListener('click', retry);
 }
 
+// Resolves once boot has content to re-render and a router to re-render it
+// with. A content-updated message that lands mid-boot waits on this rather than
+// repainting a view that has no content yet.
+let bootComplete;
+const booted = new Promise((resolve) => { bootComplete = resolve; });
+
 async function boot() {
   renderSplash();
   try {
@@ -163,18 +169,23 @@ async function boot() {
 
   renderBanner();
   startRouter(handleRoute);
+  bootComplete();
+}
 
-  // Guarded so the app works identically with no service worker at all.
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'content-updated') {
-        store.refreshContent().then(() => {
-          renderBanner();
-          handleRoute(parseHash());
-        });
-      }
-    });
-  }
+// Guarded so the app works identically with no service worker at all. Attached
+// at module evaluation, not at the end of boot(): the worker revalidates
+// content.json while the page is still loading it, and navigator.serviceWorker
+// drops a message posted before any listener exists rather than queueing it.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (!event.data || event.data.type !== 'content-updated') return;
+    booted
+      .then(() => store.refreshContent())
+      .then(() => {
+        renderBanner();
+        handleRoute(parseHash());
+      });
+  });
 }
 
 initInstallPrompt();

@@ -9,9 +9,7 @@
 // test's caches and service worker isolated from theirs.
 import { test, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
 import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { createReadStream } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,43 +18,40 @@ import { makeFixtureSet, setCell } from './fixture-sets.mjs';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GOOD_CONFIG = 'tests/fixtures-good/config.json';
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.webmanifest': 'application/manifest+json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.txt': 'text/plain; charset=utf-8',
-};
-
-/** Same shape as scripts/serve.mjs, but rooted wherever this test needs it. */
+/**
+ * The real dev server, rooted at this test's own tree and on an ephemeral port
+ * so the run stays parallel-safe. Resolves once it reports the port it bound.
+ */
 function serve(root) {
-  const server = createServer((req, res) => {
-    const url = new URL(req.url, 'http://localhost');
-    let rel = path.normalize(decodeURIComponent(url.pathname)).replace(/^[/\\]+/, '');
-    if (rel === '' || rel === '.') rel = 'index.html';
-    const file = path.join(root, rel);
-    if (!file.startsWith(root)) {
-      res.writeHead(403).end('forbidden');
-      return;
-    }
-    res.writeHead(200, {
-      'content-type': MIME[path.extname(file)] ?? 'application/octet-stream',
-      'cache-control': 'no-cache',
+  const child = spawn(
+    process.execPath,
+    [path.join(REPO_ROOT, 'scripts/serve.mjs'), '--root', root, '--port', '0'],
+    { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'inherit'] },
+  );
+  return new Promise((resolve, reject) => {
+    let out = '';
+    const onEarlyExit = (code) => reject(new Error(`serve.mjs exited ${code} before it was listening`));
+    child.once('error', reject);
+    child.once('exit', onEarlyExit);
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+      const port = /http:\/\/localhost:(\d+)/.exec(out)?.[1];
+      if (!port) return;
+      child.off('exit', onEarlyExit);
+      resolve({ server: child, origin: `http://127.0.0.1:${port}` });
     });
-    createReadStream(file)
-      .on('error', () => res.writeHead(404, { 'content-type': 'text/plain' }).end('not found'))
-      .pipe(res);
-  });
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, origin: `http://127.0.0.1:${server.address().port}` }));
   });
 }
 
-/** Runs one script async — spawnSync would block the static server above. */
+/** Waits for the exit, so no server outlives the test. */
+function stopServer(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  const exited = new Promise((resolve) => child.once('exit', resolve));
+  child.kill();
+  return exited;
+}
+
+/** Runs one build script — async, so it doesn't block the test's own event loop. */
 function run(script, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(REPO_ROOT, script), ...args], { cwd: REPO_ROOT });
@@ -113,6 +108,17 @@ test('a second version installs over the first, drops its cache, and serves the 
     // --- the returning phone: reload onto the new worker
     await page.reload();
 
+    // This load is answered from the cache it already had, so the new text can
+    // only reach it as a message: the old worker's revalidation notices the
+    // bytes have changed, posts content-updated, and the page re-renders where
+    // it stands. Asserting it on *this* load, not a later one, is the point —
+    // an urgent day-of notice has to reach a tab that is already open, and
+    // every way this can break (the worker throwing before it posts, the page
+    // not listening yet) is silent.
+    const banner = page.locator('[data-testid="notice-banner"]');
+    await expect(banner).toContainText(bannerText, { timeout: 15_000 });
+    expect(bannerV1).not.toContain(bannerText);
+
     // skipWaiting + clients.claim put the new worker in charge without a second
     // visit, and activate deletes every older circuit-map-* cache — so exactly
     // one cache survives and it is the new one. A worker that installed but
@@ -120,16 +126,6 @@ test('a second version installs over the first, drops its cache, and serves the 
     await expect
       .poll(() => cacheNames(page), { timeout: 30_000 })
       .toEqual([`circuit-map-${v2}`]);
-
-    // ...and the next load — the reopened tab, on iOS the reload after an
-    // eviction — is served the new bytes rather than the ones it had cached.
-    // (The load that performed the update can still be showing the old content:
-    // its navigation and content.json were both answered from the old cache
-    // before the new worker took over.)
-    await page.reload();
-    const banner = page.locator('[data-testid="notice-banner"]');
-    await expect(banner).toContainText(bannerText);
-    expect(bannerV1).not.toContain(bannerText);
 
     // The new version is fully precached too: it works offline straight away,
     // which is the whole point of re-precaching on install.
@@ -139,7 +135,7 @@ test('a second version installs over the first, drops its cache, and serves the 
     await expect(page.locator('[data-testid="notice-banner"]')).toContainText(bannerText);
     await context.setOffline(false);
   } finally {
-    await new Promise((resolve) => server.close(resolve));
+    await stopServer(server);
     rmSync(tmpRoot, { recursive: true, force: true });
   }
 });

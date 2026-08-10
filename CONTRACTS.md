@@ -398,7 +398,16 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 ## Test hooks (UI must provide, offline test depends on them)
 
 - `[data-testid="now-view"]` on the on-now/up-next landing view container
+- `[data-testid="on-now-list"]` and `[data-testid="up-next-list"]` on the two
+  lists inside it (present on the during-the-festival branch only; each wraps
+  either its groups or its empty state)
 - `[data-testid="schedule-list"]` on the schedule list; each event row `[data-testid="event-row"]`
+- Schedule controls, by the attributes the renderer already keys on:
+  `.day-switcher .day-tab[data-day="<YYYY-MM-DD>"]` and
+  `.group-toggle .toggle-btn[data-group="time|venue|category"]`, each with
+  `aria-pressed` reflecting selection
+- `.event-group__title` on the heading of a group of event rows, in every
+  grouped list (the schedule's three groupings, the Now view's per-venue lists)
 - `[data-testid="star-toggle"]` on the star button in event detail (attribute `aria-pressed` reflects state)
 - `[data-testid="row-star-toggle"]` on the star button within an event row (schedule/now/starred lists); attribute `aria-pressed` reflects state
 - `[data-testid="starred-list"]` on the starred-events view container
@@ -416,7 +425,9 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   (the same, from the local fixtures — what `test` uses so it needs no
   network), `serve`, `test` (node --test + Playwright).
 - `build.mjs` takes `--config <path>` (or a positional path) and `--out <dir>`;
-  `build-sw.mjs` takes `--site <dir>`. Both default to `site/`, so tests build
-  into temp dirs without disturbing the deployable tree.
+  `build-sw.mjs` takes `--site <dir>`; `serve.mjs` takes `--root <dir>` and
+  `--port <n>` (`0` binds an ephemeral port and the startup line names it).
+  All default to `site/`, so tests build into temp dirs and serve them without
+  disturbing the deployable tree.
 - Mobile-first, light theme, system fonts, 44px+ touch targets, WCAG AA contrast.
 - Content that is intentionally placeholder should not refer to real businesses or artists, because that would inappropriately connect real people to an event that they are not necessarily involved in on a public website.

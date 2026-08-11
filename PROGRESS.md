@@ -96,8 +96,14 @@ stops (CONTRACTS, a map.js comment) now say 76, which is what it ships.
 Process notes. The first run of the map bundle and two definition agents died
 against the session usage cap and were resumed on cheaper models in the same
 worktrees; the inherited venue-pin work claimed a clean 2× that measurement
-disproved — the 1.73× above is the correction. Screenshot baseline recapture
-is owed: four visible changes, all inside the map frame.
+disproved — the 1.73× above is the correction. CI then caught the font test
+asserting more than is true off macOS (on the Linux runner the map's
+`system-ui` resolves to DejaVu Sans while `app.css`'s pre-`system-ui` stack
+falls through to Liberation Sans — different faces, neither serif); the test
+now gates its same-face claim on the platform actually agreeing, and
+CONTRACTS records adding `system-ui` to `app.css` as the open option.
+Screenshot baseline recapture is owed: four visible changes, all inside the
+map frame.
 
 ### 2026-08-10 — device-checklist results
 

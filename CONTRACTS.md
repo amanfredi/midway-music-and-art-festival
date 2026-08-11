@@ -274,7 +274,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 - **Pins hold a constant on-screen size** because symbol layers are sized in
   screen pixels; nothing counter-scales.
 - Transit pins are limited to stops within **1.5 miles** of `home_center`. The
-  extent reaches both downtowns and `transit.json` carries 64 stops; pinning
+  extent reaches both downtowns and `transit.json` carries 76 stops; pinning
   all of them buried the festival. The Green Line's route is still drawn across
   the full map, so the line remains legible without a pin at every station.
 - `site/assets/map-calibration.json`:

@@ -31,6 +31,74 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-11 — execution pass: three bundles landed, five definitions written
+
+An orchestrated pass over BACKLOG's well-defined items, run as parallel
+worktree agents and merged in sequence. The suite on the merged tree is green
+at 85 unit + 88 Playwright, axe gate included.
+
+**Content path.** The bare catches narrowed to the awaited fetch alone, in
+both the worker's `revalidateContent` (via `scripts/sw.template.js`) and
+`store.js#refreshContent`: offline still degrades quietly to last-known-good,
+while any other throw — the class that silently disabled revalidation for the
+feature's whole life — now surfaces. A new spec replays the historical
+consumed-body case against the live worker and was proven red pre-fix. This
+changed the service worker, so the airplane-mode pass is owed.
+
+**App.** The Now view's live redraw patches its two lists in place — rows
+keyed by event id, departed nodes removed before survivors are matched, since
+moving a node blurs focus — with a fake-clock test walking a focused star
+across the 13:45 boundary; wholesale replacement remains only for whole-state
+transitions, where nothing persists. Forced colors: `SelectedItem` restates
+the day-tab and group-by state, and the nav bar's active link (the same
+defect, found in passing) gained an underline. Every route sets its own
+`document.title`. The seven external links announce "opens in a new tab".
+`scroll-padding-top` keeps focused rows out from under the schedule's sticky
+controls — the test had to Shift+Tab its way down, because programmatic focus
+scrolls to center and hides the bug.
+
+**Map.** Every pin now has a keyboard path: a visually-hidden button list
+built from the same pre-filtered subsets the pin layers draw, so list and map
+cannot disagree, with focus handing into sheets and back. Tapped pins
+highlight via `feature-state`; venue cards act like pin taps (`easeTo`,
+jumping under reduced motion). A d-pad drives `map.panBy` — 34 px buttons,
+which is what fits eight controls into a 288 px frame, clearing the 24 px
+floor with spacing. A `ScaleControl` with a contrast assertion. Legend
+swatches are `calc()`ed to pin size. Venue pins grew 28 → 38 px — **1.73×,
+an accepted deviation from the guide's 2×**, recorded in CONTRACTS with its
+measurement: the tightest venue-pair separation across frame widths is
+39.2 px, 44 px diamonds provably collide, and clustering cannot buy the room
+back. The figure is a property of the current venue set; re-measure if the
+sheet gains venues. The locate-denial toast names Safari's website location
+settings and lingers longer. Key-list buttons carry "Venue N" in their
+accessible names. And the label font stack, which led with Apple-only
+families (non-Apple engines fell through to Helvetica), now leads with
+`system-ui` — a real cross-platform fix, but *not* confirmed as the cause of
+the serif digits Anthony saw on the iPhone, which never reproduced off the
+device. On-device probe if they persist: set an `OffscreenCanvas` 2d
+context's font to `'normal 700 48px ' +
+__mmafMap.getLayoutProperty('venue-pin','text-font').join(',') +
+',sans-serif'`, read `.font` back, and compare `measureText('8').width`
+against the same string with `serif`.
+
+**Definitions.** Five docs in `definitions/`, each through the write-doc
+editorial flow; every open question is collected under Decisions in BACKLOG.
+Deploy-robustness (the unmet build-robustness invariant), coincident-pin
+presentation — whose research found the tap bug now in BACKLOG: exactly
+superimposed venues break the tap tie on layer rank, so one is untappable at
+close zoom — venue-card-as-popup (recommends do nothing), bus route lines
+(A/B Line geometry is already committed; 67/72 need a query extension, not a
+refetch), and Web Share with its `#/venue/<id>` prerequisite. The MapLibre
+spike definition gained an outcome line so its non-goals stop contradicting
+the shipped migration, and the two places claiming `transit.json` carries 64
+stops (CONTRACTS, a map.js comment) now say 76, which is what it ships.
+
+Process notes. The first run of the map bundle and two definition agents died
+against the session usage cap and were resumed on cheaper models in the same
+worktrees; the inherited venue-pin work claimed a clean 2× that measurement
+disproved — the 1.73× above is the correction. Screenshot baseline recapture
+is owed: four visible changes, all inside the map frame.
+
 ### 2026-08-10 — device-checklist results
 
 Anthony worked through part of the real-device checklist on the iPhone.

@@ -31,8 +31,8 @@ const HOME_VIEW_M = 3000;
 const MIN_VIEW_M = 120;
 
 // Transit pins are limited to stops within this distance of the festival
-// center, exactly as the SVG map does it -- the extent reaches both downtowns
-// and transit.json carries 64 stops.
+// center, as the retired SVG map did it -- the extent reaches both downtowns
+// and transit.json carries 76 stops.
 const TRANSIT_PIN_RADIUS_M = 2414;
 
 const TRANSIT_LINE_LETTER = { green: 'G', a: 'A', b: 'B' };

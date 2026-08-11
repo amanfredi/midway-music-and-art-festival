@@ -2,6 +2,11 @@
 
 Status: defined 2026-08-10 | Overall confidence: high
 
+**Outcome (recorded 2026-08-11):** the spike ran, the audition passed on a
+real iPhone, and MapLibre shipped to production 2026-08-10 — see PROGRESS.md's
+migration entry. Non-goals below (including "not adoption, no merge to main")
+describe the spike as scoped, not what ultimately happened.
+
 ## Problem & motivation
 
 The map-library decision (keep hand-rolling vs adopt MapLibre GL JS) has been

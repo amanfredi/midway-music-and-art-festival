@@ -8,6 +8,30 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 ## Decisions that need Anthony
 
+**Five definitions await rulings (written 2026-08-11).** Each doc collects
+its open questions at the end; the one-line asks:
+
+- `definitions/deploy-robustness.md` — snapshot fallback and a content-only
+  publish path (the unmet CLAUDE.md invariant). Recommends a committed
+  `content/snapshot/` refreshed by every successful publish, opt-in fallback,
+  operator-loud staleness only. Six questions — notably whether
+  `content/fixtures/venues.csv` and a venues snapshot are a contradiction to
+  resolve, and whether attendees ever see a staleness marker.
+- `definitions/coincident-pin-presentation.md` — leader lines for pin groups
+  no zoom can separate; the cheap fallback is routing a tied venue tap to the
+  picker sheet. The tap bug it found is under Map and stands regardless of
+  the ruling.
+- `definitions/venue-card-map-popup.md` — recommends **do nothing**: the
+  sheet already wins on a11y and small screens. Ruling wanted on
+  closed-won't-do vs deferred, and on what the felt problem actually is.
+- `definitions/bus-route-lines.md` — recommends drawing the A/B Line BRT
+  first from geometry already committed (~11.6 KB gzipped marginal), then
+  extending the transit query for 67/72. Inverts if the interest is
+  specifically 67/72.
+- `definitions/web-share.md` — share buttons on event and venue detail; the
+  prerequisite `#/venue/<id>` route is a CONTRACTS routes change and the
+  scope question.
+
 **Map artwork, if it is ever commissioned.** The spike auditioned a four-corner
 `ImageSource` ground against the vector one, and measured three constraints that
 belong in any artist brief.
@@ -59,72 +83,22 @@ pins are now canvas symbols, so before the ack matters, find where the color
 lives in `map.js`, re-measure the letter contrast as the engine renders it,
 and re-spec. The 4.5:1 small-text requirement is unchanged.
 
-## Code and test review follow-ups (August 2026)
-
-The follow-ups landed 2026-08-09 (PROGRESS.md is the record; the full report
-with finding IDs is `reviews/2026-08-code-and-test-review.md`). Still open:
-
-- [ ] **Narrow the bare `catch` blocks on the content path.**
-      `revalidateContent`'s catch exists for offline but swallowed a
-      `TypeError` for the feature's whole life (see the 2026-08-09 PROGRESS
-      entry); `store.js#refreshContent` has the same shape. Catch network
-      failures specifically, or at least don't treat every throw as
-      "offline".
-
-Deferred — needs a design before it can be built:
-
-- Snapshot fallback so an emergency code deploy can ship while the Google
-  Sheet is unreachable (F17's second half); needs a design for marking
-  staleness loudly.
-- Content-only publish path that reuses the last tested code instead of
-  re-running the whole toolchain (F21's second half).
-
 ## Map
 
-The largest open item is **keyboard and assistive-technology access to
-pins**. They are drawn into a canvas, so they are not DOM nodes: the SVG map's
-roving tabindex, Enter/Space activation and focus-return-to-pin are all gone.
-Venues are still fully reachable through the venue key list below the map, but
-**transit and sponsor pins have no keyboard path to their sheets at all**, and
-axe cannot see the problem — a canvas gives it nothing to flag. The cheap fix is
-a visually-hidden list of buttons, one per transit stop and pinned sponsor,
-opening the same sheets. A richer fix is a roving focus ring drawn into the
-canvas, which is real work.
+**Bug: one of two exactly-coincident venues cannot be tapped at close zoom.**
+Above `clusterMaxZoom` the two Hamline Park venues draw exactly superimposed,
+and `wirePinTaps` breaks the distance tie on layer rank, so the engine's
+first-enumerated feature always wins (found 2026-08-11 while defining
+coincident-pin presentation). Nobody is stranded — the venue stays reachable
+through the key list — but the tap is broken. Cheap fix: route a tied
+venue-pin hit to the picker sheet, which already handles the unsplittable
+cluster; the fuller treatment is the leader-lines definition awaiting a
+ruling (see Decisions).
 
-Two related interaction gaps: **tapping a pin should highlight it**, and
-**tapping a venue card in the key list below the map should highlight its pin
-and recenter the map on it**, as though the pin itself had been tapped. Today
-the card opens the detail sheet without any connection to the map. Both are
-easier now — `easeTo` handles the recentering, and a highlight is a paint
-expression keyed on `feature-state` rather than custom rendering.
-
-A further refinement of the venue/map interaction might involve having the venue info card pop up as a map tooltip, rather than a separate card at the bottom of the screen.
-
-**Leader lines for coincident pins.** At close zoom, pins that share (or nearly
-share) a position could render as a small dot at the true lat/lng with the label
-floating clear of it, joined by a short line — so a label never misrepresents
-where something physically is. Raised from the iPhone evaluation, 2026-08-10.
-Deferred: the cluster-plus-picker treatment already makes every venue reachable,
-and this is a legibility refinement on top of it, not a fix for a broken case.
-A different solution would be to simply abandon exact pin placement and prevent pins from overlapping at close zoom levels.
-At far-out zoom levels, the overlapping pins could display multiple numbers the way the transit pins do that represent multiple stations.
-
-Smaller: bus routes 67 and 72 could be drawn as **route lines rather than stop
-pins** — adding 40-plus stop pins was rejected as clutter, but a line conveys
-"the bus goes along here" at a fraction of the visual cost. The GeoJSON
-generator makes this cheaper than it was: it is another `kind` and another
-layer.
-
-Also small: **the locate button's denial message should say where to fix it.**
-On iOS a code-1 geolocation failure looks the same whether the user once tapped
-"Don't Allow" for the site or Location Services is off for Safari websites
-entirely — the case observed 2026-08-10 on the deployed site: instant
-"Location permission denied", no prompt (Settings → Privacy & Security →
-Location Services → Safari Websites was set to Never; the home-screen install
-prompted and worked because standalone web apps carry their own permission
-identity). The current message is a dead end; a one-line hint pointing at
-Safari's website location settings turns it into a fixable state. Copy change
-only, no permission machinery.
+**Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure
+in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
+map frame — 38 px venue pins, pin-matched legend swatches, the pan d-pad, and
+the scale bar.
 
 The remaining audit items below were specified against the retired SVG map;
 they are requirements the MapLibre map must meet, kept for their measurements
@@ -136,14 +110,6 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
       change. The 2026-08 audit's map dispositions describe the SVG map and
       expire with it. Scope is the map view unless the shell changed too.
 
-- [ ] **Pan buttons** (WCAG 2.5.7, finding F9). Panning is drag-only for
-      pointer users — zoom and reset change scale, double-tap cannot traverse,
-      and arrow keys are keyboard, which the criterion explicitly does not
-      accept as the alternative. `map.panBy()` is the engine's equivalent of the
-      old helper; the cost is unchanged — fitting four buttons or a d-pad onto a
-      288–560px frame beside the zoom stack. W3C's own compliant example for
-      this criterion is a map with pan buttons, so the "dragging is essential"
-      exception is not available.
 - [ ] **Hit-target floor for transit and sponsor pins** (WCAG 2.5.8, F4).
       **Needs re-measuring against the new map** — the old measurement (22.7px
       rendered, closest pair 3.4px apart) described SVG pins whose hit shape
@@ -152,9 +118,9 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
       target is larger than the drawn one and the two no longer coincide. Which
       of them 2.5.8 measures here is the question to settle before deciding
       there is anything to fix; the map re-audit item above is the natural
-      place. The coincident-venue half of this is closed: clustering plus the
-      picker sheet makes every venue reachable, including the pair that shares
-      a coordinate.
+      place. The coincident-venue half of this is closed for reachability by
+      clustering plus the picker sheet — though see the tap bug at the top of
+      this section for the close-zoom exception found 2026-08-11.
 - [ ] **Station and arterial label size floors** (guide Part C #4). Advisory
       rather than a WCAG failure — the contrast passes. The old measurement
       (6.0px and 7.4px at a 288px frame) was of `map.svg`'s counter-scaled type
@@ -162,24 +128,6 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
       `map.js`, currently bottoming out at 9.5px for arterials and 11px for
       station names, which clears the guide's 8px floor at every frame width.
       Re-measure on device to confirm, then close.
-- [ ] **Legend swatch size** (guide Part C #1). A fixed 20px CSS swatch against
-      pins that are now a constant 22–28px at every frame width, since symbol
-      layers are sized in screen pixels rather than counter-scaled. That makes
-      matching them a fixed-number change rather than the scale-with-the-frame
-      problem it used to be — or record an accepted deviation, which is still a
-      legitimate answer given shapes and colors already match exactly.
-- [ ] **Venue-pin hierarchy** (guide Part C #2). Venue pins are 1.27× the
-      others — 28px against 22px, from `VENUE_R` 14 and `SMALL_R` 11, which are
-      radii — where the guide wants 2×. The direction has to
-      be growing `VENUE_R`, since shrinking the others worsens the hit-target
-      item above — so check overlap fallout at the home view before landing.
-      Cheaper to judge now: clustering absorbs the crowding that made bigger
-      venue pins risky.
-- [ ] **Scale bar** (guide Part C #5). A map spanning 120 m to 16 km trips the
-      guide's conditional requirement. MapLibre ships a `ScaleControl`, so this
-      is now a few lines plus a contrast check on its text rather than
-      generator work. The north-arrow half stays closed as unnecessary: the map
-      is north-up and rotation is disabled.
 
 ## App
 
@@ -191,46 +139,22 @@ tests, an axe-core gate covers every route, and the Accessibility contract in
 CONTRACTS.md was corrected where the audit found it too narrow. Left open
 outside the map (which is above):
 
-- [ ] **Patch the Now view in place instead of replacing it** (WCAG 2.2.2, F10
-      — the same defect as the August code review's F14, now at higher
-      priority). The 60 s redraw is a no-op unless the on-now/up-next key
-      changed, so real updates land only at event boundaries; but when the key
-      does change, `paint()` replaces `container.innerHTML` wholesale and
-      destroys focus and screen-reader reading position mid-view. The fix is
-      patching the two lists, not adding a pause control, which would be
-      bizarre for this UI. Test: with a mocked clock crossing an event
-      boundary, focus a star button, advance 60 s, assert focus survives.
-- [ ] **Forced-colors hardening** (advisory; no criterion requires it). Under
-      Windows High Contrast the map survives — SVG keeps its author colors —
-      but the active day-tab and group-by state vanishes, because both states
-      force to white-on-black and the 7.86:1 fill flip that carried the state
-      is erased. A `@media (forced-colors: active)` rule marking `.is-active`
-      with `SelectedItem`, or an underline-style marker that survives forcing.
-- [ ] **Per-route `document.title`** (2.4.2 improvement, not a failure). One
-      title for seven routes passes under the one-document reading the audit
-      recorded; per-route titles are cheap (`app.js` already knows each route's
-      name) and would satisfy the conservative per-page reading too.
-- [ ] **Four small advisory items** the audit recorded without pricing: a
-      visible-on-focus skip link (a11yproject asks unconditionally, though
-      2.4.1 passes on landmarks and the tab bar follows `<main>`, so it buys
-      little here); "opens in a new tab" in the accessible names of the seven
-      `target="_blank"` links (AAA territory); the venue's number in the key
-      list button's accessible name, so a screen-reader user can cross-
-      reference a number a sighted companion mentions (today it is inside an
-      `aria-hidden` SVG); and `scroll-padding-top` for the schedule's sticky
-      control bar — no failure measured there, but it is the same class of bug
-      as the tab-bar one already fixed.
-
-**Web Share API** for sharing a link to anything with a URL: events already
-have one (`#/event/<id>`), venues do not yet. Research from 2026-08-02 flagged
-this as the strongest candidate from a PWA feature survey — iOS Safari 12.2+,
-roughly five lines — and it supersedes the earlier "Web Share button on
-event/venue detail" note, which was the same idea.
+- [ ] **Visible-on-focus skip link** (advisory). The last open one of the
+      audit's four small advisory items — the other three landed 2026-08-11.
+      a11yproject asks for it unconditionally, but 2.4.1 passes on landmarks
+      and the tab bar follows `<main>`, so it buys little here; open until
+      someone rules it worth the chrome.
+- [ ] **Sticky group headings can cover a focused row** on the Now and
+      Starred views — the same hazard class as the schedule and tab-bar
+      scroll-padding fixes already landed, but heading-height only, so
+      smaller. Noted 2026-08-11 while fixing the schedule case.
 
 **QA on Android**, and an **agent review from a user's perspective**, possibly
 using Claude for Chrome.
 
 **Consider adding View Transitions for additional polish**, but this is low priority and might not even be an improvement.
+
+**Include favicon sizes up to 64×64px** The favicon rendered in safari currently looks low-res.
 
 ## Content and data
 
@@ -275,7 +199,8 @@ follow-through:
 None of these can be checked from the screenshot harness or the test suite.
 
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
-      (procedure in README; standing gate, last passed 2026-08-10).
+      (procedure in README; standing gate, last passed 2026-08-10 — **owed
+      again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
 - [ ] In-place content refresh on a real phone (new 2026-08-09, after the
       revalidation fix): with a tab already open, publish a banner change and
       confirm it appears without touching the tab; then confirm a worker
@@ -289,6 +214,12 @@ None of these can be checked from the screenshot harness or the test suite.
       evaluate to 0 given `apple-mobile-web-app-status-bar-style: default`.
       Unverified; if it does tuck under, the fix is an opaque fixed filler of
       height `var(--safe-top)`.
+- [ ] Venue-pin digits on the iPhone: still serifs after the font-stack fix?
+      The map's stack now leads with `system-ui` (2026-08-11; the old one
+      resolved to Helvetica off Apple engines), but the serif rendering was
+      never reproduced off-device, so this is a diagnosis, not a confirmed
+      fix. If the digits still read serif, run the canvas probe in the
+      2026-08-11 PROGRESS entry and report what it prints.
 - [ ] Install button on Android Chrome (native prompt).
 - [ ] Splash screens render on iOS launch.
 - [ ] Nav fits and reads at 320 px with six tabs.
@@ -331,5 +262,5 @@ like the README airplane-mode pass.
 7. **[2.2.2, optional] Now-view stability:** during a real or simulated
    festival window, leave VoiceOver focus on a Now-view row across a minute
    boundary where the lineup changes, and note whether reading position is
-   lost. It will be, until the in-place patch lands — this step is for
-   confirming that fix later.
+   lost. The in-place patch landed 2026-08-11; this step confirms it on a
+   real device.

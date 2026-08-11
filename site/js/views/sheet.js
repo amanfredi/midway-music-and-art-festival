@@ -1,7 +1,7 @@
 // Bottom-sheet overlay used both by the map view (tap a pin) and event detail
 // (tap the venue name) so there is exactly one venue/vendor detail surface.
 
-import { esc, mapsDirectionsHref, safeHref } from '../util.js';
+import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
 import { findVenue, findSponsor, eventsForVenue } from '../store.js';
 
@@ -86,8 +86,8 @@ export function openVenueSheet(venueId) {
           .join('')}</ul>`
       : '<p class="empty-state">Nothing scheduled here today.</p>'}
     <div class="sheet__actions">
-      ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''}
-      ${websiteHref ? `<a class="btn btn--secondary" href="${esc(websiteHref)}" target="_blank" rel="noopener">Visit venue website</a>` : ''}
+      ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>` : ''}
+      ${websiteHref ? `<a class="btn btn--secondary" href="${esc(websiteHref)}" target="_blank" rel="noopener">Visit venue website${NEW_TAB_HINT}</a>` : ''}
     </div>
   `);
 }
@@ -194,7 +194,7 @@ export function openTransitSheet(stop, lineNames) {
     <ul class="sheet__line-list">
       ${lineNames.map((n) => `<li>${esc(n)}</li>`).join('')}
     </ul>
-    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>
+    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>
   `);
 }
 
@@ -206,6 +206,6 @@ export function openSponsorSheet(sponsorId) {
   open(`
     <h2 class="sheet__title" id="sheet-title">${esc(sponsor.name)}</h2>
     ${sponsor.blurb ? `<p class="sheet__description">${esc(sponsor.blurb)}</p>` : ''}
-    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>
+    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>
   `);
 }

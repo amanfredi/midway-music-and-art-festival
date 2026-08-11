@@ -1,4 +1,4 @@
-import { esc, mapsDirectionsHref } from '../util.js';
+import { esc, mapsDirectionsHref, NEW_TAB_HINT } from '../util.js';
 import { parseEventTimes, formatDayLabel, formatTime } from '../time.js';
 import { findVenue, isStarred, toggleStar } from '../store.js';
 import { navigate, getLastListRoute } from '../router.js';
@@ -49,7 +49,7 @@ export function renderEventDetail(container, content, eventId) {
           <span class="star-icon" aria-hidden="true">${starred ? '★' : '☆'}</span>
           <span class="star-label">${starred ? 'Starred' : 'Star this event'}</span>
         </button>
-        ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps</a>` : ''}
+        ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>` : ''}
       </div>
     </section>`;
 

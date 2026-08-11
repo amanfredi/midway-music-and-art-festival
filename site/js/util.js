@@ -24,6 +24,14 @@ export function safeHref(url) {
   }
 }
 
+/**
+ * Visually-hidden suffix for the text of every `target="_blank"` link, so the
+ * accessible name says the link leaves the app for a new tab — a surprise
+ * worth announcing, doubly so in an app that works offline when the
+ * destination may not. Goes inside the `<a>`, after the visible label.
+ */
+export const NEW_TAB_HINT = '<span class="sr-only"> (opens in a new tab)</span>';
+
 /** Walking-directions link for a coordinate pair, or '' when it has none worth linking to. */
 export function mapsDirectionsHref(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return '';

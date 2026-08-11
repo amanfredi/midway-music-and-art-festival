@@ -1,4 +1,4 @@
-import { esc, groupBy, safeHref } from '../util.js';
+import { esc, groupBy, safeHref, NEW_TAB_HINT } from '../util.js';
 
 // Tier-specific card layout (logo size, whether a logo/blurb renders at all).
 // Emerald gets its own spotlight markup below rather than a size class.
@@ -16,7 +16,7 @@ const TIER_CARD_CLASS = {
 function linkOrPlain(url, label, linkClass) {
   const href = safeHref(url);
   return href
-    ? `<a class="${linkClass}" href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}</a>`
+    ? `<a class="${linkClass}" href="${esc(href)}" target="_blank" rel="noopener">${esc(label)}${NEW_TAB_HINT}</a>`
     : `<span class="${linkClass} sponsor-link--plain">${esc(label)}</span>`;
 }
 
@@ -66,7 +66,7 @@ export function renderSponsors(container, content) {
     <section data-testid="sponsor-list" class="view sponsors-view">
       <h1 class="view-title">Thank you to our sponsors</h1>
       ${donateHref
-        ? `<a class="btn btn--primary donate-link" data-testid="donate-link" href="${esc(donateHref)}" target="_blank" rel="noopener">${esc(donationLabel || 'Donate')}</a>`
+        ? `<a class="btn btn--primary donate-link" data-testid="donate-link" href="${esc(donateHref)}" target="_blank" rel="noopener">${esc(donationLabel || 'Donate')}${NEW_TAB_HINT}</a>`
         : ''}
       <p class="sponsors-intro">${esc(content.settings.festival_name || 'This festival')} wouldn't happen without the generous support of the neighbors and businesses below.</p>
       ${tiers

@@ -308,6 +308,56 @@ test('a cluster that no zoom can split opens a picker instead of a dead tap', as
   await expect(page.locator('#sheet-title')).toHaveText(coincident.names[0]);
 });
 
+// Every target="_blank" link carries a visually-hidden "(opens in a new tab)"
+// suffix (util.js NEW_TAB_HINT), so its accessible name warns about the tab
+// switch — in an offline-first app the destination may not even load.
+async function expectNewTabLinksNamed(scope, label) {
+  const links = scope.locator('a[target="_blank"]');
+  const count = await links.count();
+  expect(count, `${label}: expected at least one external link`).toBeGreaterThan(0);
+  for (let i = 0; i < count; i++) {
+    await expect(links.nth(i), label).toHaveAccessibleName(/\(opens in a new tab\)$/);
+  }
+}
+
+test('external links say they open in a new tab, on views and in every sheet', async ({ page }) => {
+  // Support view: the donate link (the fixture sponsors carry no urls, so the
+  // card links — built by the same helper — have no link to render here).
+  await page.goto('/' + T + '#/sponsors');
+  await expect(page.locator('[data-testid="donate-link"]')).toBeVisible();
+  await expectNewTabLinksNamed(page.locator('[data-testid="sponsor-list"]'), 'Support view');
+
+  // Event detail's maps link, then the venue sheet behind the venue name —
+  // Creative Writing House has a url, so both its maps and website links render.
+  await page.goto('/' + T + '#/event/pottery-showcase');
+  await expect(page.locator('[data-testid="star-toggle"]')).toBeVisible();
+  await expectNewTabLinksNamed(page.locator('.event-detail'), 'event detail');
+  await page.locator('#venue-link').click();
+  const dialog = page.locator('dialog.sheet');
+  await expect(dialog).toBeVisible();
+  expect(await dialog.locator('a[target="_blank"]').count(), 'venue sheet should show maps + website').toBe(2);
+  await expectNewTabLinksNamed(dialog, 'venue sheet');
+  await page.keyboard.press('Escape');
+
+  // The transit and sponsor sheets are normally reached through canvas pins;
+  // calling their openers directly keeps this test off WebGL. The import
+  // resolves to the same module instance the app booted with, so the sponsor
+  // sheet reads the loaded content.
+  await page.evaluate(async () => {
+    const { openTransitSheet } = await import('./js/views/sheet.js');
+    openTransitSheet({ id: 'stop', name: 'Test Stop', lat: 44.9557, lng: -93.1668 }, ['METRO Green Line']);
+  });
+  await expect(dialog).toBeVisible();
+  await expectNewTabLinksNamed(dialog, 'transit sheet');
+
+  await page.evaluate(async () => {
+    const { openSponsorSheet } = await import('./js/views/sheet.js');
+    openSponsorSheet('shortline-credit-union'); // the fixture sponsor with a location
+  });
+  await expect(dialog).toBeVisible();
+  await expectNewTabLinksNamed(dialog, 'sponsor sheet');
+});
+
 // Windows High Contrast repaints author colors with the system palette, which
 // used to erase the fill flip carrying the schedule's selected day/grouping —
 // every button forced to the same pair. The fix restates selection in system

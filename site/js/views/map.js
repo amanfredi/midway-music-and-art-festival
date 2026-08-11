@@ -100,10 +100,22 @@ function resolveMapColors(host) {
 // is what the rest of the site already uses.
 //
 // The engine reads a weight out of the FIRST family name in the stack and uses
-// the whole stack as a CSS font-family. "Bold"/"Semibold" are not real
-// families, so they set the weight and then fall through to the system font.
-const FONT_BOLD = ['Bold,-apple-system,BlinkMacSystemFont,Helvetica'];
-const FONT_SEMIBOLD = ['Semibold,-apple-system,BlinkMacSystemFont,Helvetica'];
+// the whole stack as a CSS font-family (it appends `sans-serif` itself).
+// "Bold"/"Semibold" are not real families, so they set the weight and then
+// fall through to whatever follows.
+//
+// Everything after the weight word is a family that really resolves inside a
+// canvas: `system-ui` is the standard generic for the platform UI font, which
+// is what `app.css` asks for and therefore what the venue key list draws its
+// numbers in. The vendor aliases these stacks used to lead with
+// (`-apple-system`, `BlinkMacSystemFont`) are each understood by exactly one
+// engine, so on any other engine the first family that could match was
+// Helvetica; they are gone rather than reordered, because a stack whose early
+// entries are dead weight is how pin labels end up in a font nothing else on
+// the page uses.
+const UI_FONT_STACK = 'system-ui,Helvetica Neue,Helvetica,Arial';
+const FONT_BOLD = [`Bold,${UI_FONT_STACK}`];
+const FONT_SEMIBOLD = [`Semibold,${UI_FONT_STACK}`];
 
 // Pin geometry in CSS pixels. The SVG map authors pins in map units at home-view
 // scale and counter-scales them on every zoom to hold a constant on-screen size;

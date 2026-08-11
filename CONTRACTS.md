@@ -318,6 +318,17 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   below the map repeats the venue pin's diamond (not a circle), and the
   legend's venue swatch carries no number.
 
+  Map labels are rasterised by the engine itself: the styles carry no `glyphs`
+  URL, so MapLibre draws every codepoint locally with TinySDF and nothing is
+  fetched for type. It does that from a **CSS font stack** given as the layer's
+  `text-font`, reading the weight out of the first family name (`Bold`,
+  `Semibold` — not real families) and appending a `sans-serif` generic of its
+  own. Every family after the weight word must be one that really resolves
+  inside a canvas: engine-specific aliases (`-apple-system`,
+  `BlinkMacSystemFont`) resolve on one engine each, which is how pin numbers
+  end up in a face the venue key list beside them is not using. The stack is
+  `system-ui` plus real fallbacks, so the map's type matches the app's.
+
   **Tapping a pin highlights it**: every pin feature carries a numeric feature
   id (its index in the source), and a circle layer under each pin layer draws
   an accent halo whose paint is keyed on `feature-state.selected` — one pin

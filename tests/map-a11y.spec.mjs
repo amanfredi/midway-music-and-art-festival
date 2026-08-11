@@ -1,7 +1,8 @@
 // Map interaction items landed 2026-08-10/11: keyboard/AT path to transit and
 // sponsor pins, tap highlight + venue-card→map link, pan buttons (WCAG 2.5.7),
 // the scale bar, legend swatch sizes, the venue-pin size hierarchy, the locate
-// denial copy, and "Venue N" in the key list's accessible names.
+// denial copy, "Venue N" in the key list's accessible names, and the font the
+// map rasterises its labels in.
 //
 // Everything about pins goes through `window.__mmafMap` (CONTRACTS.md, Test
 // hooks): pins are canvas symbols, so the engine is the only witness.
@@ -331,4 +332,41 @@ test('every key-list button carries "Venue N" in its accessible name', async ({ 
     // companion. The name still ends with the venue's own name.
     await expect(buttons.nth(i)).toHaveAccessibleName(new RegExp(`^Venue ${i + 1}: .+`));
   }
+});
+
+// --- Item: pin digits in the app's UI font -----------------------------------
+
+test('map labels resolve to the same font as the venue key list', async ({ page }) => {
+  await gotoMap(page);
+
+  // The venue pin's number is how a venue is cross-referenced to the key list,
+  // so the two have to be set in the same face. The map's labels are
+  // rasterised by the engine into a canvas from a CSS font stack (no `glyphs`
+  // URL, so TinySDF draws them locally), which is a different resolution path
+  // from the DOM's — hence measuring both stacks the way the engine does
+  // rather than comparing the declarations.
+  const { stack, widths } = await page.evaluate(() => {
+    const map = window.__mmafMap;
+    const stack = map.getLayoutProperty('venue-pin', 'text-font').join(',');
+    const uiFamily = getComputedStyle(document.querySelector('.venue-key-btn__pin text')).fontFamily;
+    const ctx = new OffscreenCanvas(64, 64).getContext('2d');
+    const width = (family) => {
+      ctx.font = `normal 700 48px ${family}`;
+      return ctx.measureText('1234567890').width;
+    };
+    return {
+      stack,
+      widths: {
+        // GlyphManager._createTinySDF appends the generic itself.
+        map: width(`${stack},sans-serif`),
+        ui: width(uiFamily),
+        serif: width('serif'),
+      },
+    };
+  });
+
+  // The engine reads the weight off the first family name, so it has to stay first.
+  expect(stack).toMatch(/^Bold\b/);
+  expect(widths.map, 'pin labels and key-list numbers must be the same face').toBeCloseTo(widths.ui, 1);
+  expect(widths.map, 'a stack that resolves nowhere lands on the platform serif').not.toBeCloseTo(widths.serif, 1);
 });

@@ -1039,10 +1039,29 @@ html:has(dialog.sheet[open]) {
    (border/box-shadow painting happens on the rectangular box before the clip
    applies), and the generic-sponsor legend entry needs a true outline to
    match its pin. */
+/* Swatch sizes match the pins they key (a11y guide Part C #1: a legend symbol
+   at a different size reads as a different symbol). Pins draw at a constant
+   screen size, and the diamond inside these viewBoxes is inset 2 units of 32,
+   so a box of pin-size × 32/28 makes the *drawn* diamond exactly pin-size.
+   The pin sizes below are 2 × SMALL_R and 2 × VENUE_R in map.js; the map draws
+   into a canvas and reads no CSS, so the two have to be kept in step by hand. */
 .legend-icon {
+  --swatch-pin-size: 22px;
+  width: calc(var(--swatch-pin-size) * 32 / 28);
+  height: calc(var(--swatch-pin-size) * 32 / 28);
+  flex: none;
+}
+
+.legend-icon--venue {
+  --swatch-pin-size: 38px;
+}
+
+/* Rail swatches key line features, not pins: they stay a 20px length of
+   stroke, which no pin size applies to. */
+.legend-icon--rail-green,
+.legend-icon--rail-blue {
   width: 20px;
   height: 20px;
-  flex: none;
 }
 
 .legend-icon--venue polygon {

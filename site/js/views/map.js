@@ -108,11 +108,31 @@ const FONT_SEMIBOLD = ['Semibold,-apple-system,BlinkMacSystemFont,Helvetica'];
 // Pin geometry in CSS pixels. The SVG map authors pins in map units at home-view
 // scale and counter-scales them on every zoom to hold a constant on-screen size;
 // symbol layers are in screen pixels already, so that whole mechanism goes away.
-// These are the SVG's home-view sizes: a 115-unit venue radius over a 3000 m
-// view on a ~360 px frame is ~14 px.
-const VENUE_R = 14;
+// SMALL_R carries over from the SVG's home-view size (a 92-unit radius over a
+// 3000 m view on a ~360 px frame is ~11 px). VENUE_R does not: the a11y guide
+// wants venue pins a size level above the rest, and growing the venue pin is
+// the direction that satisfies both that and WCAG 2.5.8 (shrinking the others
+// would cut their hit targets).
+//
+// 19 rather than the guide's full 2x step (which would be 22), because the
+// home view will not hold pins that big. Diamonds with half-diagonal R
+// overlap when their centres are less than 2R apart measured |dx| + |dy|, and
+// the closest pair of separately-drawn venue pins at the home view is 39.2 px
+// apart on that measure (venues 2 and 11, in the 560 px frame the map caps
+// at; the phone frames are looser because clustering merges that pair). So
+// 2R <= 39.2 px, and 19 is the largest whole radius that clears it — 38 px
+// pins against 22 px ones, a 1.73x step. Clustering does not rescue a larger
+// value: `clusterRadius` is 26 px, so it only guarantees separated pins are
+// 26 px apart and leaves anything above R = 13 to the data. That 39.2 px is a
+// property of the current venue set, not a floor — re-measure if the sheet
+// gains venues.
+const VENUE_R = 19;
 const SMALL_R = 11;
 const CLUSTER_R = 17;
+// The number inside the venue diamond, sized so a two-digit label still clears
+// the diamond's sloping sides: at the label's cap height the diamond is about
+// 2 * (VENUE_R - 6) = 26 px wide, and "11" sets to ~20 px here.
+const VENUE_TEXT_PX = 16;
 // The tap-highlight halo extends this far beyond the pin it rings.
 const HALO_PAD = 6;
 // Taps are matched against a box around the touch point rather than the icon's
@@ -957,7 +977,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
       ...labelLayout,
       'icon-image': 'pin-venue',
       'text-field': ['get', 'label'],
-      'text-size': 14,
+      'text-size': VENUE_TEXT_PX,
     },
     paint: { 'text-color': '#ffffff' },
   });

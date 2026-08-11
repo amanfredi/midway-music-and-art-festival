@@ -1,7 +1,7 @@
 // Map interaction items landed 2026-08-10/11: keyboard/AT path to transit and
 // sponsor pins, tap highlight + venue-card→map link, pan buttons (WCAG 2.5.7),
-// the scale bar, the locate denial copy, and "Venue N" in the key list's
-// accessible names.
+// the scale bar, legend swatch sizes, the venue-pin size hierarchy, the locate
+// denial copy, and "Venue N" in the key list's accessible names.
 //
 // Everything about pins goes through `window.__mmafMap` (CONTRACTS.md, Test
 // hooks): pins are canvas symbols, so the engine is the only witness.
@@ -232,6 +232,73 @@ test('the scale bar is present, readable, and fetches nothing', async ({ page })
   });
   const blended = bg.map((c, i) => Math.round(c * alpha + water[i] * (1 - alpha)));
   expect(contrastRatio(text, blended)).toBeGreaterThanOrEqual(4.5);
+});
+
+// --- Items: legend swatch size + venue-pin hierarchy ------------------------
+
+/** The CSS-pixel size of a drawn pin icon, read back from the engine's own image registry. */
+const PIN_SIZE_FN = (map, id) => {
+  const img = map.style.getImage(id);
+  // The canvas image carries 2 px of padding per side (diamondImage); the
+  // drawn diamond is the rest.
+  return img.data.width / img.pixelRatio - 4;
+};
+
+test('venue pins draw a clear size level above the other pins', async ({ page }) => {
+  await gotoMap(page);
+
+  const venue = await mapEval(page, PIN_SIZE_FN, 'pin-venue');
+  const transit = await mapEval(page, PIN_SIZE_FN, 'pin-transit');
+  expect(transit, 'small pins must not shrink below their 22 px hit size').toBeGreaterThanOrEqual(22);
+  // The a11y guide (Part C #2) asks for a 2x level distinction and this is
+  // 1.73x: the accepted deviation is that the home view has no room for 44 px
+  // venue pins (see VENUE_R in map.js, and the overlap test below, which is
+  // the constraint that set the number). The guard here is that the step stays
+  // unmistakable, not that it hits an exact ratio.
+  expect(venue / transit).toBeGreaterThanOrEqual(1.7);
+});
+
+test('no two venue pins overlap at the home view', async ({ page }) => {
+  await gotoMap(page);
+
+  // This is what caps VENUE_R. Diamonds with half-diagonal R overlap when
+  // their centres are nearer than 2R measured |dx| + |dy|, so the closest
+  // separately-drawn pair at the opening view is the whole budget. The
+  // default 1280 px viewport is the tight case: the map frame caps at 560 px,
+  // and the wider the frame the more pairs clustering leaves un-merged.
+  const { closest, pinSize, pair } = await page.evaluate(() => {
+    const map = window.__mmafMap;
+    const pins = map.queryRenderedFeatures({ layers: ['venue-pin'] }).map((f) => {
+      const p = map.project(f.geometry.coordinates);
+      return { x: p.x, y: p.y, label: f.properties.label };
+    });
+    let closest = Infinity;
+    let pair = null;
+    for (let i = 0; i < pins.length; i++)
+      for (let j = i + 1; j < pins.length; j++) {
+        const d = Math.abs(pins[i].x - pins[j].x) + Math.abs(pins[i].y - pins[j].y);
+        if (d < closest) [closest, pair] = [d, [pins[i].label, pins[j].label]];
+      }
+    const img = map.style.getImage('pin-venue');
+    return { closest, pinSize: img.data.width / img.pixelRatio - 4, pair };
+  });
+
+  expect(closest, 'fewer than two venue pins drawn; the check proves nothing').toBeLessThan(Infinity);
+  expect(closest, `venue pins ${pair?.join(' and ')} overlap at the home view`).toBeGreaterThanOrEqual(pinSize);
+});
+
+test('legend swatches are the size of the pins they key', async ({ page }) => {
+  await gotoMap(page);
+
+  const venuePin = await mapEval(page, PIN_SIZE_FN, 'pin-venue');
+  const transitPin = await mapEval(page, PIN_SIZE_FN, 'pin-transit');
+
+  // The drawn diamond inside a legend swatch's 32-unit viewBox spans 28 units.
+  const drawnSwatch = (selector) =>
+    page.locator(selector).evaluate((el) => (el.getBoundingClientRect().width * 28) / 32);
+
+  expect(await drawnSwatch('.legend-icon--venue')).toBeCloseTo(venuePin, 0);
+  expect(await drawnSwatch('.legend-icon--transit')).toBeCloseTo(transitPin, 0);
 });
 
 // --- Item: locate denial copy -----------------------------------------------

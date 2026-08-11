@@ -303,10 +303,20 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 
   Pins are canvas images built in `map.js` and drawn as symbol layers, so they
   are not DOM nodes and carry no CSS. Diamonds are **unstroked** — no white
-  keyline. Venue pins are the only oversized symbol; transit,
-  featured-destination and generic sponsor pins are all the same size. The
-  venue key list below the map repeats the venue pin's diamond (not a circle),
-  and the legend's venue swatch carries no number.
+  keyline. Venue pins draw a size level above the rest — **38 px vs 22 px on
+  screen** (`VENUE_R` 19 / `SMALL_R` 11) — and transit, featured-destination
+  and generic sponsor pins are all the same size. That 1.73× is an **accepted
+  deviation** from the 2× step the map a11y guide asks for: at the home view
+  the closest pair of separately-drawn venue pins is 39.2 px apart measured
+  |dx| + |dy|, which is what two diamonds need to avoid overlapping, so 44 px
+  pins collide. `clusterRadius` (26 px) does not rescue a larger value — it
+  only guarantees separated pins are 26 px apart. The distance is a property
+  of the current venue set: re-measure if the sheet gains venues.
+  Legend swatches are sized so the drawn diamond matches the pin it
+  keys (same guide: a legend symbol at a different size reads as a different
+  symbol); the rail swatches are line strokes, exempt. The venue key list
+  below the map repeats the venue pin's diamond (not a circle), and the
+  legend's venue swatch carries no number.
 
   **Tapping a pin highlights it**: every pin feature carries a numeric feature
   id (its index in the source), and a circle layer under each pin layer draws
@@ -492,8 +502,8 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   identical weight and would otherwise be told apart by hue alone.
 - **Contrast, stated in full.** Text needs 4.5:1, or 3:1 for large text —
   ≥24px, or ≥18.66px bold, **as rendered on screen**. Map type is sized in
-  screen pixels by `map.js` and currently tops out at 15px, so it is never
-  large text and the 4.5:1 threshold always applies. Non-text needs 3:1: UI
+  screen pixels by `map.js` and currently tops out at 16px (the venue pin's
+  number), so it is never large text and the 4.5:1 threshold always applies. Non-text needs 3:1: UI
   component boundaries and states, and graphical objects needed to understand
   the content. In scope: the six kind-badge tints, every pin and legend color,
   the star button's pressed state, and every label the map draws — all of

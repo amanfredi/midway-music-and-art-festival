@@ -84,6 +84,13 @@
    clear of the bar. */
 html {
   scroll-padding-bottom: calc(var(--tab-bar-height) + var(--safe-bottom) + 8px);
+  /* Same bug class at the top edge: the schedule's control bar (and the group
+     heading pinned under it) is sticky over the top of the list, so an upward
+     scroll-into-view needs clearance too. The bar's height depends on how its
+     buttons wrap, so the view that owns it measures and publishes this
+     variable (schedule.js setStackTop) and clears it on teardown; every other
+     view falls back to no padding. */
+  scroll-padding-top: var(--scroll-padding-top, 0px);
 }
 
 body {

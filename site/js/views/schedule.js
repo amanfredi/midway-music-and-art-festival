@@ -119,6 +119,17 @@ export function renderSchedule(container, content, route) {
   if (controls && section && typeof ResizeObserver === 'function') {
     const setStackTop = () => {
       section.style.setProperty('--sticky-stack-top', `calc(var(--safe-top) + ${controls.offsetHeight}px)`);
+      // Publish the sticky stack's full height as the document's top scroll
+      // padding (see the html rule in app.css), so scroll-into-view on focus
+      // can't park a control under the pinned bar — the mirror of the tab
+      // bar's scroll-padding-bottom. A row's own group heading pins directly
+      // below the bar, so its height is part of the clearance.
+      const heading = section.querySelector('.event-group__title');
+      const stackHeight = controls.offsetHeight + (heading ? heading.offsetHeight : 0);
+      document.documentElement.style.setProperty(
+        '--scroll-padding-top',
+        `calc(var(--safe-top) + ${stackHeight + 8}px)`
+      );
     };
     setStackTop();
     // Re-measure on resize/rotate, where wrapping can change the bar's height.
@@ -137,5 +148,8 @@ export function renderSchedule(container, content, route) {
 
   return () => {
     if (disconnectStackObserver) disconnectStackObserver();
+    // The padding is schedule-specific; leaving it set would push every other
+    // view's upward scroll-into-view down by a stale bar height.
+    document.documentElement.style.removeProperty('--scroll-padding-top');
   };
 }

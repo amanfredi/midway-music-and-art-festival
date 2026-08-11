@@ -459,6 +459,43 @@ test('tabbing down the map view never parks focus behind the fixed tab bar', asy
   expect(obscured).toEqual([]);
 });
 
+// The same bug class at the top edge: the schedule's control bar is sticky
+// over the top of the list (with the group heading pinned under it), so focus
+// moving to a row above the viewport must not scroll it underneath the bar.
+// scroll-padding-top on html — published by schedule.js from the bar's
+// measured height — is what keeps the browser's scroll-into-view clear of it.
+// Real Shift+Tab keystrokes, like the Tab walk above: sequential focus
+// navigation scrolls minimally (to the padded edge), where a programmatic
+// focus() would centre the target and never touch the padding.
+test('shift-tabbing up the schedule never parks focus behind the sticky controls', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/' + T + '#/schedule');
+  await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
+
+  // Walk focus backwards from the day's last row; every step that pulls a row
+  // in from above the viewport scrolls it just under the pinned stack.
+  await page.evaluate(() => {
+    const stars = document.querySelectorAll('[data-testid="row-star-toggle"]');
+    stars[stars.length - 1].focus();
+  });
+  const obscured = [];
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Shift+Tab');
+    const covered = await page.evaluate(() => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return null;
+      const r = el.getBoundingClientRect();
+      if (!r.width && !r.height) return null;
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (hit && (hit === el || el.contains(hit))) return null;
+      return `${el.getAttribute('aria-label') || el.textContent.trim().slice(0, 40) || el.tagName} (covered by ${hit ? hit.tagName + '.' + hit.className : 'nothing — off screen'})`;
+    });
+    if (covered) obscured.push(covered);
+  }
+
+  expect(obscured).toEqual([]);
+});
+
 test('map canvas is keyboard-focusable and arrow keys pan it once zoomed in', async ({ page }) => {
   await gotoMap(page);
   const canvas = page.locator('#map-gl canvas');

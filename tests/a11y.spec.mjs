@@ -284,6 +284,41 @@ test('a cluster that no zoom can split opens a picker instead of a dead tap', as
   await expect(page.locator('#sheet-title')).toHaveText(coincident.names[0]);
 });
 
+// Windows High Contrast repaints author colors with the system palette, which
+// used to erase the fill flip carrying the schedule's selected day/grouping —
+// every button forced to the same pair. The fix restates selection in system
+// selection colors (which forcing honors) and underlines the active nav tab.
+// Chromium's forced-colors emulation applies the real forcing pipeline, so
+// asserting the states still differ under it pins the fix.
+test('forced colors keep the selected day, grouping, and nav tab visibly marked', async ({ page }) => {
+  await page.emulateMedia({ forcedColors: 'active' });
+  await page.goto('/' + T + '#/schedule');
+  await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
+
+  for (const groupSelector of ['.day-switcher .day-tab', '.group-toggle .toggle-btn']) {
+    const bg = await page.evaluate((selector) => {
+      const buttons = [...document.querySelectorAll(selector)];
+      const read = (btn) => getComputedStyle(btn).backgroundColor;
+      return {
+        active: read(buttons.find((b) => b.classList.contains('is-active'))),
+        inactive: read(buttons.find((b) => !b.classList.contains('is-active'))),
+      };
+    }, groupSelector);
+    expect(bg.active, `${groupSelector}: active state must survive forced colors`).not.toBe(bg.inactive);
+  }
+
+  const decoration = await page.evaluate(() => {
+    const links = [...document.querySelectorAll('.tab-bar a')];
+    const read = (a) => getComputedStyle(a).textDecorationLine;
+    return {
+      active: read(links.find((a) => a.classList.contains('is-active'))),
+      inactive: read(links.find((a) => !a.classList.contains('is-active'))),
+    };
+  });
+  expect(decoration.active).toContain('underline');
+  expect(decoration.inactive).not.toContain('underline');
+});
+
 // WCAG relative luminance, so the assertion below states the ratio the
 // criterion names rather than pinning a hex value that says nothing about
 // whether the star is actually visible.

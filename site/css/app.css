@@ -562,6 +562,26 @@ img {
   color: #fff;
 }
 
+/* Windows High Contrast (forced-colors) repaints every background/text pair
+   with the system palette, which erases the fill flip above — active and
+   inactive buttons both come out ButtonFace-on-ButtonText and the selected
+   state vanishes. System color keywords survive forcing, so restate the
+   selection in the system's own selection pair; the nav's active tab, which
+   carries its state by text color alone, gets an underline instead. */
+@media (forced-colors: active) {
+  .day-tab.is-active, .toggle-btn.is-active {
+    background: SelectedItem;
+    border-color: SelectedItem;
+    color: SelectedItemText;
+  }
+
+  .tab-bar a.is-active {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+}
+
 /* -- event detail -- */
 
 .event-detail__title {

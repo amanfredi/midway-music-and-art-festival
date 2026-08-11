@@ -326,8 +326,18 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   own. Every family after the weight word must be one that really resolves
   inside a canvas: engine-specific aliases (`-apple-system`,
   `BlinkMacSystemFont`) resolve on one engine each, which is how pin numbers
-  end up in a face the venue key list beside them is not using. The stack is
-  `system-ui` plus real fallbacks, so the map's type matches the app's.
+  end up in a face the venue key list beside them is not using. The stack asks
+  for `system-ui` — the standard name for the platform UI font — and falls back
+  through real installed faces.
+
+  The app's own stack in `app.css` predates `system-ui` and still leads with
+  those aliases, so the two agree wherever an alias reaches the platform UI
+  font (Apple engines) or a named fallback does (Roboto on Android, Segoe UI
+  on Windows), and **diverge on Linux**, where the map gets DejaVu Sans via
+  `system-ui` and the key list falls through to Helvetica, which fontconfig
+  aliases to Liberation Sans. Both are sans faces; the map's is the more
+  correct one. Adding `system-ui` to `app.css` would close the gap, at the
+  cost of changing type across the whole site.
 
   **Tapping a pin highlights it**: every pin feature carries a numeric feature
   id (its index in the source), and a circle layer under each pin layer draws

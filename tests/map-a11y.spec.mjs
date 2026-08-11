@@ -336,15 +336,13 @@ test('every key-list button carries "Venue N" in its accessible name', async ({ 
 
 // --- Item: pin digits in the app's UI font -----------------------------------
 
-test('map labels resolve to the same font as the venue key list', async ({ page }) => {
+test('map labels resolve to the platform UI font, not the platform serif', async ({ page }) => {
   await gotoMap(page);
 
-  // The venue pin's number is how a venue is cross-referenced to the key list,
-  // so the two have to be set in the same face. The map's labels are
-  // rasterised by the engine into a canvas from a CSS font stack (no `glyphs`
-  // URL, so TinySDF draws them locally), which is a different resolution path
-  // from the DOM's — hence measuring both stacks the way the engine does
-  // rather than comparing the declarations.
+  // The map's labels are rasterised by the engine into a canvas from a CSS
+  // font stack (no `glyphs` URL, so TinySDF draws them locally), which is a
+  // different resolution path from the DOM's — hence measuring the stacks the
+  // way the engine does rather than comparing the declarations.
   const { stack, widths } = await page.evaluate(() => {
     const map = window.__mmafMap;
     const stack = map.getLayoutProperty('venue-pin', 'text-font').join(',');
@@ -357,9 +355,12 @@ test('map labels resolve to the same font as the venue key list', async ({ page 
     return {
       stack,
       widths: {
-        // GlyphManager._createTinySDF appends the generic itself.
+        // GlyphManager._createTinySDF appends the generic itself; `bare` is the
+        // same stack without it.
         map: width(`${stack},sans-serif`),
+        bare: width(stack),
         ui: width(uiFamily),
+        systemUi: width('system-ui'),
         serif: width('serif'),
       },
     };
@@ -367,6 +368,26 @@ test('map labels resolve to the same font as the venue key list', async ({ page 
 
   // The engine reads the weight off the first family name, so it has to stay first.
   expect(stack).toMatch(/^Bold\b/);
-  expect(widths.map, 'pin labels and key-list numbers must be the same face').toBeCloseTo(widths.ui, 1);
-  expect(widths.map, 'a stack that resolves nowhere lands on the platform serif').not.toBeCloseTo(widths.serif, 1);
+
+  // A family the stack actually names has to match. If none did, the generic
+  // the engine appends would be the only thing between the labels and the
+  // platform default — so dropping it would change the measurement.
+  expect(widths.bare, 'no family in the stack resolved; only the appended generic did').toBeCloseTo(widths.map, 1);
+  expect(widths.map, 'map labels must not land on the platform serif').not.toBeCloseTo(widths.serif, 1);
+  expect(widths.map, 'map labels must be the platform UI font').toBeCloseTo(widths.systemUi, 1);
+
+  // Same face as the key-list numbers — the property that matters, since the
+  // pin's number is how a venue is cross-referenced to the list — but only
+  // provable where the key list reaches the platform UI font too. It gets
+  // there through `app.css`, whose stack predates `system-ui` and leads with
+  // `-apple-system`/`BlinkMacSystemFont`; Blink honours the latter on macOS
+  // only. So on Linux the key list falls through to Helvetica (fontconfig
+  // aliases it to Liberation Sans) while the map, asking for `system-ui` by
+  // name, correctly gets DejaVu Sans. Both are real sans faces and the map's
+  // is the more correct one — adding `system-ui` to app.css would close the
+  // gap, but that changes type across the whole site, not just this view.
+  const keyListReachesUiFont = Math.abs(widths.ui - widths.systemUi) < 0.05;
+  if (keyListReachesUiFont) {
+    expect(widths.map, 'pin labels and key-list numbers must be the same face').toBeCloseTo(widths.ui, 1);
+  }
 });

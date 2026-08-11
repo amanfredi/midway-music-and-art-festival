@@ -54,6 +54,8 @@ const MAP_COLOR_VARS = {
   sponsor: '--pin-sponsor',
   railGreen: '--rail-green',
   railBlue: '--rail-blue',
+  accent: '--color-accent',
+  accentDark: '--color-accent-dark',
   streetCasing: '--street-casing',
   streetFill: '--street-fill',
   spineCasing: '--spine-casing',
@@ -111,10 +113,20 @@ const FONT_SEMIBOLD = ['Semibold,-apple-system,BlinkMacSystemFont,Helvetica'];
 const VENUE_R = 14;
 const SMALL_R = 11;
 const CLUSTER_R = 17;
+// The tap-highlight halo extends this far beyond the pin it rings.
+const HALO_PAD = 6;
 // Taps are matched against a box around the touch point rather than the icon's
 // own pixels, which is how the SVG map's oversized diamond hit targets are
 // reproduced without inflating the icons (and their collision boxes) to match.
 const TAP_SLOP_PX = 10;
+
+// Camera motion added by this view (pan buttons, key-list recentering) is
+// non-essential animation under prefers-reduced-motion: the movement still
+// happens, instantly. The engine also zeroes durations itself when the
+// preference is set, but stating it here keeps the behavior local and testable.
+function cameraDuration(ms) {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : ms;
+}
 
 let enginePromise = null;
 let cssInjected = false;
@@ -479,6 +491,15 @@ export async function renderMap(container, content) {
           <button type="button" class="map-btn" id="zoom-reset" aria-label="Reset view">&#10226;</button>
           ${youAreHereEnabled ? `<button type="button" class="map-btn map-btn--locate" id="locate-btn" aria-label="Show my location">&#9678;</button>` : ''}
         </div>
+        <!-- WCAG 2.5.7 (dragging movements): panning must have a single-pointer
+             alternative, and the criterion explicitly does not accept keyboard
+             as that alternative -- these buttons are it. -->
+        <div class="map-pan" id="map-pan">
+          <button type="button" class="map-btn map-btn--pan" id="pan-up" aria-label="Pan up">&#8593;</button>
+          <button type="button" class="map-btn map-btn--pan" id="pan-left" aria-label="Pan left">&#8592;</button>
+          <button type="button" class="map-btn map-btn--pan" id="pan-right" aria-label="Pan right">&#8594;</button>
+          <button type="button" class="map-btn map-btn--pan" id="pan-down" aria-label="Pan down">&#8595;</button>
+        </div>
       </div>
       <div class="map-legend">
         <h2 class="map-legend__title sr-only">Legend</h2>
@@ -497,6 +518,7 @@ export async function renderMap(container, content) {
       ${content.settings.map_attribution ? `<p class="map-attribution">${esc(content.settings.map_attribution)}</p>` : ''}
       <h2 class="view-subtitle">Venues</h2>
       <ol class="venue-key-list" id="venue-key-list"></ol>
+      <div id="map-pin-alt"></div>
     </section>`;
 
   // Tapping another tab mid-load wipes #view while these awaits are in flight;
@@ -505,9 +527,15 @@ export async function renderMap(container, content) {
   const mapWrap = () => (generation === renderGeneration ? container.querySelector('#map-svg-wrap') : null);
 
   const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
+  // Reassigned once the engine map exists; until then a key-list tap only opens
+  // the sheet, exactly as it does on a device that never gets a map at all.
+  let linkVenueToMap = () => {};
   // Rendered before the engine is loaded, and left in place if it never is:
   // on a device without WebGL2 this list is the map view.
-  renderVenueKeyList(container, venues);
+  renderVenueKeyList(container, venues, (venueId) => {
+    linkVenueToMap(venueId);
+    openVenueSheet(venueId);
+  });
 
   if (!hasWebGl2()) {
     const frame = container.querySelector('#map-svg-wrap');
@@ -516,8 +544,9 @@ export async function renderMap(container, content) {
         This device can&rsquo;t display the interactive map. Every venue is listed
         below, with directions.</p>`;
     }
-    // The zoom and locate controls steer a map that isn't there.
+    // The zoom, pan and locate controls steer a map that isn't there.
     container.querySelector('.map-controls')?.remove();
+    container.querySelector('#map-pan')?.remove();
     return NO_CLEANUP;
   }
 
@@ -583,7 +612,7 @@ export async function renderMap(container, content) {
   const glHost = wrap.querySelector('#map-gl');
   const colors = resolveMapColors(glHost);
 
-  const { Map: MlMap, LngLatBounds, Marker } = engine;
+  const { Map: MlMap, LngLatBounds, Marker, ScaleControl } = engine;
 
   const style = {
     version: 8,
@@ -615,6 +644,12 @@ export async function renderMap(container, content) {
   });
   map.touchZoomRotate.disableRotation();
   map.keyboard.enable();
+
+  // Scale bar (a11y guide Part C #5): across a 120 m – 16 km zoom range,
+  // nothing else on screen says what scale the view is at. The control is pure
+  // DOM and arithmetic — it fetches nothing. Imperial units: a St. Paul
+  // audience reads blocks in feet and miles.
+  map.addControl(new ScaleControl({ maxWidth: 96, unit: 'imperial' }), 'top-left');
 
   const canvas = map.getCanvas();
   canvas.setAttribute('role', 'group');
@@ -653,12 +688,51 @@ export async function renderMap(container, content) {
     return NO_CLEANUP;
   }
 
-  const transitById = new Map(stops.map((s) => [s.id, s]));
+  // The same subsets the pin layers draw (see addPins): transit stops within
+  // the pin radius, sponsor tiers that get a pin at all. Computed here so the
+  // visually-hidden button list and the map itself can't disagree about what
+  // is on the map.
+  const nearFestival = makeTransitFilter(home);
+  const pinnedStops = stops.filter(
+    (s) =>
+      Number.isFinite(s.lat) &&
+      Number.isFinite(s.lng) &&
+      Array.isArray(s.lines) &&
+      s.lines.length > 0 &&
+      nearFestival(s.lat, s.lng)
+  );
+  const pinnedSponsors = content.sponsors.filter(
+    (s) =>
+      (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') &&
+      Number.isFinite(s.lat) &&
+      Number.isFinite(s.lng)
+  );
+  renderPinAltList(container, pinnedStops, pinnedSponsors);
+
+  const transitById = new Map(pinnedStops.map((s) => [s.id, s]));
+
+  // Tap highlight: one selected pin at a time, marked through feature-state.
+  // The halo layers' paint expressions (see addPins) light the selected
+  // feature; nothing here draws anything.
+  let selectedPin = null;
+  const selectPin = (source, id) => {
+    if (selectedPin) map.setFeatureState(selectedPin, { selected: false });
+    selectedPin = source == null || id == null ? null : { source, id };
+    if (selectedPin) map.setFeatureState(selectedPin, { selected: true });
+  };
 
   map.on('load', () => {
     if (generation !== renderGeneration) return;
-    addPins(map, engine, { venues, stops, content, home, clusterMaxZoom, colors });
-    wirePinTaps(map, { venues, transitById, content, maxZoom });
+    addPins(map, { venues, stops: pinnedStops, sponsors: pinnedSponsors, clusterMaxZoom, colors });
+    wirePinTaps(map, { transitById, maxZoom, selectPin });
+    // A venue card in the key list behaves as though its pin was tapped:
+    // highlight the pin and recenter on it, on top of opening the sheet.
+    linkVenueToMap = (venueId) => {
+      const idx = venues.findIndex((v) => v.id === venueId);
+      if (idx < 0) return;
+      selectPin('venues', idx);
+      map.easeTo({ center: [venues[idx].lng, venues[idx].lat], duration: cameraDuration(450) });
+    };
   });
 
   wireControls(container, map, { home, homeZoom, maxZoom, cleanupFns });
@@ -669,23 +743,69 @@ export async function renderMap(container, content) {
   return cleanup;
 }
 
-function renderVenueKeyList(container, venues) {
+function renderVenueKeyList(container, venues, onSelect) {
   const keyList = container.querySelector('#venue-key-list');
+  // "Venue N" is in the accessible name, not only in the aria-hidden SVG: a
+  // screen-reader user has to be able to cross-reference the number a sighted
+  // companion reads off the map.
   keyList.innerHTML = venues
     .map(
       (v, i) => `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}">
         <svg class="venue-key-btn__pin" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
           <polygon points="16,1 31,16 16,31 1,16"></polygon>
           <text x="16" y="16">${i + 1}</text>
-        </svg>${esc(v.name)}</button></li>`
+        </svg><span class="sr-only">Venue ${i + 1}: </span>${esc(v.name)}</button></li>`
     )
     .join('');
   keyList.querySelectorAll('.venue-key-btn').forEach((btn) => {
-    btn.addEventListener('click', () => openVenueSheet(btn.dataset.venueId));
+    btn.addEventListener('click', () => onSelect(btn.dataset.venueId));
   });
 }
 
-function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom, colors }) {
+/**
+ * Keyboard/AT path to the canvas pins (Accessibility contract). Pins are drawn
+ * into WebGL, so transit and sponsor pins have no DOM presence a keyboard or
+ * screen reader could reach — venues are covered by the key list above. The
+ * fix is a visually-hidden button per pinned transit stop and sponsor, opening
+ * the same sheet a tap on the pin would. Each button un-hides while focused
+ * (skip-link style) so sighted keyboard users can see where focus is; focus
+ * returns to the button when the sheet closes, per the sheet's own contract.
+ */
+function renderPinAltList(container, stops, sponsors) {
+  const host = container.querySelector('#map-pin-alt');
+  if (!host || (!stops.length && !sponsors.length)) return;
+  const stopLabel = (s) =>
+    [s.name, s.lines.map((l) => TRANSIT_LINE_NAME[l] || l).join(', ')].filter(Boolean).join(' — ');
+  host.innerHTML = `
+    <h2 class="sr-only">Transit stops and sponsor locations on the map</h2>
+    <ul class="pin-alt-list">
+      ${stops
+        .map(
+          (s) =>
+            `<li><button type="button" class="pin-alt-btn" data-kind="transit" data-id="${esc(s.id)}">${esc(stopLabel(s))}</button></li>`
+        )
+        .join('')}
+      ${sponsors
+        .map(
+          (s) =>
+            `<li><button type="button" class="pin-alt-btn" data-kind="sponsor" data-id="${esc(s.id)}">${esc(s.name)}</button></li>`
+        )
+        .join('')}
+    </ul>`;
+  const stopById = new Map(stops.map((s) => [s.id, s]));
+  host.querySelectorAll('.pin-alt-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.kind === 'transit') {
+        const stop = stopById.get(btn.dataset.id);
+        if (stop) openTransitSheet(stop, stop.lines.map((l) => TRANSIT_LINE_NAME[l] || l));
+      } else {
+        openSponsorSheet(btn.dataset.id);
+      }
+    });
+  });
+}
+
+function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
   map.addImage('pin-cluster', clusterImage(CLUSTER_R, { fill: colors.venue, stroke: colors.surface }, dpr).data, {
@@ -700,8 +820,10 @@ function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom, co
     { pixelRatio: dpr }
   );
 
-  const homeSvgDistanceOk = makeTransitFilter(home);
-
+  // Every feature carries a numeric feature id (its index) so feature-state
+  // can address it — the tap highlight is a paint expression keyed on
+  // `feature-state.selected`, and feature-state only works on features with
+  // ids. The slug stays in properties; it is what the sheets open with.
   map.addSource('venues', {
     type: 'geojson',
     cluster: true,
@@ -711,56 +833,69 @@ function addPins(map, engine, { venues, stops, content, home, clusterMaxZoom, co
       type: 'FeatureCollection',
       features: venues.map((v, i) => ({
         type: 'Feature',
+        id: i,
         properties: { id: v.id, label: String(i + 1), name: v.name },
         geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
       })),
     },
   });
 
+  // `stops` and `sponsors` arrive pre-filtered to what gets a pin (renderMap
+  // computes the subsets once, shared with the hidden keyboard list).
   map.addSource('transit', {
     type: 'geojson',
     data: {
       type: 'FeatureCollection',
-      features: stops
-        .filter(
-          (s) =>
-            Number.isFinite(s.lat) &&
-            Number.isFinite(s.lng) &&
-            Array.isArray(s.lines) &&
-            s.lines.length > 0 &&
-            homeSvgDistanceOk(s.lat, s.lng)
-        )
-        .map((s) => ({
-          type: 'Feature',
-          properties: {
-            id: s.id,
-            // Multi-line stops stack their letters, as the SVG pins do: "G/A"
-            // at pin size is less legible than two lines.
-            letters: s.lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean).join('\n'),
-          },
-          geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
-        })),
+      features: stops.map((s, i) => ({
+        type: 'Feature',
+        id: i,
+        properties: {
+          id: s.id,
+          // Multi-line stops stack their letters, as the SVG pins do: "G/A"
+          // at pin size is less legible than two lines.
+          letters: s.lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean).join('\n'),
+        },
+        geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
+      })),
     },
   });
 
-  // Sponsor pins exist only for emerald/ruby/sapphire ("Featured Destination")
-  // and topaz ("Sponsor") -- quartz never gets one -- and only with a location.
-  const sponsors = content.sponsors.filter(
-    (s) =>
-      (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') &&
-      Number.isFinite(s.lat) &&
-      Number.isFinite(s.lng)
-  );
   map.addSource('sponsors', {
     type: 'geojson',
     data: {
       type: 'FeatureCollection',
-      features: sponsors.map((s) => ({
+      features: sponsors.map((s, i) => ({
         type: 'Feature',
+        id: i,
         properties: { id: s.id, featured: FEATURED_SPONSOR_TIERS.has(s.tier_slug) },
         geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
       })),
     },
+  });
+
+  // Tap-highlight halos, drawn under the pins: an accent ring that exists for
+  // every pin but is fully transparent until its feature's `selected` state is
+  // set. Feature-state is the mechanism because it repaints without touching
+  // source data or layout — no symbol re-placement, no flicker.
+  const selectedOnly = (on) => ['case', ['boolean', ['feature-state', 'selected'], false], on, 0];
+  const haloPaint = (pinRadius) => ({
+    'circle-radius': pinRadius + HALO_PAD,
+    'circle-color': colors.accent,
+    'circle-opacity': selectedOnly(0.95),
+    // The dark keyline is what clears 3:1 against the pale ground; the accent
+    // fill alone is a brand marigold that doesn't.
+    'circle-stroke-color': colors.accentDark,
+    'circle-stroke-width': 2,
+    'circle-stroke-opacity': selectedOnly(1),
+  });
+  map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', paint: haloPaint(SMALL_R) });
+  map.addLayer({ id: 'sponsor-highlight', type: 'circle', source: 'sponsors', paint: haloPaint(SMALL_R) });
+  map.addLayer({
+    id: 'venue-highlight',
+    type: 'circle',
+    source: 'venues',
+    filter: ['!', ['has', 'point_count']],
+    paint: haloPaint(VENUE_R),
   });
 
   // Layer order IS paint order, lowest first: transit, featured destination,
@@ -841,8 +976,7 @@ function makeTransitFilter(home) {
     Math.hypot((lng - homeLng) * mPerDegLng, (lat - homeLat) * mPerDegLat) <= TRANSIT_PIN_RADIUS_M;
 }
 
-function wirePinTaps(map, { venues, transitById, content, maxZoom }) {
-  const venueById = new Map(venues.map((v) => [v.id, v]));
+function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
   // Topmost first, so an overlap resolves the way the SVG map's paint order does.
   const PIN_LAYERS = ['venue-pin', 'venue-cluster', 'sponsor-generic-pin', 'sponsor-featured-pin', 'transit-pin'];
 
@@ -874,12 +1008,26 @@ function wirePinTaps(map, { venues, transitById, content, maxZoom }) {
         }
       }
     }
-    if (!best) return;
+    if (!best) {
+      // A tap on empty map clears the highlight, the same way it opens nothing.
+      selectPin(null);
+      return;
+    }
 
-    if (best.layer === 'venue-pin') openVenueSheet(best.feature.properties.id);
-    else if (best.layer === 'venue-cluster') expandCluster(map, best.feature, { venueById, maxZoom });
-    else if (best.layer === 'transit-pin') openTransit(best.feature.properties.id);
-    else openSponsorSheet(best.feature.properties.id);
+    if (best.layer === 'venue-pin') {
+      selectPin('venues', best.feature.id);
+      openVenueSheet(best.feature.properties.id);
+    } else if (best.layer === 'venue-cluster') {
+      // No highlight for a cluster: it stands for several pins, and the halo
+      // marks exactly one.
+      expandCluster(map, best.feature, { maxZoom });
+    } else if (best.layer === 'transit-pin') {
+      selectPin('transit', best.feature.id);
+      openTransit(best.feature.properties.id);
+    } else {
+      selectPin('sponsors', best.feature.id);
+      openSponsorSheet(best.feature.properties.id);
+    }
   });
 
   // Desktop affordance for the side-by-side comparison; harmless on touch.
@@ -899,7 +1047,7 @@ function wirePinTaps(map, { venues, transitById, content, maxZoom }) {
  * no expansion zoom -- it lists them instead, so the pin underneath is reachable
  * either way. That case is the whole reason the overlapping-pin item was open.
  */
-function expandCluster(map, feature, { venueById, maxZoom }) {
+function expandCluster(map, feature, { maxZoom }) {
   const source = map.getSource('venues');
   const clusterId = feature.properties.cluster_id;
   const coords = feature.geometry.coordinates;
@@ -931,6 +1079,17 @@ function wireControls(container, map, { home, homeZoom, maxZoom, cleanupFns }) {
   on('#zoom-in', () => map.zoomIn());
   on('#zoom-out', () => map.zoomOut());
   on('#zoom-reset', () => map.easeTo({ center: home, zoom: homeZoom, duration: 400 }));
+
+  // Pan buttons (WCAG 2.5.7): the single-pointer alternative to dragging.
+  // Keyboard panning exists but the criterion explicitly does not accept it as
+  // the alternative. Step is a fraction of the frame so successive presses
+  // overlap enough to keep visual continuity at any frame width.
+  const panStep = () => Math.max(80, Math.round((map.getCanvas().clientWidth || 360) * 0.4));
+  const pan = (dx, dy) => map.panBy([dx * panStep(), dy * panStep()], { duration: cameraDuration(300) });
+  on('#pan-up', () => pan(0, -1));
+  on('#pan-down', () => pan(0, 1));
+  on('#pan-left', () => pan(-1, 0));
+  on('#pan-right', () => pan(1, 0));
 
   // Double-tap zooms in, and a double-tap when already as close as the map goes
   // returns to the home view — otherwise the gesture strands you zoomed in with
@@ -1008,8 +1167,18 @@ function wireLocate(container, map, Marker, { west, east, south, north, cleanupF
       },
       (err) => {
         locateBtn.disabled = false;
-        if (err.code === err.PERMISSION_DENIED) showToast('Location permission denied.');
-        else showToast("Couldn't get your location.");
+        // On iOS a code-1 failure looks identical whether the user once tapped
+        // "Don't Allow" or Location Services is off for Safari websites
+        // entirely (Settings shows no prompt in that state, observed
+        // 2026-08-10) — so the message points at the setting that fixes both
+        // instead of dead-ending. Longer toast timeout: this one is a path to
+        // follow, not a status to glance at.
+        if (err.code === err.PERMISSION_DENIED) {
+          showToast(
+            'Location permission denied. On iPhone you can allow it under Settings → Privacy & Security → Location Services → Safari Websites.',
+            7000
+          );
+        } else showToast("Couldn't get your location.");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );

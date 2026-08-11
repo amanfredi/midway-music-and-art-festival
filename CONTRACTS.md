@@ -308,6 +308,27 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   venue key list below the map repeats the venue pin's diamond (not a circle),
   and the legend's venue swatch carries no number.
 
+  **Tapping a pin highlights it**: every pin feature carries a numeric feature
+  id (its index in the source), and a circle layer under each pin layer draws
+  an accent halo whose paint is keyed on `feature-state.selected` — one pin
+  selected at a time, cleared by a tap on empty map. Tapping a venue card in
+  the key list behaves as though its pin was tapped: it highlights the pin and
+  recenters the map on it with `easeTo` (a jump under
+  `prefers-reduced-motion`), in addition to opening the sheet.
+
+  A **scale bar** (MapLibre `ScaleControl`, imperial, top-left) sits in the
+  frame: across a 120 m–16 km zoom range nothing else says what scale the view
+  is at. It is DOM + arithmetic; it fetches nothing.
+
+  **Pan buttons** (a d-pad opposite the zoom stack, `#pan-up`/`#pan-down`/
+  `#pan-left`/`#pan-right`, driving `map.panBy`) are the single-pointer
+  alternative to dragging the map that WCAG 2.5.7 requires — the criterion
+  does not accept the keyboard as that alternative, so the focusable canvas
+  does not discharge it. They step 40% of the frame, so successive presses
+  overlap. At 34 px they are under the 44 px app-shell size but clear the
+  24 px floor with 36 px centre spacing (see Target size below), which is what
+  fits eight controls into a 288 px frame.
+
   A tap resolves against a **±10 px box** around the touch point, and the
   **nearest** pin in it wins; paint order only breaks ties. Resolving by layer
   priority first looks equivalent and is not — with a box this wide, a venue pin
@@ -453,12 +474,17 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   fade/slide-in — are disabled when the user has that preference.
 - **Keyboard map panning**: the map canvas is focusable (`tabindex="0"`,
   `role="group"`) and arrow keys pan it; its `aria-label` states this.
-  **Known gap, tracked in BACKLOG:** pins are drawn into that canvas rather
-  than being DOM nodes, so they are not individually focusable and the SVG
-  map's roving-tabindex pin walk is gone. Venues stay keyboard-reachable
-  through the venue key list below the map; transit and sponsor pins currently
-  have no keyboard path to their sheets. Automated axe scans do not catch
-  this — a canvas has nothing for them to flag.
+  Pins are drawn into that canvas rather than being DOM nodes, so they are not
+  individually focusable and the SVG map's roving-tabindex pin walk is gone.
+  Every pin still has a keyboard and screen-reader path to its sheet: venues
+  through the venue key list below the map, and transit stops and pinned
+  sponsors through `#map-pin-alt`, a visually-hidden list holding one button
+  per drawn pin (named with the stop name and its lines, or the sponsor's
+  name) that opens the same sheet a tap would. Those buttons un-hide while
+  focused, skip-link style, so a sighted keyboard user can see where focus is.
+  **Remaining gap:** there is still no focus ring on the pin itself, and axe
+  cannot see either the gap or the fix — a canvas has nothing for it to flag,
+  so these paths are covered by explicit tests instead.
 - **Color is never the only means** of conveying information. Pins carry a
   number, a line letter, or a fill-vs-outline difference as well as a color;
   kind badges carry the kind word; and every symbol the map draws is named in
@@ -525,12 +551,19 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   stronger check than a DOM query, since a symbol appears in
   `queryRenderedFeatures` only once placement has put it on screen.
   Layer ids are part of the hook: `venue-pin`, `venue-cluster`, `transit-pin`,
-  `sponsor-featured-pin`, `sponsor-generic-pin`, and for the ground
-  `arterial-fill`, `spine-fill`, `rail-green`, `rail-blue`,
+  `sponsor-featured-pin`, `sponsor-generic-pin`, the tap-highlight halos
+  `venue-highlight`, `transit-highlight`, `sponsor-highlight`, and for the
+  ground `arterial-fill`, `spine-fill`, `rail-green`, `rail-blue`,
   `street-label-spine`, `street-label-arterial`, `station-label`. Source ids:
-  `mapdata`, `venues`, `transit`, `sponsors`. `tests/map-helpers.mjs` wraps the
-  waiting and querying; map tests should use it rather than reaching for the
-  global directly.
+  `mapdata`, `venues`, `transit`, `sponsors`; features in the four pin sources
+  are id'd by their index, which is what `setFeatureState` addresses.
+  `tests/map-helpers.mjs` wraps the waiting and querying; map tests should use
+  it rather than reaching for the global directly.
+- `#pan-up`, `#pan-down`, `#pan-left`, `#pan-right` on the pan d-pad, and
+  `.maplibregl-ctrl-scale` on the scale bar (the engine's own class)
+- `.pin-alt-btn[data-kind="transit"|"sponsor"][data-id="<id>"]` on each button
+  in the visually-hidden pin list, one per drawn transit and sponsor pin
+- `.venue-key-btn[data-venue-id="<id>"]` on each venue card in the key list
 - `[data-testid="you-are-here"]` on the locate marker, which exists only after
   a successful fix — assert on count, not visibility
 

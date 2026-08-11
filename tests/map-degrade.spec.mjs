@@ -37,6 +37,7 @@ test.describe('without WebGL2', () => {
     // No canvas, and no controls steering a map that isn't there.
     await expect(page.locator('#map-gl')).toHaveCount(0);
     await expect(page.locator('.map-controls')).toHaveCount(0);
+    await expect(page.locator('.map-pan')).toHaveCount(0);
     // Failing to render a map is not the same as throwing.
     expect(consoleErrors).toEqual([]);
   });

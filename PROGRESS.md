@@ -31,6 +31,21 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-10 — device-checklist results
+
+Anthony worked through part of the real-device checklist on the iPhone.
+Passing, and now off the BACKLOG list: the native `<dialog>` detail sheet
+renders fine (with the caveat that the item never said what a failure would
+look like), header scroll with the pinned control bar under real browser
+chrome, multi-touch pinch zoom on the new map ("works great" — which also
+closes the deferred genuine-pinch-test idea), the install path on iPhone, and
+a single-letter transit pin rendering its letter on iOS — mooting the
+never-reproduced Selby & Dale missing-"B" mystery, that stop having fallen
+outside the pin radius anyway. Transit stop names and positions were verified
+against Metro Transit's published Green Line / A Line / B Line stop lists.
+The airplane-mode pass is recorded in the migration entry below; it stays on
+the checklist as a standing gate for service-worker and caching changes.
+
 ### 2026-08-10 — the map is MapLibre
 
 The `#/map` tab is drawn by MapLibre GL JS 6, vendored into

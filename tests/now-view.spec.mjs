@@ -116,6 +116,49 @@ test('a set running past midnight is still On now after midnight, on the next ca
   expect(afterIt.onNow.titles).toEqual([]);
 });
 
+// WCAG 2.2.2 (audit F10): the Now view redraws every 60s, and when the
+// on-now/up-next sets change it must patch rows in and out around the ones
+// that persist — replacing the container wholesale destroys keyboard focus
+// and a screen reader's reading position mid-view. The ?t= override freezes
+// the clock, so this uses Playwright's fake clock instead: it drives both
+// Date and the view's own setInterval, letting one tick cross a boundary.
+test('a redraw that crosses an event boundary keeps focus on a row that persists across it', async ({ page }) => {
+  // 1:44:30 PM Saturday sits 30s before the boundary the first test pins:
+  // Sculpture Garden Tour ends at 13:45 and Face Painting Station starts at
+  // 13:45. Pottery Showcase (2:15 PM) sits in Up next on both sides of it.
+  await page.clock.install({ time: new Date(2026, 9, 3, 13, 44, 30) });
+  await page.goto('/');
+  const before = await readNowView(page);
+  expect(before.onNow.titles).toEqual(['Sculpture Garden Tour']);
+  expect(before.upNext.titles).toEqual(['Face Painting Station', 'Pottery Showcase']);
+
+  // Focus the persisting row's star, keeping a handle to the exact node so a
+  // rebuilt-but-identical row can't pass as focus having survived.
+  const star = await page.evaluateHandle(() => {
+    const row = [...document.querySelectorAll('[data-testid="up-next-list"] [data-testid="event-row"]')]
+      .find((r) => r.textContent.includes('Pottery Showcase'));
+    const btn = row.querySelector('[data-testid="row-star-toggle"]');
+    btn.focus();
+    return btn;
+  });
+  expect(await star.evaluate((btn) => document.activeElement === btn)).toBe(true);
+
+  // One 60s tick carries the clock across the 1:45 boundary.
+  await page.clock.runFor(61_000);
+
+  const after = await readNowView(page);
+  expect(after.onNow.titles).toEqual(['Face Painting Station']);
+  expect(after.upNext.titles).toEqual(['Pottery Showcase']);
+
+  // The same element: still in the document, still focused.
+  expect(await star.evaluate((btn) => btn.isConnected && document.activeElement === btn)).toBe(true);
+
+  // And still wired exactly once: a patch that re-bound a surviving button
+  // would fire its listener twice per click, toggling the star straight back.
+  await star.asElement().click();
+  expect(await star.evaluate((btn) => btn.getAttribute('aria-pressed'))).toBe('true');
+});
+
 // --- the landing view on a real clock, with no ?t= override ---
 //
 // Which of now.js's three branches a visitor gets depends on the date, so the

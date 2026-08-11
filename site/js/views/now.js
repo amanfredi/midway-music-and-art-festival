@@ -10,15 +10,58 @@ export function renderNow(container, content) {
   const venuesById = new Map(content.venues.map((v) => [v.id, v]));
   let lastKey = null;
 
-  // Replacing the whole view destroys focus and reading position inside it, so
-  // a tick that would render the same thing doesn't render at all. Star state
-  // is deliberately absent from the key — rows patch their own star in place.
+  // Replacing the whole view destroys focus and screen-reader reading position
+  // inside it (WCAG 2.2.2 — the 60s tick is an auto-update the user can't
+  // pause), so a tick renders as little as it can: an unchanged key renders
+  // nothing at all, a changed key within the live state patches the two lists
+  // row by row, and only a change of *state* (empty/not-started/ended/live)
+  // replaces the view wholesale — those transitions swap the whole layout, so
+  // there is nothing to preserve across them. Star state is deliberately
+  // absent from the key — rows patch their own star in place.
+  const stateOf = (key) => key.slice(0, key.indexOf('|'));
+
   function paint(key, html) {
     if (key === lastKey) return;
+    const patchable = lastKey !== null && stateOf(lastKey) === 'live' && stateOf(key) === 'live';
     lastKey = key;
+    if (patchable) {
+      patchLiveView(html);
+      return;
+    }
     container.innerHTML = html;
     bindEventRowStars(container);
     bindInstallButton(container);
+  }
+
+  // Rebuilds the live view's two lists (and the install footer) against fresh
+  // markup without touching the section, headings, or any row that persists.
+  function patchLiveView(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    for (const testid of ['on-now-list', 'up-next-list']) {
+      const selector = `[data-testid="${testid}"]`;
+      const current = container.querySelector(selector);
+      const next = tpl.content.querySelector(selector);
+      if (current && next) syncChildren(current, next);
+    }
+    syncInstallPrompt(tpl.content);
+    // Binds only rows the patch inserted — bindEventRowStars skips buttons it
+    // has already wired, so surviving rows don't get a second listener.
+    bindEventRowStars(container);
+  }
+
+  function syncInstallPrompt(nextRoot) {
+    const current = container.querySelector('.install-prompt');
+    const next = nextRoot.querySelector('.install-prompt');
+    if (!next) {
+      if (current) current.remove();
+    } else if (!current) {
+      container.querySelector('[data-testid="now-view"]').appendChild(next);
+      bindInstallButton(container);
+    } else if (current.outerHTML !== next.outerHTML) {
+      current.replaceWith(next);
+      bindInstallButton(container);
+    }
   }
 
   function draw() {
@@ -134,4 +177,66 @@ export function renderNow(container, content) {
     clearInterval(timer);
     unsubscribeInstall();
   };
+}
+
+// -- keyed child sync for the 60s live patch --
+
+// Identity for keyed patching: a venue group is its heading, a row is its
+// event id, anything else (an empty-state paragraph) is its own markup.
+function childKey(el) {
+  if (el.classList.contains('event-group')) {
+    const title = el.querySelector('.event-group__title');
+    return `group:${title ? title.textContent : ''}`;
+  }
+  if (el.classList.contains('event-row')) {
+    const star = el.querySelector('[data-testid="row-star-toggle"]');
+    if (star) return `row:${star.dataset.eventId}`;
+  }
+  return `html:${el.outerHTML}`;
+}
+
+// Adds/removes/updates `parent`'s children to match `next`'s. Departed nodes
+// are removed *before* survivors are matched, so a survivor is matched in
+// place rather than moved — re-inserting a DOM node blurs any focus inside
+// it, which is the exact defect this patching exists to avoid. (A genuine
+// reorder of survivors would still rebuild one of them, but the lists here
+// are alphabetical by venue and chronological within, so a reorder implies a
+// membership change anyway.)
+function syncChildren(parent, next) {
+  const incoming = [...next.children];
+  const incomingKeys = new Set(incoming.map(childKey));
+  let cursor = parent.firstElementChild;
+  for (const child of incoming) {
+    while (cursor && !incomingKeys.has(childKey(cursor))) {
+      const departed = cursor;
+      cursor = cursor.nextElementSibling;
+      departed.remove();
+    }
+    if (cursor && childKey(cursor) === childKey(child)) {
+      updateChild(cursor, child);
+      cursor = cursor.nextElementSibling;
+    } else {
+      parent.insertBefore(child, cursor);
+    }
+  }
+  while (cursor) {
+    const departed = cursor;
+    cursor = cursor.nextElementSibling;
+    departed.remove();
+  }
+}
+
+function updateChild(current, next) {
+  if (current.classList.contains('event-group')) {
+    syncChildren(current.querySelector('.event-list'), next.querySelector('.event-list'));
+    return;
+  }
+  // A surviving row's only tick-mutable content is its time span — the day
+  // prefix appears when the clock crosses midnight (event-row.js). The star
+  // is left alone: it patches its own state in place on click.
+  const currentTime = current.querySelector('.event-row__time');
+  const nextTime = next.querySelector('.event-row__time');
+  if (currentTime && nextTime && currentTime.innerHTML !== nextTime.innerHTML) {
+    currentTime.innerHTML = nextTime.innerHTML;
+  }
 }

@@ -105,8 +105,15 @@ export function venueGroupsHtml(events, venuesById, { relativeTo = null } = {}) 
  * position. Pass `onToggle(eventId, nowStarred, rowEl)` for view-specific
  * follow-up (e.g. the starred list removes the row on unstar).
  */
+// Buttons already wired, so a re-bind of a container whose rows were patched
+// in place (the Now view's 60s tick) can't attach a second listener — doubled
+// listeners would toggle the star twice per click, a net no-op.
+const boundStarButtons = new WeakSet();
+
 export function bindEventRowStars(container, onToggle) {
   container.querySelectorAll('[data-testid="row-star-toggle"]').forEach((btn) => {
+    if (boundStarButtons.has(btn)) return;
+    boundStarButtons.add(btn);
     btn.addEventListener('click', () => {
       const id = btn.dataset.eventId;
       const nowStarred = toggleStar(id);

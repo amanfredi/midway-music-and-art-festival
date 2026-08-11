@@ -34,6 +34,19 @@ const ROUTE_NAMES = {
   event: 'Event detail',
 };
 
+// WCAG 2.4.2: each route titles the tab "<Route name> — <site name>", using
+// the same nav-label names as the announcement below. The site name is the
+// sheet's festival_name, falling back to index.html's own <title> (captured
+// here, before any route overwrites it).
+const BASE_TITLE = document.title;
+
+function setRouteTitle(routeName) {
+  const label = ROUTE_NAMES[routeName] || routeName;
+  const content = store.getContent();
+  const site = (content && content.settings.festival_name) || BASE_TITLE;
+  document.title = `${label} — ${site}`;
+}
+
 function announceRoute(routeName) {
   if (!routeAnnouncer) return;
   const label = ROUTE_NAMES[routeName] || routeName;
@@ -125,6 +138,7 @@ async function handleRoute(route) {
   }
   currentCleanup = cleanup;
 
+  setRouteTitle(name);
   announceRoute(name);
   // Move focus to the view container on every route change so keyboard/screen
   // reader users land on the new content instead of wherever they were on the
@@ -160,7 +174,8 @@ async function boot() {
     const content = await store.loadContent();
     if (festivalNameEl && content.settings.festival_name) {
       festivalNameEl.textContent = content.settings.festival_name;
-      document.title = content.settings.festival_name;
+      // document.title is owned by setRouteTitle, which the router calls on
+      // every route change — including the initial one, moments from now.
     }
   } catch {
     renderOfflineError(boot);

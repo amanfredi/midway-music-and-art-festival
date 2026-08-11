@@ -22,6 +22,30 @@ test('route change moves focus to the view container and announces the destinati
   await expect(page.locator('#route-announcer')).toHaveText(/Schedule/);
 });
 
+// WCAG 2.4.2: one title used to serve all seven routes, so nothing named the
+// page a tab, a history entry, or a screen reader's title announcement was
+// on. Route names match the nav labels — "Support", not "sponsors".
+test('every route names itself in the document title', async ({ page }) => {
+  const SITE = 'Midway Music & Arts Fest';
+  await page.goto('/' + T);
+  await expect(page.locator('[data-testid="now-view"]')).toBeVisible();
+  await expect(page).toHaveTitle(`Now — ${SITE}`);
+
+  for (const [route, label] of [
+    ['schedule', 'Schedule'],
+    ['map', 'Map'],
+    ['starred', 'Starred'],
+    ['vendors', 'Vendors'],
+    ['sponsors', 'Support'],
+  ]) {
+    await page.locator(`.tab-bar a[data-route="${route}"]`).click();
+    await expect(page).toHaveTitle(`${label} — ${SITE}`);
+  }
+
+  await page.goto('/' + T + '#/event/pottery-showcase');
+  await expect(page).toHaveTitle(`Event detail — ${SITE}`);
+});
+
 test('opening the venue sheet moves focus into the dialog; closing it restores focus to the trigger', async ({ page }) => {
   await gotoMap(page);
 

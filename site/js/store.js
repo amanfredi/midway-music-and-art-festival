@@ -22,13 +22,23 @@ export function getContent() {
   return content;
 }
 
-/** Re-fetch after a service-worker content-updated message. Keeps last-known-good on failure. */
+/**
+ * Re-fetch after a service-worker content-updated message. Only the fetch is
+ * guarded: network failure and a non-ok response keep last-known-good, while
+ * any other throw — a parse error, a programming error — propagates instead of
+ * masquerading as offline. (fetch rejects with the same TypeError a bug throws,
+ * so a wider catch cannot tell them apart; that shape silently disabled the
+ * worker's revalidation for its entire life — PROGRESS.md 2026-08-09.)
+ */
 export async function refreshContent() {
+  let res;
   try {
-    content = await fetchContent();
+    res = await fetch(CONTENT_URL, { cache: 'no-store' });
   } catch {
-    // Offline or a transient failure — keep serving what we already rendered.
+    return content; // offline — keep serving what we already rendered
   }
+  if (!res.ok) return content; // transient server error — last-known-good stands
+  content = await res.json();
   return content;
 }
 

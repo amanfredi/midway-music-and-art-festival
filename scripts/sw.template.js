@@ -26,22 +26,28 @@ self.addEventListener('activate', (event) => {
 // Stale-while-revalidate for content.json: cached copy answers instantly (or at
 // all, offline); a background refetch updates the cache and tells open pages.
 // `cached` must be a clone: respondWith consumes the original's body, so
-// reading it here throws once the refetch lands, and the catch below would
-// swallow that along with the update message.
+// reading it here throws once the refetch lands.
+// Only the fetch is guarded. It is the one step that legitimately fails
+// offline — and it rejects with TypeError, the same type a programming error
+// throws, so a try wide enough to cover the rest cannot tell the two apart: a
+// whole-body catch swallowed a clone() TypeError and silently disabled
+// revalidation for the feature's entire life (PROGRESS.md 2026-08-09).
+// Everything after the fetch throws loudly.
 async function revalidateContent(cache, cached) {
+  let fresh;
   try {
-    const fresh = await fetch(CONTENT_URL, { cache: 'no-cache' });
-    if (!fresh.ok) return;
-    const freshText = await fresh.clone().text();
-    const cachedText = cached ? await cached.text() : null;
-    await cache.put(CONTENT_URL, fresh);
-    if (cachedText !== null && cachedText !== freshText) {
-      for (const client of await self.clients.matchAll()) {
-        client.postMessage({ type: 'content-updated' });
-      }
-    }
+    fresh = await fetch(CONTENT_URL, { cache: 'no-cache' });
   } catch {
-    /* offline — the cached copy stands */
+    return; // offline — the cached copy stands
+  }
+  if (!fresh.ok) return;
+  const freshText = await fresh.clone().text();
+  const cachedText = cached ? await cached.text() : null;
+  await cache.put(CONTENT_URL, fresh);
+  if (cachedText !== null && cachedText !== freshText) {
+    for (const client of await self.clients.matchAll()) {
+      client.postMessage({ type: 'content-updated' });
+    }
   }
 }
 

@@ -414,6 +414,28 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   (`aria-live="polite"`, `role="status"`) announces the destination view's
   name (matching its nav label, e.g. "Support" not "sponsors") on every route
   change.
+- **Per-route page titles**: every route change sets `document.title` to
+  `<Route name> — <site name>`, the route name matching the nav label exactly
+  as the announcement does. The site name is `settings.festival_name`, falling
+  back to `index.html`'s static `<title>`. `app.js#setRouteTitle` is the
+  title's only writer.
+- **The Now view's 60 s refresh patches in place** (WCAG 2.2.2 — it is an
+  auto-update with no pause control, deliberately). While the view stays in
+  its during-the-festival state, a tick adds/removes/updates rows around the
+  ones that persist and never replaces the container, so keyboard focus and a
+  screen reader's reading position survive it. Only a change of state
+  (before/during/after the festival, or the events list emptying) replaces
+  the view wholesale.
+- **External links announce the new tab.** Every `target="_blank"` link's
+  text ends with the visually-hidden suffix " (opens in a new tab)"
+  (`util.js#NEW_TAB_HINT`), so its accessible name warns about the context
+  switch before it happens.
+- **Forced colors (Windows High Contrast) keep the selected state visible.**
+  Forcing repaints author colors and erases the fill flip on `.is-active`, so
+  the schedule's active day/group buttons restate selection in
+  `SelectedItem`/`SelectedItemText` (system color keywords survive forcing)
+  and the nav's active tab — state otherwise carried by text color alone — is
+  underlined, under `@media (forced-colors: active)`.
 - **No `role="tablist"` anywhere in the app.** The schedule's day switcher
   and group-by toggle are plain button groups
   (`role="group"`, `aria-pressed`/`is-active` reflecting the selected
@@ -461,7 +483,11 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - **Focus is never obscured.** `.tab-bar` is fixed over the bottom of every
   route, so `html` carries a `scroll-padding-bottom` covering the bar's height
   plus the safe-area inset. Without it the browser's own scroll-into-view
-  parks a newly focused control underneath the bar.
+  parks a newly focused control underneath the bar. The schedule's sticky
+  control bar is the same hazard at the top edge: `html` reads
+  `scroll-padding-top` from `--scroll-padding-top`, which `schedule.js`
+  publishes from the bar's measured height plus one pinned group heading and
+  clears on view teardown (other views need no top padding).
 - **No orientation lock.** `manifest.webmanifest` declares no `orientation`
   member, so an installed app follows the device.
 - **Target size** is 44px+ for app-shell controls and 24px minimum for

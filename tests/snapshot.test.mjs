@@ -179,6 +179,32 @@ describe("snapshot writer", () => {
     assert.equal(readFileSync(path.join(snapshotDir, "sources/venues.csv"), "utf8"), bodies[1]);
   });
 
+  test("a resource the config no longer fetches is pruned, and meta survives", async () => {
+    const server = await startServer({
+      "/venues.csv": { type: "text/csv", body: VENUES_CSV },
+      "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG },
+    });
+    const snapshotDir = caseDir("prune");
+    const remote = { venues: `${server.origin}/venues.csv` };
+    const withLogo = makeFixtureSet(TMP_ROOT, "prune", [setCell("sponsors.csv", 2, "logo", `${server.origin}/logo.svg`)], remote);
+    const seeded = await runBuild(withLogo, { snapshotDir, flags: ["--write-snapshot"] });
+    assert.equal(seeded.status, 0, `expected exit 0\n${seeded.stderr}`);
+    assert.equal(JSON.parse(readFileSync(path.join(snapshotDir, "meta.json"), "utf8")).resources.length, 2);
+
+    // The sponsor goes back to a bundled logo: nothing fetches that URL now, so
+    // the snapshot should stop carrying it rather than accumulating orphans.
+    const withoutLogo = makeFixtureSet(TMP_ROOT, "prune-after", [], remote);
+    const pruned = await runBuild(withoutLogo, { snapshotDir, flags: ["--write-snapshot"] });
+    await server.close();
+    assert.equal(pruned.status, 0, `expected exit 0\n${pruned.stderr}`);
+
+    const meta = JSON.parse(readFileSync(path.join(snapshotDir, "meta.json"), "utf8"));
+    assert.deepEqual(meta.resources.map((r) => r.id), ["source:venues"]);
+    assert.equal(pruned.report.snapshot.removed.length, 1);
+    assert.deepEqual(Object.keys(snapshotState(snapshotDir)).sort(), ["meta.json", path.join("sources", "venues.csv")]);
+    assert.equal(readFileSync(path.join(snapshotDir, "sources/venues.csv"), "utf8"), VENUES_CSV);
+  });
+
   test("a build with no remote sources leaves an existing snapshot alone", async () => {
     const { snapshotDir } = await seedSnapshot("local-only");
     const before = snapshotState(snapshotDir);

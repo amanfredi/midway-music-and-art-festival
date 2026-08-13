@@ -4,9 +4,19 @@
 // copies of sponsor logos into <out>/assets/sponsors/. Zero npm dependencies.
 //
 // Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
-//   config defaults to content/config.json, out defaults to site/
+//                               [--write-snapshot] [--use-snapshot]
+//                               [--snapshot-dir dir] [--report path]
+//   config defaults to content/config.json, out defaults to site/,
+//   snapshot-dir defaults to content/snapshot/
+//
+//   --write-snapshot  after a fully successful build, save the bytes of every
+//                     remotely-fetched resource into the snapshot directory
+//   --use-snapshot    serve a remote resource from the snapshot when it cannot
+//                     be reached (never when it answers wrongly)
+//   --report path     write a machine-readable outcome (failure classes,
+//                     snapshot state) for CI to route notifications with
 
-import { readFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
@@ -16,6 +26,7 @@ const CWD = process.cwd();
 const LOGOS_DIR = path.join(CWD, "content/fixtures/logos");
 const DEFAULT_CONFIG = "content/config.json";
 const DEFAULT_OUT_DIR = "site";
+const DEFAULT_SNAPSHOT_DIR = "content/snapshot";
 
 const BBOX = { latMin: 44.94, latMax: 44.98, lngMin: -93.2, lngMax: -93.13 };
 const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
@@ -168,6 +179,10 @@ function rowsToRecords(rows) {
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
 const FETCH_TIMEOUT_MS = 45_000;
 const FETCH_RETRIES = 2;
+// Backoff between retries. The fallback tests drive a dozen builds through
+// unreachable sources, and waiting out the real backoff in each would cost more
+// than the coverage is worth; nothing but the test suite sets this.
+const FETCH_BACKOFF_MS = Number(process.env.MMAF_RETRY_BACKOFF_MS ?? 1500);
 
 /** A hung sheet must not hang the deploy: every fetch gets a hard deadline. */
 async function fetchWithTimeout(url) {
@@ -191,7 +206,7 @@ async function fetchSourceWithRetries(key, url) {
   for (let attempt = 0; attempt <= FETCH_RETRIES; attempt++) {
     if (attempt > 0) {
       console.warn(`  source "${key}": retry ${attempt}/${FETCH_RETRIES}...`);
-      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, FETCH_BACKOFF_MS * attempt));
     }
     try {
       const res = await fetchWithTimeout(url);
@@ -226,36 +241,72 @@ function sourceSchemeError(key, value) {
   return `source "${key}" (${value}) must use an https:// URL — http:// is not accepted for content sources.`;
 }
 
-async function loadSource(key, value) {
-  const isUrl = /^https?:\/\//i.test(value);
+/**
+ * Fetches one remote resource — a content CSV or a sponsor logo, the two things
+ * this build pulls over the network — and records its bytes for the snapshot.
+ *
+ * The distinction that runs through the whole fallback design is made here:
+ * *unreachable* (connection refused, DNS, timeout, 5xx/429 on every attempt) is
+ * an outage the snapshot may cover, while *reachable and wrong* (4xx, an HTML
+ * sign-in page) is link rot the snapshot must never paper over. Only the first
+ * kind reaches resolveFromSnapshot.
+ */
+async function fetchRemote(ctx, resource) {
+  const { id, kind, label, key, url } = resource;
+  let res;
   try {
-    if (isUrl) {
-      const schemeError = sourceSchemeError(key, value);
-      if (schemeError) return { error: schemeError };
-      const res = await fetchSourceWithRetries(key, value);
-      if (!res.ok) {
-        return { error: `source "${key}" (${value}) returned HTTP ${res.status}.` };
-      }
-      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim();
-      if (/^text\/html$/i.test(contentType)) {
-        return {
-          error:
-            `source "${key}" (${value}) returned an HTML page, not CSV (content-type "${contentType}"). ` +
-            `Check that the sheet tab is still published to the web as CSV and the link hasn't turned into a sign-in page.`,
-        };
-      }
-      const buffer = Buffer.from(await res.arrayBuffer());
-      return { buffer, text: buffer.toString("utf8") };
-    }
+    res = await fetchSourceWithRetries(key, url);
+  } catch (err) {
+    return resolveFromSnapshot(ctx, resource, `could not be reached (${err.message})`);
+  }
+  if (res.status >= 500 || res.status === 429) {
+    return resolveFromSnapshot(ctx, resource, `returned HTTP ${res.status} on every attempt`);
+  }
+  if (!res.ok) {
+    return { error: `${label} returned HTTP ${res.status}.`, class: "validation" };
+  }
+  const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  const buffer = Buffer.from(await res.arrayBuffer());
+  ctx.fetched.set(id, { id, kind, key, url, buffer, contentType });
+  return { buffer, contentType };
+}
+
+async function loadSource(key, value, ctx) {
+  const isUrl = /^https?:\/\//i.test(value);
+  if (!isUrl) {
     const filePath = path.resolve(CWD, value);
     if (!existsSync(filePath)) {
-      return { error: `source "${key}" file not found: ${value}` };
+      return { error: `source "${key}" file not found: ${value}`, class: "config" };
     }
-    const buffer = readFileSync(filePath);
-    return { buffer, text: buffer.toString("utf8") };
-  } catch (err) {
-    return { error: `source "${key}" (${value}) could not be loaded: ${err.message}` };
+    try {
+      const buffer = readFileSync(filePath);
+      return { buffer, text: buffer.toString("utf8") };
+    } catch (err) {
+      return { error: `source "${key}" (${value}) could not be loaded: ${err.message}`, class: "config" };
+    }
   }
+
+  const schemeError = sourceSchemeError(key, value);
+  if (schemeError) return { error: schemeError, class: "config" };
+
+  const got = await fetchRemote(ctx, {
+    id: sourceResourceId(key),
+    kind: "source",
+    label: `source "${key}" (${value})`,
+    key,
+    url: value,
+  });
+  if (got.error) return got;
+
+  if (/^text\/html$/i.test(got.contentType || "")) {
+    return {
+      class: "validation",
+      error:
+        `source "${key}" (${value}) returned an HTML page, not CSV (content-type "${got.contentType}"). ` +
+        `Check that the sheet tab is still published to the web as CSV and the link hasn't turned into a sign-in page.`,
+    };
+  }
+  return { buffer: got.buffer, text: got.buffer.toString("utf8") };
 }
 
 // ---------------------------------------------------------------------------
@@ -953,8 +1004,9 @@ function localLogoPath(logoValue) {
   return { resolved };
 }
 
-async function resolveSponsorLogos(records) {
+async function resolveSponsorLogos(records, ctx) {
   const errors = [];
+  const failures = [];
   const resolved = new Map(); // rowNum -> { filename, buffer }
   for (const rec of records) {
     const logoValue = (rec.fields.logo ?? "").trim();
@@ -966,26 +1018,33 @@ async function resolveSponsorLogos(records) {
     // Ids are slugified and uniqueness-checked, so naming the bundled file after
     // the sponsor keeps two sponsors whose URLs both end /logo.svg apart.
     const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
-    const fail = (message) => errors.push(errorMsg("sponsors.csv", rec.rowNum, ident, message));
+    const fail = (message, failureClass = "validation") => {
+      const text = errorMsg("sponsors.csv", rec.rowNum, ident, message);
+      errors.push(text);
+      failures.push({ class: failureClass, source: "sponsors", message: text });
+    };
 
     let ext;
     let buffer;
     let origin; // how the message refers to the file
 
     if (/^https?:\/\//i.test(logoValue)) {
+      // A sponsor's logo host is one more thing that can be down on festival
+      // Saturday, so logos go through the same retries and the same snapshot as
+      // the CSV sources rather than dying on the first refused connection.
       origin = `logo URL "${logoValue}"`;
-      let res;
-      try {
-        res = await fetchWithTimeout(logoValue);
-      } catch (err) {
-        fail(`${origin} could not be fetched (${err.message}).`);
+      const got = await fetchRemote(ctx, {
+        id: logoResourceId(logoValue),
+        kind: "logo",
+        label: origin,
+        key: `${sponsorId} logo`,
+        url: logoValue,
+      });
+      if (got.error) {
+        fail(got.error, got.class);
         continue;
       }
-      if (!res.ok) {
-        fail(`${origin} returned HTTP ${res.status}.`);
-        continue;
-      }
-      const contentType = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+      const contentType = got.contentType;
       ext = LOGO_TYPE_EXTENSIONS[contentType];
       if (!ext) {
         fail(
@@ -993,7 +1052,7 @@ async function resolveSponsorLogos(records) {
         );
         continue;
       }
-      buffer = Buffer.from(await res.arrayBuffer());
+      buffer = got.buffer;
     } else {
       origin = `logo file "${logoValue}"`;
       const local = localLogoPath(logoValue);
@@ -1031,17 +1090,242 @@ async function resolveSponsorLogos(records) {
 
     resolved.set(rec.rowNum, { filename: `${sponsorId}.${ext}`, buffer });
   }
-  return { errors, resolved };
+  return { errors, failures, resolved };
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot of remotely-fetched bytes
+//
+// The fallback that lets a code deploy ship while the sheet is unreachable.
+// Written only by a build that fully succeeded — so the snapshot can only ever
+// hold bytes that passed validation — and read only when --use-snapshot is
+// passed, so shipping stale content is always somebody's deliberate act.
+//
+// It lives outside site/, so nothing here can change a build output: the
+// staleness dates recorded below are what the operator-facing warnings are
+// derived from, never the build clock.
+// ---------------------------------------------------------------------------
+
+const SNAPSHOT_META = "meta.json";
+const SNAPSHOT_SCHEMA = 1;
+
+const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
+const todayUTC = () => new Date().toISOString().slice(0, 10);
+const sourceResourceId = (key) => `source:${key}`;
+// Logos are keyed by URL, not by sponsor id: the id can be re-typed in the
+// sheet without the logo changing, and two sponsors can share a host.
+const logoResourceId = (url) => `logo:${sha256(Buffer.from(url, "utf8")).slice(0, 16)}`;
+
+function snapshotFileFor(resource) {
+  if (resource.kind === "source") return `sources/${resource.key}.csv`;
+  const ext = LOGO_TYPE_EXTENSIONS[resource.contentType] ?? "bin";
+  return `logos/${resource.id.slice("logo:".length)}.${ext}`;
+}
+
+/** Reads the snapshot's meta file into a Map keyed by resource id. */
+function readSnapshotMeta(snapshotDir) {
+  const metaPath = path.join(snapshotDir, SNAPSHOT_META);
+  if (!existsSync(metaPath)) {
+    return { resources: new Map(), error: `no ${path.join(path.relative(CWD, snapshotDir) || snapshotDir, SNAPSHOT_META)} exists yet` };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(metaPath, "utf8"));
+  } catch (err) {
+    return { resources: new Map(), error: `${SNAPSHOT_META} could not be read: ${err.message}` };
+  }
+  const resources = new Map();
+  for (const entry of Array.isArray(parsed?.resources) ? parsed.resources : []) {
+    if (entry && typeof entry.id === "string") resources.set(entry.id, entry);
+  }
+  return { resources, error: null };
+}
+
+/**
+ * The meta file is committed, but it still names a path this build will read,
+ * so the path is confined to the snapshot directory the same way a sponsor's
+ * local logo filename is.
+ */
+function readSnapshotFile(snapshotDir, entry) {
+  const resolved = path.resolve(snapshotDir, entry.file ?? "");
+  if (!resolved.startsWith(path.resolve(snapshotDir) + path.sep)) {
+    return { error: `its saved copy "${entry.file}" resolves outside the snapshot directory` };
+  }
+  if (!existsSync(resolved)) return { error: `its saved copy "${entry.file}" is missing` };
+  const buffer = readFileSync(resolved);
+  if (entry.sha256 && sha256(buffer) !== entry.sha256) {
+    return { error: `its saved copy "${entry.file}" does not match the hash recorded in ${SNAPSHOT_META}` };
+  }
+  return { buffer };
+}
+
+function createFetchContext({ snapshotDir, useSnapshot }) {
+  const meta = readSnapshotMeta(snapshotDir);
+  return {
+    snapshotDir,
+    useSnapshot,
+    saved: meta.resources,
+    savedError: meta.error,
+    fetched: new Map(), // id -> { id, kind, key, url, buffer, contentType } fetched live this run
+    reused: new Map(), // id -> saved meta entry served from the snapshot instead
+  };
+}
+
+/**
+ * Called only for a resource that could not be reached. Without --use-snapshot
+ * this is just the failure message; with it, the saved bytes stand in — but
+ * only bytes saved for this exact URL, so re-pointing a source at a different
+ * tab can never silently publish the old tab's content.
+ */
+function resolveFromSnapshot(ctx, resource, reason) {
+  const { id, label, url } = resource;
+  const network = (message) => ({ error: message, class: "network" });
+  if (!ctx.useSnapshot) {
+    return network(
+      `${label} ${reason}. To publish anyway from the last saved copy, re-run with --use-snapshot ` +
+        `(in CI: run the Deploy workflow with use_content_snapshot).`
+    );
+  }
+  const saved = ctx.saved.get(id);
+  if (!saved) {
+    return network(
+      `${label} ${reason}, and the snapshot has no saved copy of it (${ctx.savedError ?? "no entry for this resource"}). ` +
+        `A source can only be served from the snapshot after one successful build with --write-snapshot has saved it.`
+    );
+  }
+  if (saved.url !== url) {
+    return network(
+      `${label} ${reason}, and the snapshot's saved copy is for a different URL (${saved.url}). ` +
+        `Restore the previous URL, or re-run with --write-snapshot while the new one is reachable.`
+    );
+  }
+  const read = readSnapshotFile(ctx.snapshotDir, saved);
+  if (read.error) {
+    return network(`${label} ${reason}, and ${read.error}.`);
+  }
+  ctx.reused.set(id, saved);
+  return { buffer: read.buffer, contentType: saved.contentType ?? "", fromSnapshot: true };
+}
+
+/** What this build took from the snapshot, for the log line and the report. */
+function snapshotUsedEntries(ctx) {
+  return [...ctx.reused.values()]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((entry) => ({
+      id: entry.id,
+      label: entry.kind === "source" ? SOURCE_LABEL[entry.id.slice("source:".length)] ?? entry.file : entry.file,
+      url: entry.url,
+      lastChanged: entry.lastChanged ?? null,
+    }));
+}
+
+/** One line per snapshot-served resource, naming what is stale and since when. */
+function snapshotStalenessLines(ctx) {
+  return snapshotUsedEntries(ctx).map(
+    (entry) => `${entry.label} (${entry.url}) — saved bytes unchanged since ${entry.lastChanged ?? "an unrecorded date"}`
+  );
+}
+
+/**
+ * Writes the snapshot after a successful build. Byte-identical resources are
+ * left alone (file and recorded date both), so an unchanged rebuild dirties
+ * nothing and CI has no commit to make.
+ */
+function saveSnapshot(ctx) {
+  // A build with no remote resources at all — every source a local fixture —
+  // must not prune a snapshot it simply had no occasion to refresh.
+  if (ctx.fetched.size === 0 && ctx.reused.size === 0) {
+    return { written: false, skipped: "no remote sources in this build", changed: [], removed: [] };
+  }
+
+  const stamp = todayUTC();
+  const entries = [];
+  const changed = [];
+  const writes = [];
+
+  for (const resource of ctx.fetched.values()) {
+    const digest = sha256(resource.buffer);
+    const file = snapshotFileFor(resource);
+    const previous = ctx.saved.get(resource.id);
+    const unchanged = previous && previous.sha256 === digest && previous.url === resource.url && previous.file === file;
+    entries.push({
+      id: resource.id,
+      kind: resource.kind,
+      url: resource.url,
+      file,
+      contentType: resource.contentType ?? "",
+      sha256: digest,
+      bytes: resource.buffer.length,
+      lastChanged: unchanged ? previous.lastChanged ?? stamp : stamp,
+    });
+    if (!unchanged) changed.push(resource.id);
+    writes.push({ file, buffer: resource.buffer });
+  }
+  // Resources served from the snapshot keep their entry verbatim: this run
+  // learned nothing new about them.
+  for (const saved of ctx.reused.values()) entries.push(saved);
+
+  const keptIds = new Set(entries.map((e) => e.id));
+  const removed = [...ctx.saved.keys()].filter((id) => !keptIds.has(id));
+
+  entries.sort((a, b) => a.id.localeCompare(b.id));
+  const metaText = JSON.stringify({ schema: SNAPSHOT_SCHEMA, resources: entries }, null, 2) + "\n";
+
+  mkdirSync(ctx.snapshotDir, { recursive: true });
+  for (const { file, buffer } of writes) {
+    const target = path.join(ctx.snapshotDir, file);
+    if (existsSync(target) && readFileSync(target).equals(buffer)) continue;
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, buffer);
+  }
+
+  // Prune anything the current config no longer fetches, so the snapshot is
+  // always exactly the set of remote resources this build depends on.
+  const kept = new Set(entries.map((e) => path.join(ctx.snapshotDir, e.file)));
+  for (const name of readdirSync(ctx.snapshotDir, { recursive: true, withFileTypes: true })) {
+    if (!name.isFile()) continue;
+    const full = path.join(name.parentPath ?? name.path, name.name);
+    if (full === path.join(ctx.snapshotDir, SNAPSHOT_META) || kept.has(full)) continue;
+    rmSync(full, { force: true });
+  }
+
+  const metaPath = path.join(ctx.snapshotDir, SNAPSHOT_META);
+  const metaChanged = !existsSync(metaPath) || readFileSync(metaPath, "utf8") !== metaText;
+  if (metaChanged) writeFileSync(metaPath, metaText);
+
+  return { written: metaChanged || changed.length > 0 || removed.length > 0, changed, removed, skipped: null };
 }
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
-function reportErrorsAndExit(errors) {
+/**
+ * The machine-readable twin of the build log. CI reads it to decide who hears
+ * about a failure: a "validation" class is somebody's spreadsheet edit and goes
+ * to the organizers, while "network" and "config" are nobody's edit and go to
+ * the operator alone.
+ */
+function writeReport(reportPath, payload) {
+  if (!reportPath) return;
+  try {
+    mkdirSync(path.dirname(reportPath), { recursive: true });
+    writeFileSync(reportPath, JSON.stringify(payload, null, 2) + "\n");
+  } catch (err) {
+    console.warn(`Could not write the build report to ${reportPath}: ${err.message}`);
+  }
+}
+
+function failureReport(failures, extra = {}) {
+  const classes = [...new Set(failures.map((f) => f.class))].sort();
+  return { ok: false, failureClasses: classes, failures, ...extra };
+}
+
+function reportErrorsAndExit(errors, { failures = [], reportPath = null, snapshot = null } = {}) {
   console.error(`Found ${errors.length} content error(s):\n`);
   for (const e of errors) console.error(`  - ${oneLine(e)}`);
   console.error(`\nFix the field(s) above in the spreadsheet/CSV and re-run the build.`);
+  writeReport(reportPath, failureReport(failures, snapshot ? { snapshot } : {}));
   process.exit(1);
 }
 
@@ -1050,26 +1334,36 @@ function reportErrorsAndExit(errors) {
  * root as --out; tests build into a temp dir so they never overwrite the
  * deployable site/ tree.
  */
+const PATH_OPTIONS = { "--config": "configArg", "--out": "outArg", "--snapshot-dir": "snapshotArg", "--report": "reportArg" };
+const FLAG_OPTIONS = { "--write-snapshot": "writeSnapshot", "--use-snapshot": "useSnapshot" };
+
 function parseArgs(argv) {
-  let configArg = null;
-  let outArg = null;
+  const parsed = { configArg: null, outArg: null, snapshotArg: null, reportArg: null, writeSnapshot: false, useSnapshot: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--config" || arg === "--out") {
+    if (arg in PATH_OPTIONS) {
       const value = argv[i + 1];
       if (!value || value.startsWith("--")) return { error: `${arg} needs a path.` };
-      if (arg === "--config") configArg = value;
-      else outArg = value;
+      parsed[PATH_OPTIONS[arg]] = value;
       i += 1;
+    } else if (arg in FLAG_OPTIONS) {
+      parsed[FLAG_OPTIONS[arg]] = true;
     } else if (arg.startsWith("--")) {
-      return { error: `unknown option "${arg}" (supported: --config <path>, --out <dir>).` };
-    } else if (configArg === null) {
-      configArg = arg;
+      return {
+        error: `unknown option "${arg}" (supported: ${[...Object.keys(PATH_OPTIONS).map((o) => `${o} <path>`), ...Object.keys(FLAG_OPTIONS)].join(", ")}).`,
+      };
+    } else if (parsed.configArg === null) {
+      parsed.configArg = arg;
     } else {
       return { error: `unexpected argument "${arg}".` };
     }
   }
-  return { configArg: configArg ?? DEFAULT_CONFIG, outArg: outArg ?? DEFAULT_OUT_DIR };
+  return {
+    ...parsed,
+    configArg: parsed.configArg ?? DEFAULT_CONFIG,
+    outArg: parsed.outArg ?? DEFAULT_OUT_DIR,
+    snapshotArg: parsed.snapshotArg ?? DEFAULT_SNAPSHOT_DIR,
+  };
 }
 
 async function main() {
@@ -1078,34 +1372,47 @@ async function main() {
     console.error(`Cannot start the build: ${args.error}`);
     process.exit(1);
   }
-  const { configArg, outArg } = args;
+  const { configArg, outArg, snapshotArg, reportArg, writeSnapshot, useSnapshot } = args;
   const configPath = path.resolve(CWD, configArg);
   const outDir = path.resolve(CWD, outArg);
+  const snapshotDir = path.resolve(CWD, snapshotArg);
+  const reportPath = reportArg ? path.resolve(CWD, reportArg) : null;
   const siteDataDir = path.join(outDir, "data");
   const sponsorsOutDir = path.join(outDir, "assets/sponsors");
   const contentJsonPath = path.join(siteDataDir, "content.json");
+
+  const bail = (message, failureClass) => {
+    console.error(message);
+    writeReport(reportPath, failureReport([{ class: failureClass, source: null, message }]));
+    process.exit(1);
+  };
 
   let config;
   try {
     config = JSON.parse(readFileSync(configPath, "utf8"));
   } catch (err) {
-    console.error(`Cannot read config file "${configArg}": ${err.message}`);
-    process.exit(1);
+    bail(`Cannot read config file "${configArg}": ${err.message}`, "config");
   }
 
   const sources = config.sources || {};
   const missingKeys = SOURCE_ORDER.filter((k) => !sources[k]);
   if (missingKeys.length > 0) {
-    console.error(`config.json is missing required source(s): ${missingKeys.join(", ")}`);
-    process.exit(1);
+    bail(`config.json is missing required source(s): ${missingKeys.join(", ")}`, "config");
   }
 
+  const ctx = createFetchContext({ snapshotDir, useSnapshot });
   const errors = [];
+  const failures = [];
+  const fail = (message, failureClass, source) => {
+    errors.push(message);
+    failures.push({ class: failureClass, source, message });
+  };
+
   const loaded = {};
   for (const key of SOURCE_ORDER) {
-    const result = await loadSource(key, sources[key]);
+    const result = await loadSource(key, sources[key], ctx);
     if (result.error) {
-      errors.push(result.error);
+      fail(result.error, result.class ?? "validation", key);
       loaded[key] = null;
     } else {
       loaded[key] = result;
@@ -1115,13 +1422,17 @@ async function main() {
   const parsed = {};
   for (const key of SOURCE_ORDER) {
     parsed[key] = loaded[key] ? rowsToRecords(parseCSV(loaded[key].text)) : { header: [], records: [] };
-    if (loaded[key]) errors.push(...validateSourceShape(key, sources[key], parsed[key]));
+    if (loaded[key]) {
+      for (const message of validateSourceShape(key, sources[key], parsed[key])) fail(message, "validation", key);
+    }
   }
 
   // A source that wouldn't load, a header that can't be read, or an emptied tab
   // makes every row-level message downstream a misreading of the file, so those
   // are reported on their own rather than buried under hundreds of them.
-  if (errors.length > 0) reportErrorsAndExit(errors);
+  if (errors.length > 0) {
+    reportErrorsAndExit(errors, { failures, reportPath, snapshot: { used: snapshotUsedEntries(ctx), written: false, changed: [] } });
+  }
 
   // Before any validation: ids and venue_id references become slugs, so
   // duplicate detection and the foreign-key check below compare like with like.
@@ -1145,18 +1456,30 @@ async function main() {
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
   const eventsResult = validateEvents(parsed.events.records, venueIds);
 
-  const { errors: logoErrors, resolved: logoFiles } = await resolveSponsorLogos(parsed.sponsors.records);
-
-  errors.push(
-    ...venuesResult.errors,
-    ...vendorsResult.errors,
-    ...eventsResult.errors,
-    ...sponsorFieldErrors,
-    ...settingsResult.errors,
-    ...logoErrors
+  const { errors: logoErrors, failures: logoFailures, resolved: logoFiles } = await resolveSponsorLogos(
+    parsed.sponsors.records,
+    ctx
   );
 
-  if (errors.length > 0) reportErrorsAndExit(errors);
+  // Everything below this line is a spreadsheet cell somebody can fix, so it is
+  // all the validation class; the logo fetches classify themselves, because a
+  // sponsor's host being down is an outage rather than an edit.
+  const byType = [
+    ["venues", venuesResult.errors],
+    ["vendors", vendorsResult.errors],
+    ["events", eventsResult.errors],
+    ["sponsors", sponsorFieldErrors],
+    ["settings", settingsResult.errors],
+  ];
+  for (const [source, messages] of byType) {
+    for (const message of messages) fail(message, "validation", source);
+  }
+  errors.push(...logoErrors);
+  failures.push(...logoFailures);
+
+  if (errors.length > 0) {
+    reportErrorsAndExit(errors, { failures, reportPath, snapshot: { used: snapshotUsedEntries(ctx), written: false, changed: [] } });
+  }
 
   // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
   // tier rewritten from the CSV slug to its display label + intrinsic rank).
@@ -1221,6 +1544,44 @@ async function main() {
     `Built ${shownPath}: ${content.venues.length} venues, ${content.events.length} events, ` +
       `${content.vendors.length} vendors, ${content.sponsors.length} sponsors, version ${version}`
   );
+
+  const shownSnapshotDir = path.relative(CWD, snapshotDir) || snapshotDir;
+  const staleLines = snapshotStalenessLines(ctx);
+  if (staleLines.length > 0) {
+    console.log(
+      `STALE CONTENT: ${staleLines.length} remote resource(s) could not be reached and were served from ${shownSnapshotDir}/:`
+    );
+    for (const line of staleLines) console.log(`  - ${oneLine(line)}`);
+    console.log(`  Everything else in this build was fetched live.`);
+  }
+
+  let snapshot = { written: false, changed: [], removed: [], skipped: "--write-snapshot not given" };
+  if (writeSnapshot) {
+    snapshot = saveSnapshot(ctx);
+    if (snapshot.skipped) {
+      console.log(`Snapshot left untouched (${snapshot.skipped}).`);
+    } else if (snapshot.written) {
+      console.log(
+        `Snapshot updated in ${shownSnapshotDir}/: ${snapshot.changed.length} resource(s) changed` +
+          `${snapshot.removed.length ? `, ${snapshot.removed.length} removed` : ""}.`
+      );
+    } else {
+      console.log(`Snapshot in ${shownSnapshotDir}/ is already current — nothing to commit.`);
+    }
+  }
+
+  writeReport(reportPath, {
+    ok: true,
+    failureClasses: [],
+    failures: [],
+    snapshot: {
+      dir: shownSnapshotDir,
+      used: snapshotUsedEntries(ctx),
+      written: Boolean(snapshot.written),
+      changed: snapshot.changed ?? [],
+      removed: snapshot.removed ?? [],
+    },
+  });
 }
 
 // Only build when run as a script; tests import this module for its CSV parser.

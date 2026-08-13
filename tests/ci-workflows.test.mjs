@@ -118,8 +118,10 @@ describe("the npm-down mitigations", () => {
 
   test("skip_tests exists as a dispatch input, and only as one", () => {
     assert.match(code(DEPLOY), /skip_tests:\n\s+description:.*\n\s+type: boolean\n\s+default: false/);
-    // A push cannot set inputs, so this cannot weaken the gate on the normal path.
-    assert.match(code(DEPLOY), /if: \$\{\{ inputs\.skip_tests != true \}\}/);
+    // A push cannot set inputs, so this cannot weaken the gate on the normal
+    // path. Both spellings are checked because the Actions UI sends a boolean
+    // and `gh workflow run -f` sends a string, and GitHub compares them unequal.
+    assert.match(code(DEPLOY), /if: \$\{\{ inputs\.skip_tests != true && inputs\.skip_tests != 'true' \}\}/);
     // ...and the deploy job has to treat a skipped test job as passable while
     // still refusing a failed one.
     assert.match(code(DEPLOY), /needs\.test\.result == 'success' \|\| needs\.test\.result == 'skipped'/);

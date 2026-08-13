@@ -31,7 +31,12 @@ jobs:
     # The gate stays exactly as strict on a push. It can only be stepped around
     # by dispatching the workflow and ticking skip_tests — one deliberate act,
     # for the festival-Saturday case where npm is down and a fix has to ship.
-    if: ${{ inputs.skip_tests != true }}
+    #
+    # Both comparisons are deliberate: the Actions UI sends a real boolean, and
+    # `gh workflow run -f skip_tests=true` sends the string. GitHub's loose
+    # equality casts a bool to a number and a string to NaN, so true == 'true'
+    # is false — one comparison would silently ignore the other caller.
+    if: ${{ inputs.skip_tests != true && inputs.skip_tests != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

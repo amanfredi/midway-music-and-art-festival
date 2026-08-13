@@ -6,17 +6,25 @@ happened and why. Nothing should appear in both.
 Items are not prioritized against each other. The festival is October 2–4,
 2026; nothing here blocks the site working today.
 
+- Consider adopting svelte/sveltekit (see especially the static site adapter https://svelte.dev/docs/kit/adapter-static)
+- Consider moving deployment to Cloudflare Pages free plan and reverting github repo to private visibility (https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-kit-site/#deploy-with-cloudflare-pages)
+
+## Ready to build
+
+- **Deploy robustness** (`definitions/deploy-robustness.md`) — all six
+  questions ruled 2026-08-12; rulings plus two scope additions (failure
+  email via Fastmail SMTP, a skip-if-unchanged short-circuit for the content
+  cron) are recorded in the definition. Next: /build-prompt → dispatch.
+  Landing it closes the unmet CLAUDE.md invariant and the F17/F21
+  remainders. Operator setup done 2026-08-12: `FASTMAIL_APP_PASSWORD`
+  secret; `DEPLOY_NOTIFICATION_EMAIL`, `CONTENT_NOTIFICATION_EMAIL`, and
+  `FASTMAIL_USER` variables (recipient lists may be comma-separated).
+
 ## Decisions that need Anthony
 
-**Five definitions await rulings (written 2026-08-11).** Each doc collects
+**Four definitions await rulings (written 2026-08-11).** Each doc collects
 its open questions at the end; the one-line asks:
 
-- `definitions/deploy-robustness.md` — snapshot fallback and a content-only
-  publish path (the unmet CLAUDE.md invariant). Recommends a committed
-  `content/snapshot/` refreshed by every successful publish, opt-in fallback,
-  operator-loud staleness only. Six questions — notably whether
-  `content/fixtures/venues.csv` and a venues snapshot are a contradiction to
-  resolve, and whether attendees ever see a staleness marker.
 - `definitions/coincident-pin-presentation.md` — leader lines for pin groups
   no zoom can separate; the cheap fallback is routing a tied venue tap to the
   picker sheet. The tap bug it found is under Map and stands regardless of

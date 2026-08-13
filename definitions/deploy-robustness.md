@@ -1,7 +1,9 @@
 # Deploy robustness — publishing through remote-source outages
 
 Status: drafted 2026-08-10, re-verified against the pipeline 2026-08-11;
-recommendation pending Anthony's answers to the open questions | Overall
+ruled by Anthony 2026-08-12 — all six questions decided (see Rulings), scope
+extended with failure-notification email and a skip-if-unchanged cron
+short-circuit; ready for /build-prompt | Overall
 confidence: medium-high — the failure-mode analysis was read out of the
 workflows and `build.mjs` rather than assumed, but several load-bearing
 GitHub Actions behaviors (toolcache contents, bot-commit loop suppression,
@@ -104,8 +106,8 @@ whose tests-first gate got quietly weaker in the name of robustness.
   exactly as strict on the normal path.
 - **No loosening of content validation.** Wrong-but-reachable sources keep
   failing every build, fallback or not.
-- **No app feature work**, beyond the attendee-visible staleness marker *if*
-  Anthony wants one (open question 2 — recommended against).
+- **No app feature work.** The attendee-visible staleness marker is ruled
+  out (ruling 2).
 - **No fixture refresh.** The committed fixtures are left alone here. The
   snapshot is machine-written by successful builds and feeds only emergency
   builds; fixtures are hand-committed and feed the offline tests. Their
@@ -170,15 +172,15 @@ and an emergency code deploy is rare. Rejected: the invariant says otherwise,
 and the festival-weekend hotfix is precisely the case the project exists to
 survive.
 
-**Fallback trigger — opt-in (recommended, provisionally).** A
+**Fallback trigger — opt-in (ruled 2026-08-12).** A
 `workflow_dispatch` input (`use_content_snapshot: true`) passed to the build
 flag. A code push while the sheet is down fails loudly, and the operator
 re-runs with the flag: the failed run is the alarm, the re-dispatch is the
 operator's explicit acknowledgment that stale content is being shipped. The
 alternative — automatic fallback on push-triggered deploys only, never on cron
 — never blocks a code push, but lets a rotted publish link hide behind every
-push while only cron failures still surface it. Anthony's call (open
-question 1). Cron rebuilds never fall back under either answer: their only
+push while only cron failures still surface it. Ruled: opt-in only
+(ruling 1). Cron rebuilds never fall back under either answer: their only
 purpose is fetching fresh content, and "succeeding" on stale content would be
 a lie.
 
@@ -197,16 +199,16 @@ If wanted, the cheapest deterministic form is a settings-style field carrying
 the snapshot's last-changed date, rendered through the existing notice-banner
 UI. Recommended against by default — the re-precache is paid every time the
 marker flips, while the outage long enough to earn it is the rarest case.
-Open question 2.
+Ruled: operator-only (ruling 2).
 
-**Code deploys while npm is down — beyond the invariant, deferred.** The
+**Code deploys while npm is down — beyond the invariant, both taken.** The
 invariant demands content updates survive npm being down, not code deploys.
 Two hardening options exist if Anthony wants more: caching `~/.npm` keyed on
 the lockfile with `--prefer-offline` (cheap, removes the registry from
 unchanged-lockfile runs, does nothing after a lockfile bump), and an emergency
 `skip_tests` dispatch input (fully effective, since the deploy job needs no
 npm — but it weakens the deliberately built tests-first gate to one checkbox).
-Open question 4.
+Ruled: both land (ruling 4).
 
 ## Content-only publish path (F21)
 
@@ -251,21 +253,73 @@ in the local history — either deepen the checkout or compare through the API
 rather than `git diff`.
 
 The alternative is to accept "main is always green" as this repo's working
-reality and skip the gate; open question 3, where the honest cost is this
-two-part rule rather than a one-line check.
+reality and skip the gate; ruled against — the check is required (ruling 3).
+A third option surfaced at ruling, keeping the tests in the cron path, and
+was declined: it is today's architecture, and it re-couples content
+refreshes to npm, the Playwright CDN and apt.
 
-## Recommendation
+**Skip-if-unchanged (added at ruling, from Anthony's counter-proposal).**
+Every successful publish refreshes the snapshot, so the cron compares
+freshly fetched bytes against the snapshot's recorded hashes and stops —
+success, no deploy, no bot commit — when every source is unchanged. Quiet
+days produce no churn, and determinism makes the skip safe: unchanged bytes
+could only have rebuilt what the last successful publish already shipped.
+
+## Failure notifications (scope added at ruling, 2026-08-12)
+
+A failed run should send email rather than wait to be noticed in the Actions
+tab. GitHub's own failure mails reach only the run's actor and name nothing
+specific; the organizers are not on GitHub at all.
+
+**Mechanism: Fastmail SMTP, zero dependencies.** An SMTP-scoped Fastmail app
+password stored as a repository Actions secret — fine in a public repo:
+encrypted, masked in logs, and not exposed to fork-triggered workflows.
+Stock curl on the hosted runners speaks `smtps://`, so sending is a single
+`curl --mail-from … --mail-rcpt … --upload-file message.eml` with no npm
+anywhere, which keeps it legal on the content-only path. The step runs under
+`if: failure()` and is best-effort: a mail hiccup must never change a run's
+outcome. JMAP was considered and skipped — its session-fetch, blob-upload,
+EmailSubmission sequence is three calls and more failure modes for what one
+SMTP call does.
+
+**Routing: Anthony always; organizers only for what they can act on.**
+`build.mjs` already knows which source failed and how; it gains a
+machine-readable failure report (source, failure class) that the workflow
+reads. A **validation failure** — renamed header, emptied tab, a publish
+link turned sign-in page — is an organizer's edit and an organizer's fix, so
+it goes to the organizers and to Anthony. A **network failure** (timeouts,
+5xx after retries) is nobody's edit: Anthony only. Test-job and any other
+failures: Anthony only.
+
+**Configuration (created by Anthony, 2026-08-12).** The app password exists
+as the repo secret `FASTMAIL_APP_PASSWORD`. Recipients live in repository
+variables: `DEPLOY_NOTIFICATION_EMAIL` (Anthony's list — every failure) and
+`CONTENT_NOTIFICATION_EMAIL` (the organizers' list — sheet validation
+failures, sent in addition to the deploy list). Either variable may hold
+multiple comma-separated addresses; split and pass one `--mail-rcpt` per
+address, deduplicating across the two lists. The SMTP username / From
+address (Fastmail authenticates with the account email) is the
+`FASTMAIL_USER` repository variable. All four values exist as of
+2026-08-12; the email step nonetheless treats a missing variable or secret
+like any other send failure — log and continue, never fail the run — so a
+misconfiguration can't break a deploy.
+
+## Recommendation (confirmed and extended by the rulings)
 
 A1 + opt-in trigger + operator-loud marking + the zero-npm content-only
-workflow with the last-tested-code gate. Three code changes: `build.mjs`
-(`--write-snapshot`, and `--use-snapshot` consulted by `loadSource` and the
-sponsor-logo fetch), `deploy.yml` (the dispatch input, the loud-marking step),
-and `rebuild-content.yml` (self-contained zero-npm job plus the gate) — with
-the snapshot-write-and-commit step and its job-scoped `contents: write`
-appearing in **both** workflows. Plus a new `content/snapshot/` directory, the
-README playbook, and the offline tests below. On landing, the two BACKLOG
-items close and the invariant's "currently not met" clause is Anthony's to
-remove.
+workflow with the last-tested-code gate, plus the ruled additions: failure
+email, the cron's skip-if-unchanged short-circuit, the npm cache, and
+`skip_tests`. Three files change: `build.mjs` (`--write-snapshot`;
+`--use-snapshot` consulted by `loadSource` and the sponsor-logo fetch; the
+failure report), `deploy.yml` (the `use_content_snapshot` and `skip_tests`
+dispatch inputs, the loud-marking step, the lockfile-keyed npm cache, the
+failure-email step), and `rebuild-content.yml` (self-contained zero-npm job,
+the gate, skip-if-unchanged, the failure-email step) — with the
+snapshot-write-and-commit step and its job-scoped `contents: write` appearing
+in **both** workflows. Plus a new `content/snapshot/` directory, one Fastmail
+secret, the README playbook, and the offline tests below. On landing, the two
+BACKLOG items close and the invariant's "currently not met" clause is
+Anthony's to remove.
 
 ## Acceptance criteria
 
@@ -296,8 +350,23 @@ All automated criteria run without network, per the loopback convention.
 5. **Existing guarantees hold.** The determinism check (unchanged sources →
    byte-identical `content.json`, unchanged `sw.js` version) passes on both
    live-shaped and fallback paths, and the full existing suite stays green.
-6. **The playbook exists.** README documents both emergency procedures as
-   commands to run, not concepts to understand.
+6. **The playbook exists.** README documents the emergency procedures —
+   sheet down (snapshot dispatch), npm down (content path; `skip_tests` for
+   code) — as commands to run, not concepts to understand.
+7. **Failures classify and notify correctly.** Loopback tests drive
+   `build.mjs` through a refused connection, a 5xx after retries, and a
+   renamed header, and assert the failure report's class for each; a
+   workflow-file assertion checks the email step exists in both workflows,
+   runs only on failure, and routes organizer mail only on the validation
+   class. Actual delivery is verified by inspection on the first real
+   failure — SMTP is not testable offline.
+8. **Unchanged content short-circuits the cron.** With every fetched source
+   byte-identical to the snapshot, the content-only run succeeds with no
+   deploy and no commit; one changed byte in one source publishes.
+9. **The npm-down mitigations exist.** `deploy.yml` restores `~/.npm` from a
+   lockfile-keyed cache with `--prefer-offline`, and a `skip_tests` dispatch
+   publishes without the test job (workflow-file assertions; first-use
+   verification by inspection).
 
 ## Risks & unknowns
 
@@ -311,39 +380,48 @@ All automated criteria run without network, per the loopback convention.
 | Snapshot date understates freshness (it records the last content *change*, not the last successful check) | accepted | none — it can understate but never overstate |
 | Remote sponsor logos, once that tab is live, fail builds in ways the CSV retry logic doesn't cover | medium | fold logo fetches into the same retry + snapshot machinery (in scope above) |
 | Fallback flag plumbing tempts future automation that would mask link rot | medium-high | re-read the cron-never-falls-back rule, stated in the workflow comment, at the next automation change |
+| The failure email itself fails to send (runner egress, Fastmail outage) | medium-high | step is best-effort; GitHub's actor-failure email stays as backstop; verify delivery by inspection on the first real failure |
 
-## Open questions — Anthony's calls
+## Rulings — Anthony, 2026-08-12
 
-1. **Fallback trigger:** opt-in dispatch only (recommended), or also automatic
-   on push-triggered code deploys, with cron always excluded?
-2. **Staleness audience:** operator-only (recommended), or an attendee-visible
-   marker too, at the cost of a full re-precache each time it flips on or off?
-3. **Content-only gate:** require the last-tested-code check — the two-part
-   rule above, since the one-line version deadlocks against snapshot commits —
-   or accept "main is always green" as the working reality and skip it? The
-   complexity is real; so is the cron silently publishing a red build
-   without it.
-4. **npm-down code deploys:** defer entirely (the invariant doesn't demand
-   them), add the cheap npm cache, and/or add an emergency `skip_tests`
-   dispatch input despite the gate it weakens?
-5. **Repo hygiene:** are bot snapshot commits plus `contents: write` on the
-   deploy workflow acceptable here, or does that tip the choice back toward
-   A2's commit-free reuse despite its undated, Pages-chained trade-offs?
-6. **Snapshot vs fixtures for venues:** `content/fixtures/venues.csv` already
-   holds real sheet bytes (CONTRACTS.md calls fixtures placeholder content;
-   CLAUDE.md calls this one a committed snapshot of the sheet), so
-   `content/snapshot/venues.csv` would duplicate it. Keep both with distinct
-   jobs — fixtures for tests, snapshot for emergencies — or reconcile them?
+Numbering matches the open questions the draft posed; in-body references to
+"open question N" resolve here.
+
+1. **Fallback trigger: opt-in dispatch only.** A push while the sheet is
+   down fails loudly — and now emails (see Failure notifications) — and the
+   operator re-runs with `use_content_snapshot: true` as the explicit
+   acknowledgment that stale content ships. Cron never falls back.
+2. **Staleness audience: operator-only.** No attendee-visible marker; the
+   double full re-precache is never paid for an outage rare enough that the
+   marker would almost never earn it.
+3. **Content-only gate: the two-part check is required.** Keeping tests in
+   the cron path was considered at ruling and declined — it is today's
+   architecture, and it re-couples content refreshes to npm, the Playwright
+   CDN and apt, leaving the invariant unmet.
+4. **npm-down code deploys: both mitigations land.** The `~/.npm` cache
+   keyed on the lockfile with `--prefer-offline`, and an emergency
+   `skip_tests` dispatch input on `deploy.yml`. The input reduces the
+   tests-first gate to one deliberate checkbox; accepted for the
+   festival-weekend case.
+5. **Repo hygiene: accepted.** Bot snapshot commits (`[skip ci]`, only when
+   content actually changed) and job-scoped `contents: write` on both
+   workflows. A1 stands; A2 stays rejected.
+6. **Snapshot and fixtures both stay, with distinct jobs.** Fixtures are
+   hand-committed and feed the offline tests; the snapshot is
+   machine-written and feeds only emergency builds. The duplicated venues
+   CSV is accepted. Implementation updates CLAUDE.md's description of
+   `content/fixtures/venues.csv` — "a committed snapshot of it" — to
+   language that distinguishes the two roles.
 
 ## Ledger
 
 - **Committed snapshot over Pages-reuse (A1 over A2)** — dated staleness,
   validated fallback inputs, no chained remote dependency, offline-testable;
-  the costs are bot commits and one permission widening (Q5).
+  the costs are bot commits and one permission widening (accepted, ruling 5).
 - **A1 generalizes an existing repo pattern** — `tools/make-map.mjs` already
   falls back to a committed `osm-cache.json` behind a `--refresh` flag, so
   this is not a new mechanism to maintain.
-- **Opt-in fallback over automatic** (provisional, Q1) — the failed push
+- **Opt-in fallback over automatic** (ruled, Q1) — the failed push
   deploy is itself the alarm; automatic fallback would hide a rotted publish
   link behind every code push.
 - **No fallback for wrong-but-reachable sources** — sign-in pages, emptied
@@ -359,10 +437,19 @@ All automated criteria run without network, per the loopback convention.
 - **The gate tolerates bot commits by construction** — "HEAD's Deploy run
   passed" deadlocks the moment a snapshot commit lands; the two-part rule
   replacing it is in the content-only path section.
-- **npm-down *code* deploys deferred** (Q4) — outside the invariant's letter;
-  `skip_tests` trades away a deliberately built gate; the npm cache only
-  helps until the lockfile changes.
+- **npm-down *code* mitigations both land** (ruled, Q4) — the lockfile-keyed
+  cache is routine hardening; `skip_tests` is an emergency-only checkbox,
+  taken with its gate-weakening named.
 - **GitHub outage accepted** — the platform itself; $0 forecloses mitigation.
 - **Snapshot ≠ fixtures** — the snapshot is machine-written and feeds only
   emergency builds; fixtures are hand-committed and feed the offline tests.
-  Their overlap on venues is Q6.
+  Ruled: both stay, distinct jobs; the duplicate venues CSV is accepted
+  (ruling 6).
+- **Failure email over Actions-tab vigilance** (added at ruling) — Fastmail
+  SMTP app password + curl: npm-free, best-effort, `if: failure()` only.
+  JMAP rejected as three calls for one call's work. Organizers receive only
+  validation failures — the class their edits cause and their edits fix.
+- **Cron skips when nothing changed** (added at ruling, from Anthony's
+  counter-proposal) — fetched bytes are compared against the snapshot's
+  hashes; determinism makes the skip safe, and quiet days stop producing
+  deploys and bot commits.

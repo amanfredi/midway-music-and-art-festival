@@ -31,6 +31,25 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-12 — deploy-robustness ruled: all six questions, two scope additions
+
+Anthony ruled on `definitions/deploy-robustness.md` in session. The
+recommended package stands: committed `content/snapshot/` refreshed by every
+successful publish, opt-in `use_content_snapshot` fallback (cron never falls
+back), operator-only staleness, the zero-npm content-only workflow guarded
+by the two-part last-tested-code check, bot commits plus job-scoped
+`contents: write` accepted, snapshot and fixtures kept as distinct jobs. Two
+rulings went past the recommendation: npm-down code deploys get both the
+lockfile-keyed npm cache and an emergency `skip_tests` dispatch input, and
+failure notification entered scope — Fastmail SMTP app password + curl
+(npm-free, best-effort, `if: failure()`), Anthony on every failure,
+organizers only on sheet validation failures, the class their own edits
+cause and fix. Anthony's counter-proposal to keep tests in the cron path was
+priced and declined — it is today's architecture and re-couples content to
+npm — but its good half was adopted: the cron now skips deploying when
+fetched bytes match the snapshot. Rulings and both additions are recorded in
+the definition; BACKLOG moved the item to a new Ready-to-build section.
+
 ### 2026-08-11 — execution pass: three bundles landed, five definitions written
 
 An orchestrated pass over BACKLOG's well-defined items, run as parallel

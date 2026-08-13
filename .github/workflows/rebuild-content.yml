@@ -90,7 +90,9 @@ jobs:
           echo "No content source has changed since the last publish; nothing to deploy."
           echo "Content unchanged since the last publish; no deploy." >> "$GITHUB_STEP_SUMMARY"
       - name: Commit the refreshed snapshot
-        if: ${{ steps.build.outputs.changed == 'true' }}
+        # Only from main: this workflow can be dispatched against any ref, and
+        # the push below writes to main whatever the checkout holds.
+        if: ${{ steps.build.outputs.changed == 'true' && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"

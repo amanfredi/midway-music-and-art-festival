@@ -123,6 +123,9 @@ jobs:
             appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published from the content snapshot", "", "These sources could not be reached, so this deploy shipped saved copies:", "", ...lines.map((l) => "- " + l), ""].join("\n"));
           '
       - name: Commit the refreshed snapshot
+        # Only from main: this workflow can be dispatched against any ref, and
+        # the push below writes to main whatever the checkout holds.
+        if: ${{ github.ref == 'refs/heads/main' }}
         continue-on-error: true
         run: |
           if [ -z "$(git status --porcelain content/snapshot)" ]; then

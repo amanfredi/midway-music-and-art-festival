@@ -93,6 +93,9 @@ describe("the snapshot refresh", () => {
       assert.match(code(text), /git push origin HEAD:main \|\| echo/, `${name}'s push must not fail the run`);
       const commitStep = around(text, "git add content/snapshot", 12).join("\n");
       assert.match(commitStep, /continue-on-error: true/, `${name}'s snapshot commit must be best-effort`);
+      // Either workflow can be dispatched against any ref, and the push writes
+      // to main whatever is checked out.
+      assert.match(commitStep, /github\.ref == 'refs\/heads\/main'/, `${name} must only push a snapshot from main`);
     }
   });
 

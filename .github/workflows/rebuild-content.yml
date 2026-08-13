@@ -1,7 +1,20 @@
-# Rebuilds the site from the content source without a code change, so a
-# coordinator edit to the (future) Google Sheet reaches production on its own.
+# Rebuilds the site from the content sources without a code change, so a
+# coordinator edit to the Google Sheet reaches production on its own.
 # Manual: Actions tab -> "Rebuild content" -> Run workflow.
 # Scheduled: every 6 hours; tighten the cron during festival weekend.
+#
+# This job invokes no npm, and that absence is the feature: a content update has
+# to reach phones while the registry, the Playwright CDN, or apt is down. It
+# does not run the browser suite either — that suite builds from local fixtures
+# and has never tested live content, so on a content refresh it would only
+# re-prove code the push deploy already proved. What guards content is
+# build.mjs validation, which still runs and still fails loudly. What guards the
+# code is the gate below.
+#
+# A cron rebuild NEVER falls back to content/snapshot. Its entire purpose is
+# fetching fresh content; "succeeding" on saved bytes would be a lie, and would
+# hide a rotted publish link for as long as nobody pushed code. The snapshot is
+# written here, never read here. Do not add --use-snapshot to this file.
 name: Rebuild content
 
 on:
@@ -11,9 +24,99 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+# The same group Deploy uses: a content rebuild and a code deploy must not race
+# each other to Pages.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  BUILD_REPORT: /tmp/mmaf-build-report.json
 
 jobs:
   rebuild:
-    uses: ./.github/workflows/deploy.yml
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the snapshot refresh commits back to main
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      # Republishing without running the tests is only honest if the code being
+      # republished already passed them. See .github/scripts/content-gate.mjs
+      # for why this is not simply "HEAD's Deploy run passed".
+      - id: gate
+        name: Check that the code at HEAD has passed a Deploy run
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/content-gate.mjs
+      - name: Explain a declined rebuild
+        if: ${{ steps.gate.outputs.publish != 'true' }}
+        env:
+          REASON: ${{ steps.gate.outputs.reason }}
+        run: |
+          echo "::warning title=Content rebuild declined::$REASON"
+          {
+            echo "## Content rebuild declined"
+            echo
+            echo "$REASON"
+            echo
+            echo "Push the code (so Deploy runs its tests), or fix the failing Deploy run, and the next rebuild will publish."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - id: build
+        name: Build the site from the live sources
+        if: ${{ steps.gate.outputs.publish == 'true' }}
+        run: |
+          node scripts/build.mjs --write-snapshot --report "$BUILD_REPORT"
+          node scripts/build-sw.mjs
+          if [ -z "$(git status --porcelain content/snapshot)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Every successful publish refreshes the snapshot, so bytes identical to
+      # the snapshot are bytes the last publish already shipped. Determinism is
+      # what makes that safe to skip: the same sources rebuild the same site.
+      - name: Note that nothing changed
+        if: ${{ steps.gate.outputs.publish == 'true' && steps.build.outputs.changed != 'true' }}
+        run: |
+          echo "No content source has changed since the last publish; nothing to deploy."
+          echo "Content unchanged since the last publish; no deploy." >> "$GITHUB_STEP_SUMMARY"
+      - name: Commit the refreshed snapshot
+        if: ${{ steps.build.outputs.changed == 'true' }}
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content/snapshot
+          git commit -m "refresh content snapshot [skip ci]"
+          # Best-effort by design: a concurrent push wins the race and the next
+          # successful run refreshes the snapshot again. Pushes made with the
+          # ambient token do not trigger workflows; [skip ci] is belt-and-braces
+          # against a loop if that ever changes.
+          git push origin HEAD:main || echo "::warning::Could not push the refreshed snapshot; the next successful run will retry."
+      - if: ${{ steps.build.outputs.changed == 'true' }}
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - if: ${{ steps.build.outputs.changed == 'true' }}
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deployment
+        if: ${{ steps.build.outputs.changed == 'true' }}
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      - name: Email the failure
+        if: failure()
+        continue-on-error: true
+        env:
+          FASTMAIL_USER: ${{ vars.FASTMAIL_USER }}
+          FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
+          DEPLOY_NOTIFICATION_EMAIL: ${{ vars.DEPLOY_NOTIFICATION_EMAIL }}
+          CONTENT_NOTIFICATION_EMAIL: ${{ vars.CONTENT_NOTIFICATION_EMAIL }}
+        run: node .github/scripts/notify-failure.mjs

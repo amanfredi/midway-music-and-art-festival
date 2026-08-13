@@ -4,26 +4,48 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_call:
+    inputs:
+      use_content_snapshot:
+        description: "Sources unreachable: build from content/snapshot (ships stale content — the run says what and since when)"
+        type: boolean
+        default: false
+      skip_tests:
+        description: "npm unreachable: publish without the test job (emergency only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
+env:
+  # A fixed path rather than runner.temp, which no workflow-level context can
+  # see. build.mjs writes the failure class here and the mail step reads it.
+  BUILD_REPORT: /tmp/mmaf-build-report.json
+
 jobs:
   test:
+    # The gate stays exactly as strict on a push. It can only be stepped around
+    # by dispatching the workflow and ticking skip_tests — one deliberate act,
+    # for the festival-Saturday case where npm is down and a fix has to ship.
+    if: ${{ inputs.skip_tests != true }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - run: npm ci
+          # Restores ~/.npm keyed on the lockfile.
+          cache: npm
+      # --prefer-offline serves what the cache already has instead of asking the
+      # registry, so an npm outage stops blocking code deploys on an unchanged
+      # lockfile. --no-audit/--no-fund drop the other two registry round-trips.
+      - run: npm ci --prefer-offline --no-audit --no-fund
       # The browser download is the slowest step and changes only when
       # @playwright/test does, so it is keyed on the lockfile.
       - id: playwright-cache
@@ -38,10 +60,28 @@ jobs:
       - if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
       - run: npm test
+      - name: Email the failure
+        if: failure()
+        continue-on-error: true
+        env:
+          FASTMAIL_USER: ${{ vars.FASTMAIL_USER }}
+          FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
+          DEPLOY_NOTIFICATION_EMAIL: ${{ vars.DEPLOY_NOTIFICATION_EMAIL }}
+          CONTENT_NOTIFICATION_EMAIL: ${{ vars.CONTENT_NOTIFICATION_EMAIL }}
+        run: node .github/scripts/notify-failure.mjs
 
   deploy:
     needs: test
+    # skip_tests skips the test job outright, so "skipped" has to be as good as
+    # "success" here — while a real test failure still stops the deploy.
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
+    permissions:
+      # contents: write is for the snapshot refresh below, and is scoped to this
+      # job so the test job cannot write to the repo.
+      contents: write
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -51,10 +91,60 @@ jobs:
         with:
           node-version: 24
       # the site build itself has zero npm dependencies
-      - run: node scripts/build.mjs && node scripts/build-sw.mjs
+      - name: Build the site
+        env:
+          USE_SNAPSHOT: ${{ inputs.use_content_snapshot }}
+        run: |
+          flags=""
+          if [ "$USE_SNAPSHOT" = "true" ]; then
+            flags="--use-snapshot"
+            echo "::notice::Unreachable sources will be served from content/snapshot for this run."
+          fi
+          node scripts/build.mjs --write-snapshot $flags --report "$BUILD_REPORT"
+          node scripts/build-sw.mjs
+      # Every date below comes from the snapshot's own record of when those
+      # bytes last changed, never from the build clock: content.json must stay
+      # byte-identical for identical sources, fallback or not.
+      - name: Flag stale content
+        run: |
+          node -e '
+            const { existsSync, readFileSync, appendFileSync } = require("node:fs");
+            const reportPath = process.env.BUILD_REPORT;
+            if (!existsSync(reportPath)) process.exit(0);
+            const used = (JSON.parse(readFileSync(reportPath, "utf8")).snapshot || {}).used || [];
+            if (used.length === 0) process.exit(0);
+            const lines = used.map((e) => e.label + " — saved bytes unchanged since " + (e.lastChanged || "an unrecorded date"));
+            console.log("::warning title=Published stale content::" + lines.join("; "));
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published from the content snapshot", "", "These sources could not be reached, so this deploy shipped saved copies:", "", ...lines.map((l) => "- " + l), ""].join("\n"));
+          '
+      - name: Commit the refreshed snapshot
+        continue-on-error: true
+        run: |
+          if [ -z "$(git status --porcelain content/snapshot)" ]; then
+            echo "Content snapshot unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content/snapshot
+          git commit -m "refresh content snapshot [skip ci]"
+          # Best-effort by design: a concurrent push wins the race and the next
+          # successful run refreshes the snapshot again. Pushes made with the
+          # ambient token do not trigger workflows; [skip ci] is belt-and-braces
+          # against a loop if that ever changes.
+          git push origin HEAD:main || echo "::warning::Could not push the refreshed snapshot; the next successful run will retry."
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      - name: Email the failure
+        if: failure()
+        continue-on-error: true
+        env:
+          FASTMAIL_USER: ${{ vars.FASTMAIL_USER }}
+          FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
+          DEPLOY_NOTIFICATION_EMAIL: ${{ vars.DEPLOY_NOTIFICATION_EMAIL }}
+          CONTENT_NOTIFICATION_EMAIL: ${{ vars.CONTENT_NOTIFICATION_EMAIL }}
+        run: node .github/scripts/notify-failure.mjs

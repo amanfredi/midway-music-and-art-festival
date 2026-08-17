@@ -14,7 +14,7 @@
     "test": "npm run build:fixtures && npm run test:unit && npm run test:offline"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.12.1",
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.49.0",
     "maplibre-gl": "6.2.0"
   }

@@ -17,10 +17,16 @@
   --color-bg: #ffffff;
   --color-surface: #f6f6f6;
   --color-text: #1d2a33;
-  /* Darkened from #5a6b74 when the event tiles became kind-tinted: the muted
-     ink now sits on tints as well as on the panels, and #5a6b74 fell to 4.39:1
-     on the two darkest of them. One token rather than a per-tint patch. */
-  --color-text-muted: #54656e;
+  /* Darkened twice from #5a6b74. First because the kind tints put this ink on
+     grounds darker than the white card it was chosen against (#5a6b74 fell to
+     4.39:1 on the darkest of them), then again because 4.5:1 is the floor for
+     legibility, not a target: on the gray panels this ink carries whole vendor
+     and sponsor blurbs, and at a bare pass it read drab. It now holds 5.73:1
+     at its worst — the two darkest tints — and 6.69:1 on the panels, and it
+     still reads 2:1 against --color-text itself, which is what keeps the two
+     apart as a hierarchy. One token; every muted consumer in the app reads
+     it. */
+  --color-text-muted: #4b5962;
   --color-border: #e2e5e8;
   --color-danger: #a11f22;
 

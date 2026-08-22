@@ -25,8 +25,10 @@ function uniqueDays(events) {
   return [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, date]) => ({ key, date }));
 }
 
-function rowsHtml(events, venuesById) {
-  return events.map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true })).join('');
+function rowsHtml(events, venuesById, { showKind = true } = {}) {
+  return events
+    .map((e) => eventRowHtml(e, { venue: venuesById.get(e.venue_id), showVenue: true, showKind }))
+    .join('');
 }
 
 function renderByTime(events, venuesById) {
@@ -36,13 +38,18 @@ function renderByTime(events, venuesById) {
     .join('');
 }
 
+// No kind chip on these rows: the group heading names the kind and the tile's
+// tint carries it, so a chip on every row repeats the heading it sits under
+// (ruled 2026-08-22). The vendors view dropped its type badge under type
+// headings for the same reason (QA, 2026-08-09). The other two groupings keep
+// the chip — their headings are times and venues, which say nothing of kind.
 function renderByCategory(events, venuesById) {
   const groups = groupBy(events, (e) => e.kind || 'music');
   return KINDS.filter((kind) => groups.has(kind))
     .map((kind) =>
       eventGroupHtml(
         kindLabel(kind),
-        rowsHtml(groups.get(kind).sort((a, b) => a.start.localeCompare(b.start)), venuesById)
+        rowsHtml(groups.get(kind).sort((a, b) => a.start.localeCompare(b.start)), venuesById, { showKind: false })
       )
     )
     .join('');

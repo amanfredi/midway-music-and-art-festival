@@ -435,9 +435,9 @@ img {
    known; a tile with no class (or an unrecognised kind) falls back to the
    plain panel.
 
-   Deliberately not `:has(.badge--<kind>)`: the badge is the row's label and
-   may go away — under the schedule's "by category" grouping the group heading
-   already names the kind — and the tint has to outlive it. -- */
+   Deliberately not `:has(.badge--<kind>)`: the schedule's "by category"
+   grouping renders its rows with no kind chip at all, since the group heading
+   already names the kind, and the tint has to survive that. -- */
 
 .kind-tint--music { --kind-tint: var(--kind-music); }
 .kind-tint--art { --kind-tint: var(--kind-art); }

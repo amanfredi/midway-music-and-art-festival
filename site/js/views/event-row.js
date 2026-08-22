@@ -36,14 +36,17 @@ export function ageBadgeHtml(ageLimit) {
 
 // The class that paints an event's tile in its kind's tint (app.css
 // .kind-tint--*). It goes on the tile, applied here where the kind is known,
-// rather than being derived in CSS from the kind badge: the badge is the row's
-// label and may go away — under the schedule's "by category" grouping the
-// group heading already names the kind — and the tint has to outlive it.
+// rather than being derived in CSS from the kind badge: `showKind: false`
+// rows have no badge to derive it from, and the tint has to outlive it.
 export function kindTintClass(kind) {
   return `kind-tint--${esc(kind || 'music')}`;
 }
 
-export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null } = {}) {
+// `showKind: false` for lists already grouped by kind — the group heading
+// names it, and the tile's tint still carries it visually, so the chip on
+// every row only repeats the heading. Same call the vendors view made when it
+// dropped its type badge under type headings (QA, 2026-08-09).
+export function eventRowHtml(event, { venue, showVenue = true, showKind = true, relativeTo = null } = {}) {
   const { start, end } = parseEventTimes(event);
   const kind = event.kind || 'music';
   const starred = isStarred(event.id);
@@ -62,7 +65,7 @@ export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null
           ${showVenue && venue ? `<span class="event-row__venue">${esc(venue.name)}</span>` : ''}
         </span>
         <span class="event-row__meta">
-          <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
+          ${showKind ? `<span class="badge badge--${esc(kind)}">${esc(kind)}</span>` : ''}
           ${ticketIconHtml(event.tickets)}
           ${ageBadgeHtml(event.age_limit)}
         </span>

@@ -181,16 +181,13 @@ outside the map (which is above):
       scroll-padding fixes already landed, but heading-height only, so
       smaller. Noted 2026-08-11 while fixing the schedule case.
 
-- [ ] **Color-scheme follow-ups** (from the 2026-08-22 implementation
-      report): Anthony to rule on dropping the kind badge from by-category
-      rows, where it repeats the group heading (the vendors view already
-      dropped its type badge for this reason 2026-08-09); remove the dead
-      kind CSS (family/community are not in the build's VALID_KINDS, the
-      vendor type-badge classes have no markup); Anthony's call on the
-      cross-day prefix gold at 4.85:1 on the two warm tints (passes 4.5:1;
-      the 5.5 comfort floor would turn it brown, ~#7d4900) and on borders
-      (~1.15:1 non-text, outside the contract's scope; a true 3:1 border
-      ≈ #949494 reads much heavier than the light-panel aesthetic).
+- [ ] **Border visibility, if it ever bothers anyone.** `--color-border`
+      `#e2e5e8` is ~1.15:1 non-text on the white page — outside the
+      contract's non-text scope and no worse than the old cream-on-cream,
+      but a genuinely 3:1 border (≈ `#949494`) would read much heavier
+      than the light-panel aesthetic. Left as-is 2026-08-22. The other
+      color-scheme follow-ups (by-category chip, dead kind CSS,
+      day-prefix gold) were all ruled and landed the same day.
 
 **QA on Android**, and an **agent review from a user's perspective**, possibly
 using Claude for Chrome.

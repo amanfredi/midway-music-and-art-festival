@@ -37,6 +37,25 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-22 — star restored to its place; category chips dropped; dead CSS out
+
+Anthony caught the color-scheme agent's one structural liberty in the
+final screenshots: the star had moved inside the event tile. Reverted
+(76f91df) — card chrome back on `.event-row__link`, the star its own
+borderless control outside the card, per both the pre-change code and
+the 2026-08-08 QA ruling against boxed row stars, which the agent cited
+to decline the coordinating session's mistaken instruction to add a
+panel-and-border treatment. Two rulings landed with the revert:
+by-category rows drop the kind chip their group heading repeats
+(223f584, vendors-view precedent), and the dead kind CSS went
+(7329738 — family/community tokens and rules, vendor type-badge
+classes). The day-prefix gold stays, as ruled. Suite green at 130 unit +
+88 Playwright, agent-run and independently re-run. Process note,
+recorded deliberately: implementer judgment calls that alter approved
+design get surfaced as questions before acceptance — the rule fired in
+both directions today, once against the agent's liberty and once
+against the coordinator's.
+
 ### 2026-08-22 — white-on-gray color scheme, kind-tinted event tiles
 
 The main-site alignment Anthony requested landed as five commits

@@ -37,6 +37,28 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-22 — white-on-gray color scheme, kind-tinted event tiles
+
+The main-site alignment Anthony requested landed as five commits
+(f2f08c0..e3a5eca) from a dispatched agent: page white, panels `#f6f6f6`,
+neutral borders, eight kind-tint tokens (six distinct colors) tinting
+every event tile through a row-level `.kind-tint--<kind>` class — sheet
+event lists included — and every chip (kind, age, vendor) outlined rather
+than filled, ruled by Anthony from rendered mockups on the ground that
+nothing on a tile may compete with the title. Three inks darkened
+globally to hold contrast on the tints: muted text `#5a6b74` → `#4b5962`
+(worst pair 5.73:1, clearing the ≥5.5 floor Anthony set after calling the
+original drab-and-marginal; the agent rejected the suggested `#4d5b64` as
+another rounding-error pass at 5.56), the cross-day prefix `#a05f00` →
+`#8f5400`, the unsaved star `#7c878e` → `#727c84`. The tile became the
+row container so the star shares the tint; CONTRACTS' contrast clause now
+names the tints as tile backgrounds. Suite green at 130 unit + 88
+Playwright with the axe gate, verified independently in the coordinating
+session; forced colors verified improved (outlined chips keep a visible
+boundary where filled ones used to lose their fill). Follow-ups and two
+open aesthetic calls are in BACKLOG's color-scheme item; the full
+contrast table is in the agent's report.
+
 ### 2026-08-22 — pre-push review: two blockers fixed, pipeline hardened
 
 A Fable reviewer ran inversion-framed over the six implementation commits.

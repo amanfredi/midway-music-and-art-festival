@@ -8,8 +8,6 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 - Consider adopting svelte/sveltekit (see especially the static site adapter https://svelte.dev/docs/kit/adapter-static)
 - Consider moving deployment to Cloudflare Pages free plan and reverting github repo to private visibility (https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-kit-site/#deploy-with-cloudflare-pages)
-- Change background colors of events to match the color of the event type.
-- have appearance of this site match midwaymusicandart.org main site better (e.g. white background). The inside of the buttons, etc. could be a different color (not white).
 
 ## Implemented locally — awaiting push and first-run verification
 
@@ -32,6 +30,13 @@ Items are not prioritized against each other. The festival is October 2–4,
   `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,
   `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER` variables (recipient lists
   may be comma-separated).
+
+- **White-on-gray color scheme + kind-tinted event tiles** — landed
+  2026-08-22 (f2f08c0..e3a5eca) on the same unpushed stack, so it rides the
+  deploy-robustness push. Page white, panels `#f6f6f6`, eight kind-tint
+  tokens tinting tiles via row-level classes, every chip outlined. All text
+  pairs ≥4.85:1 (muted ≥5.73:1 after Anthony's floor correction); axe gate
+  green; forced-colors improved (outlined chips keep a boundary).
 
 ## Decisions that need Anthony
 
@@ -124,7 +129,8 @@ ruling (see Decisions).
 **Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure
 in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
 map frame — 38 px venue pins, pin-matched legend swatches, the pan d-pad, and
-the scale bar.
+the scale bar — and the 2026-08-22 color scheme then changed every view, so
+the recapture now covers the whole shell, not just the map frame.
 
 The remaining audit items below were specified against the retired SVG map;
 they are requirements the MapLibre map must meet, kept for their measurements
@@ -174,6 +180,17 @@ outside the map (which is above):
       Starred views — the same hazard class as the schedule and tab-bar
       scroll-padding fixes already landed, but heading-height only, so
       smaller. Noted 2026-08-11 while fixing the schedule case.
+
+- [ ] **Color-scheme follow-ups** (from the 2026-08-22 implementation
+      report): Anthony to rule on dropping the kind badge from by-category
+      rows, where it repeats the group heading (the vendors view already
+      dropped its type badge for this reason 2026-08-09); remove the dead
+      kind CSS (family/community are not in the build's VALID_KINDS, the
+      vendor type-badge classes have no markup); Anthony's call on the
+      cross-day prefix gold at 4.85:1 on the two warm tints (passes 4.5:1;
+      the 5.5 comfort floor would turn it brown, ~#7d4900) and on borders
+      (~1.15:1 non-text, outside the contract's scope; a true 3:1 border
+      ≈ #949494 reads much heavier than the light-panel aesthetic).
 
 **QA on Android**, and an **agent review from a user's perspective**, possibly
 using Claude for Chrome.

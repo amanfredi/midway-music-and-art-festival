@@ -217,6 +217,38 @@ describe("failure notification sending", () => {
     }
   });
 
+  test("credentials with pasted whitespace are trimmed, and the trim is logged", () => {
+    // A trailing newline from GitHub's secret textarea fails Fastmail SMTP
+    // auth as a bare "Login denied" — the 2026-08-22 incident's suspect.
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "mmaf-notify-trim-"));
+    const reportPath = path.join(tmp, "report.json");
+    try {
+      writeFileSync(reportPath, JSON.stringify({ ok: false, failureClasses: ["network"], failures: [{ class: "network", source: "venues", message: "timeout" }] }));
+      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT], {
+        cwd: REPO_ROOT,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          NOTIFY_DRY_RUN: "1",
+          BUILD_REPORT: reportPath,
+          FASTMAIL_USER: " site@example.com ",
+          FASTMAIL_APP_PASSWORD: "hunter2secret\n",
+          DEPLOY_NOTIFICATION_EMAIL: "anthony@example.com",
+          CONTENT_NOTIFICATION_EMAIL: "",
+          GITHUB_WORKFLOW: "Deploy",
+          GITHUB_REPOSITORY: "amanfredi/mmaf",
+          GITHUB_RUN_ID: "8",
+        },
+      });
+      assert.equal(result.status, 0, result.stdout);
+      assert.match(result.stdout, /FASTMAIL_USER carried surrounding whitespace \(18 -> 16 chars\); trimmed\./);
+      assert.match(result.stdout, /FASTMAIL_APP_PASSWORD carried surrounding whitespace \(14 -> 13 chars\); trimmed\./);
+      assert.match(result.stdout, /user = "site@example\.com:\*\*\*"/, "the curl config must carry the trimmed credential");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("an email that cannot be sent fails the step, without throwing", () => {
     // The step only runs on already-failed runs (if: failure()), so exit 1
     // never changes an outcome — it makes the alarm's own failure visible

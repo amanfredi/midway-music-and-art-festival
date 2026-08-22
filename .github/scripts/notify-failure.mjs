@@ -213,9 +213,24 @@ function send({ smtpUrl, user, password, from, recipients, message }) {
   }
 }
 
+/**
+ * Secrets pasted through GitHub's web UI often keep a trailing newline, and a
+ * credential with invisible whitespace fails SMTP auth as a bare "Login
+ * denied". Trim, and say so in lengths only — enough to prove the diagnosis
+ * from the log without echoing anything secret.
+ */
+function cleanCredential(name) {
+  const raw = process.env[name] ?? "";
+  const value = raw.trim();
+  if (value !== raw) {
+    console.log(`${name} carried surrounding whitespace (${raw.length} -> ${value.length} chars); trimmed.`);
+  }
+  return value;
+}
+
 function main() {
-  const user = process.env.FASTMAIL_USER;
-  const password = process.env.FASTMAIL_APP_PASSWORD;
+  const user = cleanCredential("FASTMAIL_USER");
+  const password = cleanCredential("FASTMAIL_APP_PASSWORD");
   const report = readReport(process.env.BUILD_REPORT);
   const { subject, body, failureClasses } = summarize({
     report,

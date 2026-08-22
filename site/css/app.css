@@ -10,11 +10,15 @@
   --color-primary-dark: #0b3f5a;
   --color-accent: #efac37;
   --color-accent-dark: #8a5a00;
-  --color-bg: #fdf8ee;
-  --color-surface: #ffffff;
+  /* White page, light-gray panels — the scheme the festival's main website
+     uses. The page is the white; every panel (cards, sheets, controls) is the
+     gray, so a panel is told from the page by its own value and not by a
+     shadow alone. */
+  --color-bg: #ffffff;
+  --color-surface: #f6f6f6;
   --color-text: #1d2a33;
   --color-text-muted: #5a6b74;
-  --color-border: #e6dcc8;
+  --color-border: #e2e5e8;
   --color-danger: #a11f22;
 
   /* Map pin + legend fills (CONTRACTS.md "Map + geo contract" pin table).
@@ -48,10 +52,18 @@
   --map-label-arterial: #565654;
   --map-label-station: #3d5c4d;
 
-  --badge-music-bg: #ddeaf3;
-  --badge-art-bg: #fdecd1;
-  --badge-family-bg: #dff3ea;
-  --badge-community-bg: #f9e3e3;
+  /* Event-kind tints, one per kind name. Four hues cover the eight names —
+     performance shares community's red, literary shares family's green —
+     because the palette is the brand's, not one hue per kind. Single source:
+     nothing else states these colors. */
+  --kind-music: #ddeaf3;
+  --kind-art: #fdecd1;
+  --kind-family: #dff3ea;
+  --kind-community: #f9e3e3;
+  --kind-performance: #f9e3e3;
+  --kind-literary: #dff3ea;
+  --kind-vendor: #ece1f5;
+  --kind-other: #ece4d8;
 
   --radius: 14px;
   --radius-sm: 8px;
@@ -311,7 +323,7 @@ img {
 }
 
 .btn--star[aria-pressed="true"] {
-  background: var(--badge-art-bg);
+  background: var(--kind-art);
   border-color: var(--color-accent-dark);
   color: var(--color-accent-dark);
 }
@@ -388,13 +400,13 @@ img {
   white-space: nowrap;
 }
 
-.badge--music { background: var(--badge-music-bg); color: #0c4260; }
-.badge--art { background: var(--badge-art-bg); color: var(--color-accent-dark); }
-.badge--family { background: var(--badge-family-bg); color: #1f6b4a; }
-.badge--community { background: var(--badge-community-bg); color: #8f1b1e; }
-.badge--vendor-food { background: var(--badge-music-bg); color: #0c4260; }
-.badge--vendor-art { background: var(--badge-art-bg); color: var(--color-accent-dark); }
-.badge--vendor-retail { background: var(--badge-community-bg); color: #8f1b1e; }
+.badge--music { background: var(--kind-music); color: #0c4260; }
+.badge--art { background: var(--kind-art); color: var(--color-accent-dark); }
+.badge--family { background: var(--kind-family); color: #1f6b4a; }
+.badge--community { background: var(--kind-community); color: #8f1b1e; }
+.badge--vendor-food { background: var(--kind-music); color: #0c4260; }
+.badge--vendor-art { background: var(--kind-art); color: var(--color-accent-dark); }
+.badge--vendor-retail { background: var(--kind-community); color: #8f1b1e; }
 
 /* -- event list / cards -- */
 
@@ -1382,14 +1394,13 @@ a:focus-visible, button:focus-visible {
    "by category" grouping. See event-row.js / schedule.js / starred.js.
    ============================================================ */
 
-/* -- kind badges: performance/literary/vendor/other. music (existing
-   --badge-music-bg) and art (existing --badge-art-bg) already had
-   text-safe tints and are unchanged. Contrast ratios computed against
+/* -- kind badges: performance/literary/vendor/other, drawing their fills from
+   the same kind tints as the four above. Contrast ratios computed against
    WCAG 2.1 (>=4.5:1 required for this text size; all comfortably clear). -- */
-.badge--performance { background: #f9e3e3; color: #8f1b1e; } /* red family — 7.31:1 */
-.badge--literary { background: #dff3ea; color: #1f6b4a; } /* green family — 5.57:1 */
-.badge--vendor { background: #ece1f5; color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 */
-.badge--other { background: #ece4d8; color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 */
+.badge--performance { background: var(--kind-performance); color: #8f1b1e; } /* red family — 7.31:1 */
+.badge--literary { background: var(--kind-literary); color: #1f6b4a; } /* green family — 5.57:1 */
+.badge--vendor { background: var(--kind-vendor); color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 */
+.badge--other { background: var(--kind-other); color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 */
 
 /* -- ticket icons: Free/Paid Ticket Required only (events.csv `tickets`).
    Brand artwork, defined once as a <symbol> in index.html and referenced with
@@ -1411,7 +1422,7 @@ a:focus-visible, button:focus-visible {
    .badge--performance pairing at 7.31:1, so it reads as a restriction
    without competing with the ticket icon directly above it. -- */
 .badge--age {
-  background: #f9e3e3;
+  background: var(--kind-community);
   color: #8f1b1e;
   font-variant-numeric: tabular-nums;
 }

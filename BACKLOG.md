@@ -8,30 +8,36 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 - Consider adopting svelte/sveltekit (see especially the static site adapter https://svelte.dev/docs/kit/adapter-static)
 - Consider moving deployment to Cloudflare Pages free plan and reverting github repo to private visibility (https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-kit-site/#deploy-with-cloudflare-pages)
+- Change background colors of events to match the color of the event type.
+- have appearance of this site match midwaymusicandart.org main site better (e.g. white background). The inside of the buttons, etc. could be a different color (not white).
 
-## Ready to build
+## Implemented locally — awaiting push and first-run verification
 
-- **Deploy robustness** (`definitions/deploy-robustness.md`) — all six
-  questions ruled 2026-08-12; rulings plus two scope additions (failure
-  email via Fastmail SMTP, a skip-if-unchanged short-circuit for the content
-  cron) are recorded in the definition. Next: /build-prompt → dispatch.
-  Landing it closes the unmet CLAUDE.md invariant and the F17/F21
-  remainders. Operator setup done 2026-08-12: `FASTMAIL_APP_PASSWORD`
-  secret; `DEPLOY_NOTIFICATION_EMAIL`, `CONTENT_NOTIFICATION_EMAIL`, and
-  `FASTMAIL_USER` variables (recipient lists may be comma-separated).
+- **Deploy robustness** (`definitions/deploy-robustness.md`) — implemented
+  2026-08-12 by the dispatched agent: six commits on local `main`
+  (a958ad3..221886d), never pushed. Snapshot write/fallback in `build.mjs`,
+  the zero-npm content publish with the two-part gate and
+  skip-if-unchanged, npm cache + `skip_tests`, the Fastmail failure
+  notifier, README playbook, CONTRACTS snapshot contract. Remaining, in
+  order: review the diff and push; watch the first real runs for the
+  documented-but-untested Actions behaviors (bot snapshot commits not
+  re-triggering workflows, job-scoped `contents: write`, cross-workflow
+  `pages` concurrency, setup-node's toolcache, actual email delivery to
+  both recipient lists); then Anthony removes the invariant's "currently
+  not met" clause in CLAUDE.md. Operator config exists since 2026-08-12:
+  `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,
+  `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER` variables (recipient lists
+  may be comma-separated).
 
 ## Decisions that need Anthony
 
-**Four definitions await rulings (written 2026-08-11).** Each doc collects
+**Three definitions await rulings (written 2026-08-11).** Each doc collects
 its open questions at the end; the one-line asks:
 
 - `definitions/coincident-pin-presentation.md` — leader lines for pin groups
   no zoom can separate; the cheap fallback is routing a tied venue tap to the
   picker sheet. The tap bug it found is under Map and stands regardless of
   the ruling.
-- `definitions/venue-card-map-popup.md` — recommends **do nothing**: the
-  sheet already wins on a11y and small screens. Ruling wanted on
-  closed-won't-do vs deferred, and on what the felt problem actually is.
 - `definitions/bus-route-lines.md` — recommends drawing the A/B Line BRT
   first from geometry already committed (~11.6 KB gzipped marginal), then
   extending the transit query for 67/72. Inverts if the interest is
@@ -39,6 +45,14 @@ its open questions at the end; the one-line asks:
 - `definitions/web-share.md` — share buttons on event and venue detail; the
   prerequisite `#/venue/<id>` route is a CONTRACTS routes change and the
   scope question.
+
+**Venue popup: ruled deferred, nothing to build (2026-08-21).** No felt
+problem — the popup was an idea, not friction — so the `<dialog>` sheet
+stays the single venue surface. Revisit the teaser variant only if pin
+browsing still feels heavy on a real phone now that tapped-pin highlight
+and key-list recentering have landed; the acceptance criteria in
+`definitions/venue-card-map-popup.md` are the bar for any attempt.
+Desktop-only hover teaser ruled out.
 
 **Map artwork, if it is ever commissioned.** The spike auditioned a four-corner
 `ImageSource` ground against the vector one, and measured three constraints that

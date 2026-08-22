@@ -18,8 +18,11 @@ list instead of the map.
 
 **Only the venues tab is real content.** It is live from the organizers' Google
 Sheet (URL in `content/config.json`), currently 14 venues.
-`content/fixtures/venues.csv` is a committed snapshot of it (refreshed
-2026-08-09). Events, vendors, sponsors and settings are still **placeholder
+`content/fixtures/venues.csv` is a hand-committed copy that feeds the
+offline tests (refreshed 2026-08-09); the emergency-build copy
+(`content/snapshot/sources/venues.csv`) starts existing with the first
+successful build after the deploy-robustness work is pushed. Events,
+vendors, sponsors and settings are still **placeholder
 fixtures** — invented names, invented schedule. The dismissible banner on the
 site says so. Swapping each to a sheet tab is a one-line change in
 `content/config.json` once real content exists.
@@ -31,7 +34,33 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
-### 2026-08-12 — deploy-robustness ruled: all six questions, two scope additions
+### 2026-08-21 — venue-popup ruled: do nothing, deferred with the definition as the bar
+
+Anthony ruled on `definitions/venue-card-map-popup.md`: no felt problem —
+the popup was an idea, not a response to friction — so the `<dialog>` sheet
+stays the single venue surface. The teaser variant is revisited only if pin
+browsing still feels heavy on a real phone with the landed tapped-pin
+highlight and key-list recentering, and any attempt must meet the
+definition's acceptance criteria. Desktop-only hover teaser ruled out.
+Rulings recorded in the definition; BACKLOG dropped to three definitions
+awaiting rulings.
+
+### 2026-08-12 — deploy robustness implemented: six commits, still unpushed
+
+The dispatched agent implemented the ruled definition in six commits
+(a958ad3..221886d) and, per its brief, never pushed; a session pause also
+swallowed its final report, so this entry was reconstructed from the tree
+on 2026-08-21. What landed: snapshot write and fallback plus failure
+classification in `scripts/build.mjs`; `.github/scripts/content-gate.mjs`
+and `notify-failure.mjs`; `rebuild-content.yml` reworked into the zero-npm
+content publish with the two-part gate and skip-if-unchanged; `deploy.yml`
+gained the `use_content_snapshot` and `skip_tests` dispatch inputs, the
+lockfile-keyed npm cache, staleness marking and the snapshot commit step;
+README playbook, CONTRACTS snapshot contract, CLAUDE.md's two-copies
+venues wording (ruling 6). The merged tree's full suite was re-verified
+green on 2026-08-21: 129 unit (44 new) + 88 Playwright, exit 0. Push and
+the first-run inspection checklist remain — tracked in BACKLOG under
+"Implemented locally".
 
 Anthony ruled on `definitions/deploy-robustness.md` in session. The
 recommended package stands: committed `content/snapshot/` refreshed by every

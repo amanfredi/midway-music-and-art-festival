@@ -1,6 +1,7 @@
 # Venue card as a map popup — pin-anchored detail vs the bottom sheet
 
-Status: defined 2026-08-11 | Overall confidence: high
+Status: defined 2026-08-11; ruled by Anthony 2026-08-21 — (c) do nothing,
+recorded as deferred with this doc as the bar | Overall confidence: high
 
 ## Problem & motivation
 
@@ -90,13 +91,16 @@ on record.
 - Map keyboard access is not regressed: the canvas keeps focus and arrow-key
   panning while a teaser is open.
 
-## Open questions for Anthony
+## Rulings — Anthony, 2026-08-21
 
-- Is the felt problem *context loss* (the sheet covers the map) or *weight*
-  (the full card is too much per tap)? They point at different fixes —
-  highlight/recenter for the first, a teaser for the second.
-- Should BACKLOG record this as closed-won't-do, or as deferred pending the
-  highlight-and-recenter items? (Recommended: deferred, with this doc as the
-  bar.)
-- Any interest in a desktop-only hover teaser, which sidesteps the extra-tap
-  cost but adds a pointer-conditional code path to a phone-first site?
+- **No felt problem.** The popup was an idea, not a response to friction —
+  there is no pain the teaser is needed to relieve. (By the time of ruling,
+  the tapped-pin highlight and key-list recentering had already landed in
+  the 2026-08-11 map bundle, so the context-loss half is addressed
+  regardless.)
+- **Deferred, this doc is the bar.** The `<dialog>` sheet stays the single
+  venue surface. Revisit option (b), the teaser popup, only if pin browsing
+  still feels heavy on a real phone with the landed highlight and recenter —
+  and any attempt must meet the acceptance criteria above.
+- **No desktop-only hover teaser.** A pointer-conditional code path on a
+  phone-first site serves the audience least likely to attend.

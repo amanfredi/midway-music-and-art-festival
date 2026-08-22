@@ -57,10 +57,10 @@
 
   /* Event-kind tints. These paint whole event tiles now, not just chip fills,
      so each one is a background under body text: title, time, venue, day and
-     chip inks all clear 4.5:1 on every tint (CONTRACTS.md, contrast). Four
-     hues cover the names — performance shares community's red, literary
-     shares family's green — because the palette is the brand's, not one hue
-     per kind. Single source: nothing else states these colors. */
+     chip inks all clear 4.5:1 on every tint (CONTRACTS.md, contrast). Eight
+     names, six colors: performance shares community's red and literary shares
+     family's green, because the palette is the brand's and doesn't stretch to
+     one hue per name. Single source — nothing else states these colors. */
   --kind-music: #ddeaf3;
   --kind-art: #fdecd1;
   --kind-family: #dff3ea;

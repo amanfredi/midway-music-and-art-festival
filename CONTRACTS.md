@@ -616,10 +616,13 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   screen pixels by `map.js` and currently tops out at 16px (the venue pin's
   number), so it is never large text and the 4.5:1 threshold always applies. Non-text needs 3:1: UI
   component boundaries and states, and graphical objects needed to understand
-  the content. In scope: the six kind-badge tints, every pin and legend color,
+  the content. In scope: the six kind tints, every pin and legend color,
   the star button's pressed state, and every label the map draws — all of
   which now take their colors from the custom properties in `app.css`, so
-  there is one place to check.
+  there is one place to check. The kind tints are event-tile backgrounds now,
+  not just chip fills: each sits under the row's title, time, venue and
+  cross-day day prefix as well as under the chip's ink, so every one of those
+  is a 4.5:1 pair, on every tint.
 - **Reflow and text spacing at 320px.** No two-dimensional scrolling on any
   route at a 320px viewport, and applying the four WCAG text-spacing overrides
   (line-height 1.5, letter 0.12em, word 0.16em, paragraph 2em) must not push

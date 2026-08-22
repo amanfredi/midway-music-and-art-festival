@@ -17,7 +17,10 @@ stated in those terms. It requires WebGL2, an accepted floor (decided
 list instead of the map.
 
 **Only the venues tab is real content.** It is live from the organizers' Google
-Sheet (URL in `content/config.json`), currently 14 venues.
+Sheet (URL in `content/config.json`) — 14 venues on the live site, frozen
+since 2026-08-11: the sheet has since gained four incomplete venue rows
+that fail validation and block every rebuild (see the 2026-08-21 log
+entry).
 `content/fixtures/venues.csv` is a hand-committed copy that feeds the
 offline tests (refreshed 2026-08-09); the emergency-build copy
 (`content/snapshot/sources/venues.csv`) starts existing with the first
@@ -33,6 +36,22 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-08-21 — agent report recovered; live content pipeline failing since 08-11
+
+The implementation agent's lost report was recovered by messaging the idle
+agent. Its deviations — notably a path-scoped gate rule (`site/`,
+`scripts/`, `content/` minus the snapshot) replacing the strict "nothing
+outside `content/snapshot/`" test, which would deadlock on this repo's
+`[skip ci]` doc commits — plus the gate-spike results, a ten-step first-run
+checklist, and residual risks are now sections in the definition.
+Re-verifying the report's sheet finding uncovered a live incident: the
+organizers have added four venue rows (16–19) with eight required cells
+empty, every build since 2026-08-11T19:31Z fails validation, roughly forty
+consecutive cron runs have failed unnoticed, and the live site's venues are
+frozen at 14 — ten days of exactly the silent failure the deploy-robustness
+work exists to end. The fix is sheet-side; BACKLOG's Content section
+carries it with the post-push email-cadence note.
 
 ### 2026-08-21 — venue-popup ruled: do nothing, deferred with the definition as the bar
 
@@ -50,7 +69,8 @@ awaiting rulings.
 The dispatched agent implemented the ruled definition in six commits
 (a958ad3..221886d) and, per its brief, never pushed; a session pause also
 swallowed its final report, so this entry was reconstructed from the tree
-on 2026-08-21. What landed: snapshot write and fallback plus failure
+on 2026-08-21 (the report was recovered later that day — its deviations and
+checklist are folded into the definition). What landed: snapshot write and fallback plus failure
 classification in `scripts/build.mjs`; `.github/scripts/content-gate.mjs`
 and `notify-failure.mjs`; `rebuild-content.yml` reworked into the zero-npm
 content publish with the two-part gate and skip-if-unchanged; `deploy.yml`

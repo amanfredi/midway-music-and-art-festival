@@ -445,6 +445,95 @@ Numbering matches the open questions the draft posed; in-body references to
   emergency builds; fixtures are hand-committed and feed the offline tests.
   Ruled: both stay, distinct jobs; the duplicate venues CSV is accepted
   (ruling 6).
+
+## As implemented — deviations (agent report, recovered 2026-08-21)
+
+Implementation landed 2026-08-12 in six commits (a958ad3..221886d). Where it
+deviates from the text above, the protected property is unchanged:
+
+- **The gate's file rule is path-scoped, not "anything outside
+  `content/snapshot/`".** The strict rule deadlocks on this repo's
+  `[skip ci]` doc-commit convention: HEAD is frequently a docs commit with
+  no Deploy run, so the cron would decline until the next code push — the
+  quiet stretch the content path exists for. As shipped, the gate declines
+  only when files under `site/`, `scripts/`, or `content/` (excluding
+  `content/snapshot/`) changed since the last green Deploy run's SHA.
+  Untested code still cannot reach phones; the path list and its extension
+  rule are commented in `.github/scripts/content-gate.mjs`, and all of
+  acceptance criterion 4's assertions hold.
+- **Gate and notifier are importable modules** (`.github/scripts/
+  content-gate.mjs`, `notify-failure.mjs`) so their decisions are
+  offline-testable; each workflow calls them in one line.
+- **A declined cron succeeds with a `::warning::`** rather than failing —
+  the red Deploy run it defers to already emailed once; failing would
+  re-email every six hours.
+- **Hardening found en route:** `skip_tests` is compared against both
+  boolean and string forms (the Actions UI sends `true`, `gh workflow run`
+  sends `'true'`, and GitHub's loose equality treats them differently);
+  snapshot commits push only when `github.ref` is `refs/heads/main`; a
+  snapshot entry serves only the exact URL it was saved from, else the
+  build fails naming both URLs; `npm ci` gains `--no-audit --no-fund`; the
+  dead `workflow_call:` trigger came off `deploy.yml`.
+- **Routing note:** 4xx responses and HTML sign-in pages classify as
+  `validation`, so link rot mails the organizers — the people who can
+  re-publish the tab.
+- **Test hook:** `build.mjs` reads `MMAF_RETRY_BACKOFF_MS` (default 1500)
+  so the suite's deliberate fetch failures don't cost ~35 s per run; only
+  tests set it.
+- **The snapshot shipped unseeded.** The live sheet already failed
+  validation on 2026-08-12 (verified identically against the pre-change
+  `build.mjs`), so no deploy path could succeed; the snapshot arms itself
+  on the first green deploy.
+
+Gate spike (read-only, 2026-08-12): the workflow-runs query returns runs
+newest-first, so judging the first completed entry is correct — a failed
+run beneath a newer success does not shadow it. The compare endpoint omits
+the `files` key entirely for identical SHAs (treated as an empty list), and
+the gate declines outright at ≥300 changed files rather than reasoning from
+a truncated view.
+
+## First-run inspection checklist (post-push)
+
+1. **First push.** The deploy fails on the sheet's current validation
+   errors; the email must reach *both* recipient lists, validation class,
+   naming the rows and cells. Cheapest end-to-end proof of SMTP, secret,
+   and routing.
+2. **First green deploy (sheet fixed).** The snapshot-commit step creates
+   `content/snapshot/` and pushes `refresh content snapshot [skip ci]` —
+   proves job-scoped `contents: write` plus the checkout's credentials.
+3. **Right after that bot commit.** No new Deploy run at its SHA. If one
+   started, only `[skip ci]` caught it — revisit the `GITHUB_TOKEN`
+   no-retrigger assumption before the next change.
+4. **Next cron.** Gate logs its PUBLISH line tolerating the bot commit (the
+   anti-deadlock working); with no sheet change since: "already current",
+   no deploy, no commit.
+5. **After a real sheet edit.** Cron commits and deploys; the `pages`
+   concurrency group serializes rather than deadlocks if a code push
+   overlaps.
+6. **Any run's setup-node log.** Toolcache hit, or a nodejs.org download?
+   A download is a residual network dependency on the npm-free path —
+   decide the pinned-major-vs-offline trade then.
+7. **Second run's cache line.** `Cache restored from key: node-cache-…`
+   confirms `~/.npm` restore works.
+8. **One deliberate `skip_tests` dispatch.** Test job skipped, deploy job
+   runs — the type-coercion case offline tests can't reach.
+9. **One `use_content_snapshot` dispatch while the sheet is up.** Safe
+   no-op fallback proving the input plumbs through; the STALE CONTENT
+   banner and its annotation are only observable in a real outage.
+10. **First network-class failure.** Reaches Anthony only, not the
+    organizers.
+
+## Residual risks (carried forward from the report)
+
+- A cron whose Pages deploy fails *after* its snapshot commit lands leaves
+  the next cron seeing "unchanged" and skipping; the site stays behind
+  until an operator dispatches a deploy, and the failure email is the only
+  signal.
+- Repeat failures re-email on every cron cycle (four a day) — no dedup by
+  failure fingerprint. Accepted until it annoys someone.
+- CLAUDE.md's generated-paths list doesn't include `content/snapshot/`, so
+  a future session could hand-edit it; a one-line addition is proposed and
+  awaits Anthony.
 - **Failure email over Actions-tab vigilance** (added at ruling) — Fastmail
   SMTP app password + curl: npm-free, best-effort, `if: failure()` only.
   JMAP rejected as three calls for one call's work. Organizers receive only

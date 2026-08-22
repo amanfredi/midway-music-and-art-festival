@@ -18,13 +18,14 @@ Items are not prioritized against each other. The festival is October 2–4,
   (a958ad3..221886d), never pushed. Snapshot write/fallback in `build.mjs`,
   the zero-npm content publish with the two-part gate and
   skip-if-unchanged, npm cache + `skip_tests`, the Fastmail failure
-  notifier, README playbook, CONTRACTS snapshot contract. Remaining, in
-  order: review the diff and push; watch the first real runs for the
-  documented-but-untested Actions behaviors (bot snapshot commits not
-  re-triggering workflows, job-scoped `contents: write`, cross-workflow
-  `pages` concurrency, setup-node's toolcache, actual email delivery to
-  both recipient lists); then Anthony removes the invariant's "currently
-  not met" clause in CLAUDE.md. Operator config exists since 2026-08-12:
+  notifier, README playbook, CONTRACTS snapshot contract. The agent's
+  recovered report (2026-08-21) added as-implemented deviations, a ten-step
+  first-run inspection checklist, and residual risks to the definition —
+  the checklist is the post-push script. Remaining, in order: review the
+  diff and push; run the checklist; then Anthony removes the invariant's
+  "currently not met" clause in CLAUDE.md. Mind the sequencing note on the
+  live sheet incident under Content and data: until the sheet is fixed,
+  each failed cron after the push emails both recipient lists. Operator config exists since 2026-08-12:
   `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,
   `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER` variables (recipient lists
   may be comma-separated).
@@ -179,6 +180,19 @@ using Claude for Chrome.
 **Include favicon sizes up to 64×64px** The favicon rendered in safari currently looks low-res.
 
 ## Content and data
+
+**Live content pipeline failing — venue content frozen since 2026-08-11.**
+The organizers added four venues (sheet rows 16–19: Hive Collaborative,
+Celtic Junction Arts Center, Black Hart of Saint Paul, Can Can Wonderland)
+with eight required cells still empty across description/location/address,
+so every build since the last success (2026-08-11T19:31Z) fails validation:
+roughly forty consecutive 6-hour cron runs have failed and the live site
+still shows the old 14 venues. The fix is filling the eight cells in the
+sheet. Sequencing: once the deploy-robustness work is pushed, every failed
+cron emails both recipient lists naming exactly these rows — four times a
+day until the sheet is fixed — which is either the system doing its job or
+mail the organizers weren't warned about, depending on what they've been
+told.
 
 Two venue-location facts are **valid data, not sheet errors** (ruled by
 Anthony 2026-08-10, after repeated sessions flagged them; also recorded in

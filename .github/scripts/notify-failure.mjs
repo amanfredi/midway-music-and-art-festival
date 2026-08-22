@@ -56,7 +56,8 @@ const CLASS_TAIL = {
   validation:
     "This is a content error: the spreadsheet cell named above needs fixing. " +
     "Nothing was published, so the live site still shows the last good version. " +
-    "The next scheduled rebuild (or a manual one) will publish once the cell is fixed.",
+    "The next scheduled rebuild (or a manual one) will publish once the cell is fixed. " +
+    "If a code deploy failed at the same time, it will also need a re-run after the fix.",
   network:
     "This is an outage, not an edit — a content source could not be reached. " +
     "Nothing was published and the live site is unchanged. " +
@@ -83,7 +84,7 @@ export function summarize({ report, context }) {
       : classes.length > 0
         ? classes.join(", ")
         : "failure";
-  const subject = `[Midway site] ${workflow} failed — ${what}`;
+  const subject = `[Midway site] ${workflow} failed - ${what}`;
 
   const lines = [
     `The "${workflow}" workflow failed for ${repo}${context.sha ? ` at ${context.sha.slice(0, 7)}` : ""}${
@@ -160,8 +161,11 @@ function readReport(reportPath) {
   }
 }
 
-/** curl config values are double-quoted, so the two characters that end one are escaped. */
-const curlValue = (value) => `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+/** curl config values are double-quoted, so the two characters that end one are
+ * escaped — and newlines are flattened, since a linebreak would end the value
+ * and leave the remainder as a stray config line. */
+const curlValue = (value) =>
+  `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[\r\n]+/g, " ")}"`;
 
 function send({ smtpUrl, user, password, from, recipients, message }) {
   const tmp = mkdtempSync(path.join(os.tmpdir(), "mmaf-mail-"));

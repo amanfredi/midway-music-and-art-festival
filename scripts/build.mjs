@@ -1210,7 +1210,7 @@ function resolveFromSnapshot(ctx, resource, reason) {
 /** What this build took from the snapshot, for the log line and the report. */
 function snapshotUsedEntries(ctx) {
   return [...ctx.reused.values()]
-    .sort((a, b) => a.id.localeCompare(b.id))
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((entry) => ({
       id: entry.id,
       label: entry.kind === "source" ? SOURCE_LABEL[entry.id.slice("source:".length)] ?? entry.file : entry.file,
@@ -1268,7 +1268,10 @@ function saveSnapshot(ctx) {
   const keptIds = new Set(entries.map((e) => e.id));
   const removed = [...ctx.saved.keys()].filter((id) => !keptIds.has(id));
 
-  entries.sort((a, b) => a.id.localeCompare(b.id));
+  // Codepoint order, not localeCompare: the committed meta must sort
+  // identically on every machine or a local snapshot write and CI's disagree
+  // and generate a spurious bot-commit cycle.
+  entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const metaText = JSON.stringify({ schema: SNAPSHOT_SCHEMA, resources: entries }, null, 2) + "\n";
 
   mkdirSync(ctx.snapshotDir, { recursive: true });

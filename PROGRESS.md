@@ -37,6 +37,26 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-22 — pre-push review: two blockers fixed, pipeline hardened
+
+A Fable reviewer ran inversion-framed over the six implementation commits.
+Two blockers, both fixed: the rebuild job's explicit permissions zeroed
+`actions:`, so the gate's run-listing could 403 and every cron would
+decline inside a green run — a silent content freeze (one line:
+`actions: read`); and the gate wrote its reason to GITHUB_OUTPUT
+unflattened, so a newline-bearing filename could inject `publish=true`
+(now single-lined at the write site). Also taken: `.github/` joined the
+gate's publish-affecting paths, the organizer email now says a failed code
+deploy needs its own re-run, snapshot meta sorts by codepoint rather than
+locale (cross-platform determinism), and curl config values flatten
+newlines. Checked and clean: interpolation discipline (every `${{ }}` in
+`if:`/`env:`/inputs, none in `run:` bodies), secret handling, the push
+step, gate vs acceptance criterion 4, determinism on all three paths.
+Reviewer's bottom line was push-after-fixes; the fixes are in and the unit
+suite is green over them. Open recommendation left for Anthony: invert the
+gate's path list to an allowlist of known-inert paths so it fails closed
+on future build-input additions.
+
 ### 2026-08-21 — agent report recovered; live content pipeline failing since 08-11
 
 The implementation agent's lost report was recovered by messaging the idle

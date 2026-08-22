@@ -39,6 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # the snapshot refresh commits back to main
+      actions: read # the gate lists Deploy runs; job-level permissions zero every unlisted scope
       pages: write
       id-token: write
     environment:

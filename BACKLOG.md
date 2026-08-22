@@ -21,9 +21,13 @@ Items are not prioritized against each other. The festival is October 2–4,
   notifier, README playbook, CONTRACTS snapshot contract. The agent's
   recovered report (2026-08-21) added as-implemented deviations, a ten-step
   first-run inspection checklist, and residual risks to the definition —
-  the checklist is the post-push script. Remaining, in order: review the
-  diff and push; run the checklist; then Anthony removes the invariant's
-  "currently not met" clause in CLAUDE.md. Mind the sequencing note on the
+  the checklist is the post-push script. Reviewed 2026-08-22 (Fable,
+  inversion-framed); both blockers and four smaller findings fixed same
+  day. Remaining, in order: Anthony pushes; run the checklist; then
+  Anthony removes the invariant's "currently not met" clause in CLAUDE.md.
+  Open ruling from the review: invert the gate's path list to an
+  allowlist of known-inert paths (fails closed on future build-input
+  additions) versus today's blocklist. Mind the sequencing note on the
   live sheet incident under Content and data: until the sheet is fixed,
   each failed cron after the push emails both recipient lists. Operator config exists since 2026-08-12:
   `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,

@@ -41,6 +41,8 @@ const PUBLISH_AFFECTING = [
   (file) => file.startsWith("site/"),
   (file) => file.startsWith("scripts/"),
   (file) => file.startsWith("content/") && !file.startsWith("content/snapshot/"),
+  // The pipeline itself: a workflow or gate edit changes what the cron runs.
+  (file) => file.startsWith(".github/"),
 ];
 
 const affectsPublish = (file) => PUBLISH_AFFECTING.some((matches) => matches(file));
@@ -144,6 +146,10 @@ if (process.argv[1] && process.argv[1].endsWith("content-gate.mjs")) {
   const line = `${decision.publish ? "PUBLISH" : "DECLINE"}: ${decision.reason}`;
   console.log(line);
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `publish=${decision.publish}\nreason=${decision.reason}\n`);
+    // key=value outputs must be single-line: the reason embeds filenames and
+    // error text, and an embedded newline would let a crafted value inject a
+    // second key (e.g. publish=true) into GITHUB_OUTPUT.
+    const flatReason = decision.reason.replace(/[\r\n]+/g, " ");
+    appendFileSync(process.env.GITHUB_OUTPUT, `publish=${decision.publish}\nreason=${flatReason}\n`);
   }
 }

@@ -34,6 +34,15 @@ export function ageBadgeHtml(ageLimit) {
   return `<span class="badge badge--age" role="img" aria-label="Ages ${years} and up">${esc(ageLimit)}</span>`;
 }
 
+// The class that paints an event's tile in its kind's tint (app.css
+// .kind-tint--*). It goes on the tile, applied here where the kind is known,
+// rather than being derived in CSS from the kind badge: the badge is the row's
+// label and may go away — under the schedule's "by category" grouping the
+// group heading already names the kind — and the tint has to outlive it.
+export function kindTintClass(kind) {
+  return `kind-tint--${esc(kind || 'music')}`;
+}
+
 export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null } = {}) {
   const { start, end } = parseEventTimes(event);
   const kind = event.kind || 'music';
@@ -45,7 +54,7 @@ export function eventRowHtml(event, { venue, showVenue = true, relativeTo = null
     ? `<span class="event-row__day">${esc(shortDayName(start))}</span> `
     : '';
   return `
-    <div class="event-row" data-testid="event-row">
+    <div class="event-row ${kindTintClass(kind)}" data-testid="event-row">
       <a class="event-row__link" href="#/event/${esc(event.id)}">
         <span class="event-row__body">
           <span class="event-row__time">${dayPrefix}${esc(formatTime(start))}&ndash;${esc(formatTime(end))}</span>

@@ -4,6 +4,7 @@
 import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
 import { findVenue, findSponsor, eventsForVenue } from '../store.js';
+import { kindTintClass } from './event-row.js';
 
 function root() {
   return document.getElementById('sheet-root');
@@ -82,7 +83,7 @@ export function openVenueSheet(venueId) {
     <h3 class="sheet__subtitle">Today at this venue</h3>
     ${todaysEvents.length
       ? `<ul class="sheet__event-list">${todaysEvents
-          .map((e) => `<li><a class="sheet__event-link" data-close-sheet href="#/event/${esc(e.id)}">${esc(formatTime(parseEventTimes(e).start))} &mdash; ${esc(e.title)}</a></li>`)
+          .map((e) => `<li><a class="sheet__event-link ${kindTintClass(e.kind)}" data-close-sheet href="#/event/${esc(e.id)}">${esc(formatTime(parseEventTimes(e).start))} &mdash; ${esc(e.title)}</a></li>`)
           .join('')}</ul>`
       : '<p class="empty-state">Nothing scheduled here today.</p>'}
     <div class="sheet__actions">

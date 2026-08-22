@@ -17,7 +17,10 @@
   --color-bg: #ffffff;
   --color-surface: #f6f6f6;
   --color-text: #1d2a33;
-  --color-text-muted: #5a6b74;
+  /* Darkened from #5a6b74 when the event tiles became kind-tinted: the muted
+     ink now sits on tints as well as on the panels, and #5a6b74 fell to 4.39:1
+     on the two darkest of them. One token rather than a per-tint patch. */
+  --color-text-muted: #54656e;
   --color-border: #e2e5e8;
   --color-danger: #a11f22;
 
@@ -52,10 +55,12 @@
   --map-label-arterial: #565654;
   --map-label-station: #3d5c4d;
 
-  /* Event-kind tints, one per kind name. Four hues cover the eight names —
-     performance shares community's red, literary shares family's green —
-     because the palette is the brand's, not one hue per kind. Single source:
-     nothing else states these colors. */
+  /* Event-kind tints. These paint whole event tiles now, not just chip fills,
+     so each one is a background under body text: title, time, venue, day and
+     chip inks all clear 4.5:1 on every tint (CONTRACTS.md, contrast). Four
+     hues cover the names — performance shares community's red, literary
+     shares family's green — because the palette is the brand's, not one hue
+     per kind. Single source: nothing else states these colors. */
   --kind-music: #ddeaf3;
   --kind-art: #fdecd1;
   --kind-family: #dff3ea;
@@ -390,10 +395,12 @@ img {
 
 /* -- badges --
 
-   Outlined, never filled: a filled chip is a second solid shape on a row, and
-   it competed with the event title, which is the one thing on a row that has
-   to win. So the chip names the kind quietly — ink and a hairline of the same
-   ink. The inks are unchanged from the filled era. -- */
+   Outlined, never filled: the tile under a badge already carries the kind's
+   tint, and a second filled shape on top of it competed with the event title,
+   which is the one thing on a row that has to win. So the chip names the kind
+   quietly — ink and a hairline of the same ink, no fill. The inks are
+   unchanged from the filled era and clear 4.5:1 on every tint and on the
+   panels (CONTRACTS.md, contrast). -- */
 
 .badge {
   display: inline-block;
@@ -415,6 +422,26 @@ img {
 .badge--vendor-art { color: var(--color-accent-dark); }
 .badge--vendor-retail { color: #8f1b1e; }
 
+/* -- event kind tints --
+
+   One class per kind, publishing that kind's tint as --kind-tint for whatever
+   tile carries the class. event-row.js and sheet.js apply it where the kind is
+   known; a tile with no class (or an unrecognised kind) falls back to the
+   plain panel.
+
+   Deliberately not `:has(.badge--<kind>)`: the badge is the row's label and
+   may go away — under the schedule's "by category" grouping the group heading
+   already names the kind — and the tint has to outlive it. -- */
+
+.kind-tint--music { --kind-tint: var(--kind-music); }
+.kind-tint--art { --kind-tint: var(--kind-art); }
+.kind-tint--family { --kind-tint: var(--kind-family); }
+.kind-tint--community { --kind-tint: var(--kind-community); }
+.kind-tint--performance { --kind-tint: var(--kind-performance); }
+.kind-tint--literary { --kind-tint: var(--kind-literary); }
+.kind-tint--vendor { --kind-tint: var(--kind-vendor); }
+.kind-tint--other { --kind-tint: var(--kind-other); }
+
 /* -- event list / cards -- */
 
 .event-list {
@@ -424,10 +451,16 @@ img {
   margin-bottom: 1rem;
 }
 
+/* The row itself is the card, not the link inside it: the star button is part
+   of the tile and sits on the same tint, so the kind's color runs the full
+   width of the row rather than stopping at the link's edge. */
 .event-row {
   display: flex;
   align-items: stretch;
   gap: 0.5rem;
+  background: var(--kind-tint, var(--color-surface));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
 }
 
 /* Two columns: the text column (time, title, venue) and the label column.
@@ -444,9 +477,9 @@ img {
   flex-direction: row;
   align-items: flex-start;
   gap: 0.6rem;
-  background: var(--color-surface);
+  /* Transparent: the row behind it paints the tile. The radius stays so the
+     focus ring follows the card's corners. */
   border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
   padding: 0.75rem 0.9rem;
   text-decoration: none;
   color: var(--color-text);
@@ -473,7 +506,10 @@ img {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #a05f00; /* darker than --color-accent-dark: small text needs 4.5:1 on the white card */
+  /* Darker than --color-accent-dark: this small text needs 4.5:1, and it needs
+     it on the darkest kind tint the row might carry, not just on the panel
+     (#a05f00 was fine on white and fell to 4.03:1 on --kind-vendor). */
+  color: #8f5400;
 }
 
 .event-row__title {
@@ -516,8 +552,10 @@ img {
   border: none;
   background: none;
   /* Muted rather than accent-colored when off, so a screenful of unsaved rows
-     doesn't look like a screenful of saved ones at a glance. */
-  color: #7c878e;
+     doesn't look like a screenful of saved ones at a glance — but dark enough
+     to hold 3:1 against the darkest kind tint it can sit on (#7c878e managed
+     that only against white). */
+  color: #727c84;
   font-size: 1.75rem;
   line-height: 1;
   cursor: pointer;
@@ -798,11 +836,18 @@ html:has(dialog.sheet[open]) {
   margin-bottom: 0.2rem;
 }
 
+/* Tinted like the list rows elsewhere, from the same tokens: an event is the
+   same object here as on the schedule, so it shouldn't change color on the way
+   into a sheet. Padding and radius come with the fill — the picker sheet reuses
+   this class for kindless items, which stay untinted but keep the shape. */
 .sheet__event-link {
   display: block;
   min-height: 44px;
   display: flex;
   align-items: center;
+  background: var(--kind-tint, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0 0.7rem;
   text-decoration: none;
   font-weight: 600;
 }
@@ -1402,12 +1447,14 @@ a:focus-visible, button:focus-visible {
    ============================================================ */
 
 /* -- kind badges: performance/literary/vendor/other. Ink only, like the four
-   above. Ratios are against the palest ground a chip sits on today, the gray
-   panel (>=4.5:1 required at this text size; all comfortably clear). -- */
-.badge--performance { color: #8f1b1e; } /* red family — 8.29:1 */
-.badge--literary { color: #1f6b4a; } /* green family — 5.96:1 */
-.badge--vendor { color: #4a2a66; } /* plum, harmonizes as a jewel tone — 10.71:1 */
-.badge--other { color: #4a3b2c; } /* warm taupe, parchment-adjacent — 9.95:1 */
+   above — the fills these used to carry are now the tile tints at the top of
+   this file. Each ratio below is the worst case across all eight tints, which
+   is the ink on --kind-vendor / --kind-other (the two darkest); every chip is
+   also read against its own kind's tint, which is lighter. -- */
+.badge--performance { color: #8f1b1e; } /* red family — 7.11:1 worst case */
+.badge--literary { color: #1f6b4a; } /* green family — 5.11:1 worst case */
+.badge--vendor { color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 worst case */
+.badge--other { color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 worst case */
 
 /* -- ticket icons: Free/Paid Ticket Required only (events.csv `tickets`).
    Brand artwork, defined once as a <symbol> in index.html and referenced with
@@ -1427,7 +1474,9 @@ a:focus-visible, button:focus-visible {
 
 /* -- age limit (events.csv `age_limit`): red family, matching the
    .badge--performance ink, so it reads as a restriction without competing
-   with the ticket icon directly above it. -- */
+   with the ticket icon directly above it. Unlike a kind chip this one can
+   land on any tint, so 7.11:1 is the figure that matters — its worst case
+   across all eight. -- */
 .badge--age {
   color: #8f1b1e;
   font-variant-numeric: tabular-nums;

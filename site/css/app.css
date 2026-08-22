@@ -63,14 +63,11 @@
 
   /* Event-kind tints. These paint whole event tiles now, not just chip fills,
      so each one is a background under body text: title, time, venue, day and
-     chip inks all clear 4.5:1 on every tint (CONTRACTS.md, contrast). Eight
-     names, six colors: performance shares community's red and literary shares
-     family's green, because the palette is the brand's and doesn't stretch to
-     one hue per name. Single source — nothing else states these colors. */
+     chip inks all clear 4.5:1 on every tint (CONTRACTS.md, contrast). One per
+     kind in the build's VALID_KINDS, and no more than that. Single source —
+     nothing else states these colors. */
   --kind-music: #ddeaf3;
   --kind-art: #fdecd1;
-  --kind-family: #dff3ea;
-  --kind-community: #f9e3e3;
   --kind-performance: #f9e3e3;
   --kind-literary: #dff3ea;
   --kind-vendor: #ece1f5;
@@ -422,11 +419,6 @@ img {
 
 .badge--music { color: #0c4260; }
 .badge--art { color: var(--color-accent-dark); }
-.badge--family { color: #1f6b4a; }
-.badge--community { color: #8f1b1e; }
-.badge--vendor-food { color: #0c4260; }
-.badge--vendor-art { color: var(--color-accent-dark); }
-.badge--vendor-retail { color: #8f1b1e; }
 
 /* -- event kind tints --
 
@@ -441,8 +433,6 @@ img {
 
 .kind-tint--music { --kind-tint: var(--kind-music); }
 .kind-tint--art { --kind-tint: var(--kind-art); }
-.kind-tint--family { --kind-tint: var(--kind-family); }
-.kind-tint--community { --kind-tint: var(--kind-community); }
 .kind-tint--performance { --kind-tint: var(--kind-performance); }
 .kind-tint--literary { --kind-tint: var(--kind-literary); }
 .kind-tint--vendor { --kind-tint: var(--kind-vendor); }

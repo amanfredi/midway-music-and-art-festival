@@ -457,16 +457,10 @@ img {
   margin-bottom: 1rem;
 }
 
-/* The row itself is the card, not the link inside it: the star button is part
-   of the tile and sits on the same tint, so the kind's color runs the full
-   width of the row rather than stopping at the link's edge. */
 .event-row {
   display: flex;
   align-items: stretch;
   gap: 0.5rem;
-  background: var(--kind-tint, var(--color-surface));
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
 }
 
 /* Two columns: the text column (time, title, venue) and the label column.
@@ -483,9 +477,12 @@ img {
   flex-direction: row;
   align-items: flex-start;
   gap: 0.6rem;
-  /* Transparent: the row behind it paints the tile. The radius stays so the
-     focus ring follows the card's corners. */
+  /* The link is the card, and the card is what the kind tints. The star button
+     is a sibling *outside* it (see below), so the tint stops at the card's
+     edge rather than running the full width of the row. */
+  background: var(--kind-tint, var(--color-surface));
   border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
   padding: 0.75rem 0.9rem;
   text-decoration: none;
   color: var(--color-text);
@@ -558,9 +555,9 @@ img {
   border: none;
   background: none;
   /* Muted rather than accent-colored when off, so a screenful of unsaved rows
-     doesn't look like a screenful of saved ones at a glance — but dark enough
-     to hold 3:1 against the darkest kind tint it can sit on (#7c878e managed
-     that only against white). */
+     doesn't look like a screenful of saved ones at a glance. Darkened from
+     #7c878e and kept there: the glyph sits on the page, not on a tinted card,
+     where it reads 4.26:1 — well past the 3:1 a non-text glyph needs. */
   color: #727c84;
   font-size: 1.75rem;
   line-height: 1;

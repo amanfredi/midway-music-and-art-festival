@@ -455,12 +455,18 @@ deviates from the text above, the protected property is unchanged:
   `content/snapshot/`".** The strict rule deadlocks on this repo's
   `[skip ci]` doc-commit convention: HEAD is frequently a docs commit with
   no Deploy run, so the cron would decline until the next code push — the
-  quiet stretch the content path exists for. As shipped, the gate declines
-  only when files under `site/`, `scripts/`, or `content/` (excluding
-  `content/snapshot/`) changed since the last green Deploy run's SHA.
-  Untested code still cannot reach phones; the path list and its extension
-  rule are commented in `.github/scripts/content-gate.mjs`, and all of
-  acceptance criterion 4's assertions hold.
+  quiet stretch the content path exists for. As first shipped, the gate
+  blocklisted the paths that feed the artifact; on 2026-08-22 Anthony ruled
+  for the pre-push review's class-eliminating inversion, and the gate now
+  publishes only when every changed file matches an allowlist of
+  known-inert paths (top-level docs, definitions, reference, reviews,
+  tests, brand assets, the snapshot itself) — any unjudged path fails
+  closed as DECLINE. Untested code still cannot reach phones, the
+  `[skip ci]` deadlock this deviation existed to avoid stays avoided, and
+  acceptance criterion 4's assertions hold. The deliberate cost: a commit
+  touching an unlisted-but-inert path blocks crons until the next Deploy
+  run covers it; the list is commented in
+  `.github/scripts/content-gate.mjs`.
 - **Gate and notifier are importable modules** (`.github/scripts/
   content-gate.mjs`, `notify-failure.mjs`) so their decisions are
   offline-testable; each workflow calls them in one line.

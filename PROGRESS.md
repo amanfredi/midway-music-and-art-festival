@@ -53,9 +53,10 @@ newlines. Checked and clean: interpolation discipline (every `${{ }}` in
 `if:`/`env:`/inputs, none in `run:` bodies), secret handling, the push
 step, gate vs acceptance criterion 4, determinism on all three paths.
 Reviewer's bottom line was push-after-fixes; the fixes are in and the unit
-suite is green over them. Open recommendation left for Anthony: invert the
-gate's path list to an allowlist of known-inert paths so it fails closed
-on future build-input additions.
+suite is green over them. The reviewer's remaining recommendation — invert
+the gate's path list to an allowlist of known-inert paths so it fails
+closed on future build-input additions — Anthony ruled for the same day,
+and the inversion landed with a test proving unenumerated paths decline.
 
 ### 2026-08-21 — agent report recovered; live content pipeline failing since 08-11
 

@@ -23,29 +23,35 @@
 import { appendFileSync } from "node:fs";
 
 /**
- * Paths that can change what a deploy publishes: the site tree itself, the
- * build that generates the rest of it, and the content inputs.
+ * Paths that are known-inert to what a deploy publishes: documentation and
+ * material the build never reads. The gate publishes only when every file
+ * changed since the last green Deploy run matches this list.
  *
  * The definition wrote this rule as "nothing outside content/snapshot/ has
  * changed". That is too tight for how this repo actually commits: doc-only
  * commits carry [skip ci] by convention (CLAUDE.md), so they never run Deploy,
  * and under the tighter rule the first PROGRESS.md commit would stop content
- * from reaching phones until somebody pushed code. Widening it to "nothing that
- * affects the published bytes" keeps the property that matters — code reaching
- * production has passed its tests — while letting the journal be written.
+ * from reaching phones until somebody pushed code. The allowlist keeps the
+ * property that matters — code reaching production has passed its tests —
+ * while letting the journal be written.
  *
- * If a future change makes the deploy artifact depend on a path outside this
- * list, add it here, or the gate quietly stops covering it.
+ * Allowlist, not blocklist (ruled 2026-08-22, out of the pre-push review): a
+ * path nobody has judged fails closed as DECLINE instead of publishing
+ * untested, so future build inputs are covered by default. The cost is
+ * deliberate — a commit touching an unlisted-but-inert path blocks crons
+ * until the next Deploy run covers it; add the path here when that happens.
  */
-const PUBLISH_AFFECTING = [
-  (file) => file.startsWith("site/"),
-  (file) => file.startsWith("scripts/"),
-  (file) => file.startsWith("content/") && !file.startsWith("content/snapshot/"),
-  // The pipeline itself: a workflow or gate edit changes what the cron runs.
-  (file) => file.startsWith(".github/"),
+const KNOWN_INERT = [
+  (file) => file.startsWith("content/snapshot/"), // the snapshot refresh itself
+  (file) => file.startsWith("definitions/"),
+  (file) => file.startsWith("reference/"),
+  (file) => file.startsWith("reviews/"),
+  (file) => file.startsWith("tests/"),
+  (file) => file.startsWith("MMAF Brand Assets/"),
+  (file) => !file.includes("/") && file.endsWith(".md"), // top-level docs
 ];
 
-const affectsPublish = (file) => PUBLISH_AFFECTING.some((matches) => matches(file));
+const affectsPublish = (file) => !KNOWN_INERT.some((matches) => matches(file));
 
 /**
  * The whole decision, as a pure function over two API responses, so it can be

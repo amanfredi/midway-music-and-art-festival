@@ -67,6 +67,16 @@ describe("content publish gate", () => {
     }
   });
 
+  test("declines on any path the allowlist has not judged — fail closed, not fail open", () => {
+    // The allowlist enumerates known-inert paths; everything else is treated
+    // as a build input nobody has vetted. package.json (module resolution),
+    // the workflows and this gate itself, and tools/ all land here.
+    for (const file of ["package.json", ".github/workflows/rebuild-content.yml", ".github/scripts/content-gate.mjs", "tools/make-map.mjs", "playwright.config.mjs", "site/notes.md"]) {
+      const decision = decidePublish({ runs: [run("success")], comparison: compare("ahead", file), headSha: HEAD });
+      assert.equal(decision.publish, false, `${file} should block publishing`);
+    }
+  });
+
   test("declines when there is no completed run, a truncated compare, or an odd history", () => {
     assert.equal(decidePublish({ runs: [], headSha: HEAD }).publish, false);
     assert.equal(decidePublish({ runs: [{ status: "in_progress", conclusion: null }], headSha: HEAD }).publish, false);

@@ -25,9 +25,8 @@ Items are not prioritized against each other. The festival is October 2–4,
   inversion-framed); both blockers and four smaller findings fixed same
   day. Remaining, in order: Anthony pushes; run the checklist; then
   Anthony removes the invariant's "currently not met" clause in CLAUDE.md.
-  Open ruling from the review: invert the gate's path list to an
-  allowlist of known-inert paths (fails closed on future build-input
-  additions) versus today's blocklist. Mind the sequencing note on the
+  The review's allowlist inversion was ruled and landed 2026-08-22, with a
+  fail-closed test. Mind the sequencing note on the
   live sheet incident under Content and data: until the sheet is fixed,
   each failed cron after the push emails both recipient lists. Operator config exists since 2026-08-12:
   `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,

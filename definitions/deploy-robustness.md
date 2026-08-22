@@ -277,8 +277,11 @@ encrypted, masked in logs, and not exposed to fork-triggered workflows.
 Stock curl on the hosted runners speaks `smtps://`, so sending is a single
 `curl --mail-from … --mail-rcpt … --upload-file message.eml` with no npm
 anywhere, which keeps it legal on the content-only path. The step runs under
-`if: failure()` and is best-effort: a mail hiccup must never change a run's
-outcome. JMAP was considered and skipped — its session-fetch, blob-upload,
+`if: failure()`, so it exists only inside runs that are already red — and
+an email that does not go out fails its step (ruled 2026-08-22, after the
+first real send failed silently behind a green checkmark: Login denied,
+logged, step green, nobody mailed). The run's outcome cannot change; the
+alarm's own failure stays visible. JMAP was considered and skipped — its session-fetch, blob-upload,
 EmailSubmission sequence is three calls and more failure modes for what one
 SMTP call does.
 
@@ -301,8 +304,9 @@ address, deduplicating across the two lists. The SMTP username / From
 address (Fastmail authenticates with the account email) is the
 `FASTMAIL_USER` repository variable. All four values exist as of
 2026-08-12; the email step nonetheless treats a missing variable or secret
-like any other send failure — log and continue, never fail the run — so a
-misconfiguration can't break a deploy.
+like any other send failure — logged, and the step goes red per the
+2026-08-22 ruling above; the run it sits in has already failed, so a
+misconfiguration still can't change any outcome.
 
 ## Recommendation (confirmed and extended by the rulings)
 

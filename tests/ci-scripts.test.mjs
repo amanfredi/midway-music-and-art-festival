@@ -217,7 +217,10 @@ describe("failure notification sending", () => {
     }
   });
 
-  test("a missing secret or recipient list is logged, never fatal", () => {
+  test("an email that cannot be sent fails the step, without throwing", () => {
+    // The step only runs on already-failed runs (if: failure()), so exit 1
+    // never changes an outcome — it makes the alarm's own failure visible
+    // instead of leaving a green checkmark over an unsent email.
     for (const env of [
       { FASTMAIL_USER: "", FASTMAIL_APP_PASSWORD: "", DEPLOY_NOTIFICATION_EMAIL: "a@b.co" },
       { FASTMAIL_USER: "site@example.com", FASTMAIL_APP_PASSWORD: "x", DEPLOY_NOTIFICATION_EMAIL: "" },
@@ -227,8 +230,9 @@ describe("failure notification sending", () => {
         encoding: "utf8",
         env: { ...process.env, NOTIFY_DRY_RUN: "1", BUILD_REPORT: "", CONTENT_NOTIFICATION_EMAIL: "", ...env },
       });
-      assert.equal(result.status, 0, "a misconfigured notifier must not fail the run");
-      assert.match(result.stdout, /skipping the failure email/);
+      assert.equal(result.status, 1, "an unsent email must fail its step, or the alarm fails silently");
+      assert.match(result.stdout, /cannot be sent/);
+      assert.doesNotMatch(result.stderr, /at .*notify-failure/, "must exit cleanly, not via an unhandled throw");
     }
   });
 });

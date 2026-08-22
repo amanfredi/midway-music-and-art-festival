@@ -9,9 +9,12 @@
 // builds are nobody's edit and stay with the operator.
 //
 // Sending is stock curl over smtps://, so this works on the content-only path
-// where npm is not allowed. It is best-effort by construction: every failure
-// mode below logs and returns, and the process always exits 0, because a mail
-// hiccup must never change a run's outcome.
+// where npm is not allowed. Every failure mode below logs and returns rather
+// than throwing — but an email that did not go out exits 1, failing its step.
+// The step only runs under if: failure(), so the run is already red and the
+// exit code changes nothing but visibility: a green "Email the failure" over
+// an unsent email is the alarm system failing silently, which is the exact
+// disease this pipeline exists to cure (ruled by Anthony 2026-08-22).
 //
 // Usage: node .github/scripts/notify-failure.mjs
 //   env: FASTMAIL_USER, FASTMAIL_APP_PASSWORD, DEPLOY_NOTIFICATION_EMAIL,
@@ -232,14 +235,19 @@ function main() {
     failureClasses,
   });
 
-  // A missing secret or variable is treated like any other send failure: say so
-  // and carry on, so a misconfiguration can never be what breaks a deploy.
+  // A missing secret or variable fails this step, like any other unsent
+  // email. This step only runs on already-failed runs (if: failure()), so a
+  // red step here never changes an outcome — it only makes the alarm's own
+  // failure visible instead of hiding it behind a green checkmark
+  // (ruled by Anthony 2026-08-22, after the first real send failed silently).
   if (!user || !password) {
-    console.log("FASTMAIL_USER or FASTMAIL_APP_PASSWORD is not set; skipping the failure email.");
+    console.log("FASTMAIL_USER or FASTMAIL_APP_PASSWORD is not set; the failure email cannot be sent.");
+    process.exitCode = 1;
     return;
   }
   if (recipients.length === 0) {
-    console.log("No usable recipient addresses (check DEPLOY_NOTIFICATION_EMAIL); skipping the failure email.");
+    console.log("No usable recipient addresses (check DEPLOY_NOTIFICATION_EMAIL); the failure email cannot be sent.");
+    process.exitCode = 1;
     return;
   }
 
@@ -260,13 +268,15 @@ function main() {
     message,
   });
   console.log(sent ? `Failure email sent to ${recipients.length} recipient(s).` : "Failure email was not sent.");
+  if (!sent) process.exitCode = 1;
 }
 
 if (process.argv[1] && process.argv[1].endsWith("notify-failure.mjs")) {
   try {
     main();
   } catch (err) {
+    // Even an unexpected throw only reddens a step on an already-red run.
     console.log(`Failure notification could not be prepared: ${err.stack || err.message}`);
+    process.exitCode = 1;
   }
-  process.exit(0);
 }

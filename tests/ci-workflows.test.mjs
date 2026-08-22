@@ -152,11 +152,14 @@ describe("failure email", () => {
     assert.equal(steps.length, 3, "both deploy jobs and the rebuild job must notify");
     for (const step of steps) {
       assert.match(step, /if: failure\(\)/, "the mail step must run only on failure");
-      assert.match(step, /continue-on-error: true/, "a mail hiccup must never change a run's outcome");
-      assert.match(step, /FASTMAIL_USER: \$\{\{ vars\.FASTMAIL_USER \}\}/);
+      // The step exists only inside already-failed runs, so letting it fail
+      // changes no outcome — but an unsent alarm must be a red step, not a
+      // green one over a "not sent" log line (ruled 2026-08-22).
+      assert.doesNotMatch(step, /continue-on-error/, "an unsent email must fail its step visibly");
+      assert.match(step, /FASTMAIL_USER: \$\{\{ secrets\.FASTMAIL_USER \|\| vars\.FASTMAIL_USER \}\}/);
       assert.match(step, /FASTMAIL_APP_PASSWORD: \$\{\{ secrets\.FASTMAIL_APP_PASSWORD \}\}/);
-      assert.match(step, /DEPLOY_NOTIFICATION_EMAIL: \$\{\{ vars\.DEPLOY_NOTIFICATION_EMAIL \}\}/);
-      assert.match(step, /CONTENT_NOTIFICATION_EMAIL: \$\{\{ vars\.CONTENT_NOTIFICATION_EMAIL \}\}/);
+      assert.match(step, /DEPLOY_NOTIFICATION_EMAIL: \$\{\{ secrets\.DEPLOY_NOTIFICATION_EMAIL \|\| vars\.DEPLOY_NOTIFICATION_EMAIL \}\}/);
+      assert.match(step, /CONTENT_NOTIFICATION_EMAIL: \$\{\{ secrets\.CONTENT_NOTIFICATION_EMAIL \|\| vars\.CONTENT_NOTIFICATION_EMAIL \}\}/);
     }
   });
 

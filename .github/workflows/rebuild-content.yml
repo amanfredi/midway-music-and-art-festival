@@ -115,11 +115,13 @@ jobs:
         if: ${{ steps.build.outputs.changed == 'true' }}
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
       - name: Email the failure
+        # Deliberately allowed to fail: this only runs on an already-failed
+        # run, and an unsent alarm must show as a red step, not hide behind a
+        # green one (ruled 2026-08-22).
         if: failure()
-        continue-on-error: true
         env:
-          FASTMAIL_USER: ${{ vars.FASTMAIL_USER }}
+          FASTMAIL_USER: ${{ secrets.FASTMAIL_USER || vars.FASTMAIL_USER }}
           FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
-          DEPLOY_NOTIFICATION_EMAIL: ${{ vars.DEPLOY_NOTIFICATION_EMAIL }}
-          CONTENT_NOTIFICATION_EMAIL: ${{ vars.CONTENT_NOTIFICATION_EMAIL }}
+          DEPLOY_NOTIFICATION_EMAIL: ${{ secrets.DEPLOY_NOTIFICATION_EMAIL || vars.DEPLOY_NOTIFICATION_EMAIL }}
+          CONTENT_NOTIFICATION_EMAIL: ${{ secrets.CONTENT_NOTIFICATION_EMAIL || vars.CONTENT_NOTIFICATION_EMAIL }}
         run: node .github/scripts/notify-failure.mjs

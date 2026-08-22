@@ -388,25 +388,32 @@ img {
   }
 }
 
-/* -- badges -- */
+/* -- badges --
+
+   Outlined, never filled: a filled chip is a second solid shape on a row, and
+   it competed with the event title, which is the one thing on a row that has
+   to win. So the chip names the kind quietly — ink and a hairline of the same
+   ink. The inks are unchanged from the filled era. -- */
 
 .badge {
   display: inline-block;
   padding: 0.2em 0.65em;
+  border: 1.5px solid currentColor;
   border-radius: 999px;
+  background: transparent;
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: capitalize;
   white-space: nowrap;
 }
 
-.badge--music { background: var(--kind-music); color: #0c4260; }
-.badge--art { background: var(--kind-art); color: var(--color-accent-dark); }
-.badge--family { background: var(--kind-family); color: #1f6b4a; }
-.badge--community { background: var(--kind-community); color: #8f1b1e; }
-.badge--vendor-food { background: var(--kind-music); color: #0c4260; }
-.badge--vendor-art { background: var(--kind-art); color: var(--color-accent-dark); }
-.badge--vendor-retail { background: var(--kind-community); color: #8f1b1e; }
+.badge--music { color: #0c4260; }
+.badge--art { color: var(--color-accent-dark); }
+.badge--family { color: #1f6b4a; }
+.badge--community { color: #8f1b1e; }
+.badge--vendor-food { color: #0c4260; }
+.badge--vendor-art { color: var(--color-accent-dark); }
+.badge--vendor-retail { color: #8f1b1e; }
 
 /* -- event list / cards -- */
 
@@ -1394,13 +1401,13 @@ a:focus-visible, button:focus-visible {
    "by category" grouping. See event-row.js / schedule.js / starred.js.
    ============================================================ */
 
-/* -- kind badges: performance/literary/vendor/other, drawing their fills from
-   the same kind tints as the four above. Contrast ratios computed against
-   WCAG 2.1 (>=4.5:1 required for this text size; all comfortably clear). -- */
-.badge--performance { background: var(--kind-performance); color: #8f1b1e; } /* red family — 7.31:1 */
-.badge--literary { background: var(--kind-literary); color: #1f6b4a; } /* green family — 5.57:1 */
-.badge--vendor { background: var(--kind-vendor); color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 */
-.badge--other { background: var(--kind-other); color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 */
+/* -- kind badges: performance/literary/vendor/other. Ink only, like the four
+   above. Ratios are against the palest ground a chip sits on today, the gray
+   panel (>=4.5:1 required at this text size; all comfortably clear). -- */
+.badge--performance { color: #8f1b1e; } /* red family — 8.29:1 */
+.badge--literary { color: #1f6b4a; } /* green family — 5.96:1 */
+.badge--vendor { color: #4a2a66; } /* plum, harmonizes as a jewel tone — 10.71:1 */
+.badge--other { color: #4a3b2c; } /* warm taupe, parchment-adjacent — 9.95:1 */
 
 /* -- ticket icons: Free/Paid Ticket Required only (events.csv `tickets`).
    Brand artwork, defined once as a <symbol> in index.html and referenced with
@@ -1419,10 +1426,9 @@ a:focus-visible, button:focus-visible {
 }
 
 /* -- age limit (events.csv `age_limit`): red family, matching the
-   .badge--performance pairing at 7.31:1, so it reads as a restriction
-   without competing with the ticket icon directly above it. -- */
+   .badge--performance ink, so it reads as a restriction without competing
+   with the ticket icon directly above it. -- */
 .badge--age {
-  background: var(--kind-community);
   color: #8f1b1e;
   font-variant-numeric: tabular-nums;
 }

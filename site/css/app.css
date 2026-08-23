@@ -62,6 +62,14 @@
   --motorway-casing: #b4b4b2;
   --motorway-fill: #d9d9d9;
   --station-stroke: #4a4a4a;
+  /* Leader treatment for venues no zoom can draw apart: a dot at the true
+     position and a line out to the displaced diamond. The dot is the venue
+     pin's own blue, so it reads as belonging to that pin; the line is a step
+     lighter so the tether doesn't compete with the diamond it ends in. Both
+     are graphics, not type: 3:1 is the floor and they hold 6.77:1 and 4.77:1
+     against --map-paper. */
+  --map-leader-dot: var(--pin-venue);
+  --map-leader-line: #2f6f8f;
   /* Label colors, each clearing 4.5:1 against --map-paper. Map type is never
      "large text" at any frame width (CONTRACTS.md, contrast). */
   --map-label-spine: #3f3f3f;

@@ -40,14 +40,6 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 ## Decisions that need Anthony
 
-**Three definitions ruled 2026-08-23** — each ruling is recorded in a
-"Ruling" section of its doc. Implementation is in flight; each line below
-leaves this list when its work lands:
-
-- `definitions/coincident-pin-presentation.md` — stacked cluster glyph with
-  member numbers at wide zooms, displaced leader-line pins from a mid-zoom
-  split inward. Subsumes the tied-tap bug under Map.
-
 **Venue popup: ruled deferred, nothing to build (2026-08-21).** No felt
 problem — the popup was an idea, not friction — so the `<dialog>` sheet
 stays the single venue surface. Revisit the teaser variant only if pin
@@ -109,16 +101,6 @@ and re-spec. The 4.5:1 small-text requirement is unchanged.
 
 ## Map
 
-**Bug: one of two exactly-coincident venues cannot be tapped at close zoom.**
-Above `clusterMaxZoom` the two Hamline Park venues draw exactly superimposed,
-and `wirePinTaps` breaks the distance tie on layer rank, so the engine's
-first-enumerated feature always wins (found 2026-08-11 while defining
-coincident-pin presentation). Nobody is stranded — the venue stays reachable
-through the key list — but the tap is broken. Cheap fix: route a tied
-venue-pin hit to the picker sheet, which already handles the unsplittable
-cluster; the fuller treatment is the leader-lines definition awaiting a
-ruling (see Decisions).
-
 **Venue names as map labels at close zoom** (idea, Anthony 2026-08-23). At
 the closest zooms the numbered diamonds have room for the venue's name beside
 them — either a name-label symbol layer over the venues source (`minzoom`
@@ -156,9 +138,10 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
       target is larger than the drawn one and the two no longer coincide. Which
       of them 2.5.8 measures here is the question to settle before deciding
       there is anything to fix; the map re-audit item above is the natural
-      place. The coincident-venue half of this is closed for reachability by
-      clustering plus the picker sheet — though see the tap bug at the top of
-      this section for the close-zoom exception found 2026-08-11.
+      place. The coincident-venue half of this is fully closed as of
+      2026-08-23: clustering plus the picker below the split zoom, and
+      displaced leader pins with a tap each from the split inward (the
+      close-zoom tie that broke one venue's tap is fixed and pinned by test).
 - [ ] **Station and arterial label size floors** (guide Part C #4). Advisory
       rather than a WCAG failure — the contrast passes. The old measurement
       (6.0px and 7.4px at a 288px frame) was of `map.svg`'s counter-scaled type
@@ -296,6 +279,14 @@ None of these can be checked from the screenshot harness or the test suite.
       (~55–60% of rail) and muted color rather than a `minzoom`. If the wide
       view reads cluttered, give the `bus-route` layer a `minzoom` like the
       arterial labels' 11.6.
+- [ ] Eyeball the coincident-venue treatment on a phone (added 2026-08-23):
+      the two-member numbered stacks below the split zoom, and the displaced
+      leader pins from the split inward — do the dot and line read as "this
+      pin belongs there", and do the 10 px digits on a stack stay legible?
+      Note the venue-pin lane clearance at a 343 px frame is ~1 px (39.06 px
+      between centres against 38 px pins, limiting pair venues 1 and 4, a
+      property of the current venue set) — if the sheet gains venues,
+      re-measure before trusting the home view.
 - [ ] Sticky control bar against the iOS status bar when installed.
       `.schedule-controls` pins at `top: var(--safe-top)`, which *should*
       evaluate to 0 given `apple-mobile-web-app-status-bar-style: default`.

@@ -38,6 +38,39 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-23 — coincident venues: numbered stacks wide, leader pins close
+
+Shipped per `definitions/coincident-pin-presentation.md`'s ruling — the (b)+(c)
+composite with (a)'s leader honesty, since MapLibre's collision handling hides
+symbols rather than displacing them and the offsets had to be hand-rolled
+anyway. A ~1200 m view, **rounded to a whole zoom level** (a layer filter reads
+`zoom`, which the engine evaluates only at integer zooms — fractional splits
+briefly drew both treatments), divides the two: wider, venues that can't draw
+apart stack as the cluster glyph now carrying **both members' key-list numbers**
+(`labelMin`/`labelMax` aggregation, since supercluster guarantees no leaf
+order; numbers at exactly two members, the anonymous glyph past that). From the
+split inward each member draws its own numbered diamond displaced east–west
+into a lane, with a dot at its true coordinate and a line joining the two —
+dot, line and diamond are **one canvas image per lane**, so no label can cover
+the line. Displaced pins come from a new unclustered `venue-groups` source;
+their tap halo is a symbol whose ring is baked at the same offset (a circle
+layer would ring the dot, i.e. empty paper). Taps measure to the **drawn**
+diamond, which closes the 2026-08-11 bug where one Hamline Park venue could
+not be tapped at all — pinned by a test that fails with "opened the wrong
+sheet" when the offset is removed. Leader colors `--map-leader-dot` (6.77:1)
+and `--map-leader-line` (4.77:1) against the paper.
+
+Two knowing deviations from the definition's text: its "34 px apart against a
+28 px pin" arithmetic used the old pin size (pins are 38 px), so the ~14 m pair
+never actually separates below max zoom — it keeps leader treatment across the
+whole displaced range; and member numbers stop at two, not three, because a
+third needs an ordering supercluster doesn't provide for legibility the
+definition itself called marginal. Watch item: the tightest venue-pin pair in
+the displaced range is 39.06 px against 38 px pins on a 343 px frame — ~1 px of
+clearance, a property of the current venue set (limiting pair is the
+pre-existing venues 1 and 4); the overlap test runs at 560 px and 375 px
+viewports for exactly this reason.
+
 ### 2026-08-23 — bus route lines: A, B and 67 drawn from a refreshed cache
 
 Shipped per `definitions/bus-route-lines.md`'s ruling (option (a)): the main

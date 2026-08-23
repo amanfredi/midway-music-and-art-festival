@@ -285,16 +285,29 @@ test('the legend names both bus route classes in the colors the map draws them',
 });
 
 // A count on a cluster reads as a venue number — venue pins carry exactly that,
-// from the key list — so clusters carry no text at all (Anthony, 2026-08-10).
-test('clustered venue pins show no number that could be mistaken for a venue', async ({ page }) => {
+// from the key list (Anthony, 2026-08-10). The members' own numbers are the one
+// sanctioned exception (2026-08-23): those digits ARE the pin vocabulary. So the
+// only digits a stack may carry are its members', and only while two of them
+// still fit — the branch past that has to be no text at all, which is what keeps
+// a count off the glyph however the expression is later edited.
+test('a venue stack shows its members numbers and never a count', async ({ page }) => {
   await gotoMap(page);
 
-  const clusterLayout = await mapEval(page, (map) => {
-    const layer = map.getStyle().layers.find((l) => l.id === 'venue-cluster');
-    return layer ? layer.layout ?? {} : null;
-  });
-  expect(clusterLayout, 'the venue-cluster layer is missing').not.toBeNull();
-  expect(clusterLayout['text-field'], 'clusters must not render a count').toBeUndefined();
+  const textField = await mapEval(page, (map) => map.getLayoutProperty('venue-cluster', 'text-field'));
+  expect(textField, 'the venue-cluster layer is missing its label').toBeTruthy();
+  expect(textField[0]).toBe('case');
+  expect(textField[1], 'the labelled branch must be the two-member case').toEqual([
+    '==',
+    ['get', 'point_count'],
+    2,
+  ]);
+  expect(textField[2], 'a labelled stack must read its members numbers, nothing else').toEqual([
+    'concat',
+    ['to-string', ['get', 'labelMin']],
+    '\n',
+    ['to-string', ['get', 'labelMax']],
+  ]);
+  expect(textField[textField.length - 1], 'a stack of three or more must carry no text').toBe('');
 
   // And the venue pins that are not clusters still carry their key-list number.
   const pin = await findPin(page, 'venue-pin');
@@ -305,7 +318,10 @@ test('clustered venue pins show no number that could be mistaken for a venue', a
 // Every venue must be reachable even when zoom cannot separate its pin from a
 // neighbour's. Two venues share a coordinate (Mosaic on a Stick sits inside
 // Hamline Park — valid data, see CLAUDE.md), so a cluster that cannot expand
-// opens a picker listing what is under it.
+// opens a picker listing what is under it. This is the path below the split
+// zoom; above it the pair draws as displaced pins with a tap each
+// (map-coincident.spec.mjs), so the view is set from the split rather than from
+// the closest zoom.
 test('a cluster that no zoom can split opens a picker instead of a dead tap', async ({ page }) => {
   await gotoMap(page);
 
@@ -317,7 +333,7 @@ test('a cluster that no zoom can split opens a picker instead of a dead tap', as
     }
     const [key, names] = [...byPosition.entries()].find(([, list]) => list.length > 1) ?? [];
     if (!key) return null;
-    map.jumpTo({ center: key.split(',').map(Number), zoom: map.getMaxZoom() - 3 });
+    map.jumpTo({ center: key.split(',').map(Number), zoom: map.getLayer('venue-leader-pin').minzoom - 0.5 });
     await new Promise((r) => map.once('idle', () => setTimeout(r, 300)));
     const rect = map.getCanvas().getBoundingClientRect();
     const point = map.project(key.split(',').map(Number));

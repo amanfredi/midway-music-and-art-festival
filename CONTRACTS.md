@@ -444,7 +444,9 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 
   Pins are canvas images built in `map.js` and drawn as symbol layers, so they
   are not DOM nodes and carry no CSS. Diamonds are **unstroked** — no white
-  keyline. Venue pins draw a size level above the rest — **38 px vs 22 px on
+  keyline — except that a venue displaced off a shared location draws as one
+  composite image carrying dot, line and diamond together (leader treatment,
+  below). Venue pins draw a size level above the rest — **38 px vs 22 px on
   screen** (`VENUE_R` 19 / `SMALL_R` 11) — and transit, featured-destination
   and generic sponsor pins are all the same size. That 1.73× is an **accepted
   deviation** from the 2× step the map a11y guide asks for: at the home view
@@ -517,21 +519,67 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   priority first looks equivalent and is not — with a box this wide, a venue pin
   10 px away beat the transit pin directly under the finger.
 
+  Distance is measured to where a pin's diamond is **drawn**, which for a
+  displaced venue is its coordinate plus its lane offset. Measuring the
+  coordinate is what breaks: the Hamline Park pair share theirs exactly, every
+  tap ties, and the tie-break is layer rank alone — so one of the two could not
+  be opened at all.
+
   Where pins overlap, paint order is lowest-to-highest: transit, featured
   destination, sponsor, venue.
 
   **Venue pins cluster** (`clusterRadius` 26 px) so that pins too close to tap
   apart combine as the view widens. A cluster shows a stacked-diamond glyph and
   **never a count**: venue pins carry the venue's number from the key list, so a
-  digit on a cluster reads as a venue number. Numbers belong to individual pins
-  only. `clusterMaxZoom` must stay strictly below the GeoJSON source's own
-  `maxzoom` (18), or clusters bake into the last real tile and never break apart
-  however far you zoom.
+  count on a cluster reads as a venue number. Its **members' own key-list
+  numbers** are the one sanctioned exception (ruled 2026-08-23) — those digits
+  are the pin vocabulary rather than a competing one — and only while two of them
+  fit, stacked the way transit pins stack their line letters. At three or more
+  the glyph carries no text at all, which is the overflow form. The two numbers
+  arrive as `labelMin`/`labelMax` cluster properties: supercluster promises
+  nothing about the order it reduces leaves in, so min/max is what makes them
+  come out stable. `clusterMaxZoom` must stay strictly below the GeoJSON source's
+  own `maxzoom` (18), or clusters bake into the last real tile and never break
+  apart however far you zoom.
 
   Tapping a cluster zooms to the point where it splits. When it *cannot* split
   — venues that share a coordinate have no expansion zoom, and the sheet
   legitimately contains such a pair (see CLAUDE.md) — it opens a picker sheet
   listing what is underneath instead, so no venue is unreachable on the map.
+  Only stacks below the split zoom reach this: from there inward such a pair
+  draws as displaced pins, one tap each.
+
+  **Venues that share a location are displaced from the split zoom inward.** The
+  split is a ~1200 m view, rounded to a whole zoom level and derived at runtime
+  from the frame width like every other zoom here. Wider than it, venues whose
+  diamonds would overlap stack as one cluster glyph. From it inward, each of them
+  draws its own numbered diamond, displaced east or west into a lane a pin wide
+  plus a leader run either side (2 × (`VENUE_R` + 13) px), with a dot at the
+  coordinate it really occupies and a line joining dot to diamond. Every member
+  carries **its own dot**, so an exactly coincident pair draws two dots at one
+  point. Membership is derived at runtime from the coordinates — single linkage
+  over pairs failing |dx| + |dy| < 2 × `VENUE_R` at the split zoom — never from
+  venue ids, and the offsets are then static, since zooming further in only
+  spreads true positions apart. Positional inexactness is the accepted cost in
+  this range: the dot and the line are what keep it honest, and displacement
+  without them is not an acceptable substitute.
+
+  Dot, line and diamond are **one canvas image per lane**, anchored on the dot.
+  MapLibre has no leader-line primitive, and its collision handling hides
+  symbols rather than moving them, so the displacement is precomputed and static
+  — and baking the line into the icon is what makes it impossible for another
+  label to be placed across it. The displaced pins come from their own
+  unclustered `venue-groups` source, because the clustered one hides them inside
+  a stack for most of this range; a stack whose every member is displaced drops
+  out of `venue-cluster` here, which is why the split has to be a whole zoom
+  level (that filter reads `zoom`, and MapLibre evaluates zoom in filters only at
+  integer zooms). Their tap halo is a symbol layer, `venue-leader-halo`, rather
+  than a circle: a circle layer draws at the feature's geometry, which here is
+  the dot, so the ring would mark empty paper beside the diamond. Ring and
+  diamond are placed inside their two images from the same offset. Dot and
+  line colors are `--map-leader-dot` and `--map-leader-line` in `app.css` —
+  graphics, not type, so 3:1 against `--map-paper` is the floor; they hold
+  6.77:1 and 4.77:1.
 
   Vendor pins are removed from the map entirely (vendors moved to the
   `#/vendors` list view — see UI contract). Sponsor pins exist **only** for
@@ -738,13 +786,18 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   identify one, and querying the engine is the only way to assert on them — a
   stronger check than a DOM query, since a symbol appears in
   `queryRenderedFeatures` only once placement has put it on screen.
-  Layer ids are part of the hook: `venue-pin`, `venue-cluster`, `transit-pin`,
-  `sponsor-featured-pin`, `sponsor-generic-pin`, the tap-highlight halos
-  `venue-highlight`, `transit-highlight`, `sponsor-highlight`, and for the
-  ground `arterial-fill`, `spine-fill`, `rail-green`, `rail-blue`, `bus-route`,
-  `street-label-spine`, `street-label-arterial`, `station-label`. Source ids:
-  `mapdata`, `venues`, `transit`, `sponsors`; features in the four pin sources
-  are id'd by their index, which is what `setFeatureState` addresses.
+  Layer ids are part of the hook: `venue-pin`, `venue-leader-pin`,
+  `venue-cluster`, `transit-pin`, `sponsor-featured-pin`, `sponsor-generic-pin`,
+  the tap-highlight halos `venue-highlight`, `venue-leader-halo`,
+  `transit-highlight`, `sponsor-highlight`, and for the ground `arterial-fill`,
+  `spine-fill`, `rail-green`, `rail-blue`, `bus-route`, `street-label-spine`,
+  `street-label-arterial`, `station-label`. `venue-leader-pin` and
+  `venue-leader-halo` carry the split zoom as their `minzoom`, which is how a
+  test asks where the two coincident-venue treatments meet. Source ids:
+  `mapdata`, `venues`, `venue-groups`, `transit`, `sponsors`; features in all
+  five pin sources are id'd by their index, which is what `setFeatureState`
+  addresses — a displaced venue is addressed in `venue-groups`, since that is
+  the feature on screen.
   `tests/map-helpers.mjs` wraps the waiting and querying; map tests should use
   it rather than reaching for the global directly.
 - `#pan-up`, `#pan-down`, `#pan-left`, `#pan-right` on the pan d-pad, and

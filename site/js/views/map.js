@@ -29,6 +29,11 @@ import { openVenueSheet, openSponsorSheet, openTransitSheet, openPickerSheet } f
 // range that never resolves them, so the ceiling is 120 m.
 const HOME_VIEW_M = 3000;
 const MIN_VIEW_M = 120;
+// Where the two treatments for venues that share a location meet: wider than
+// this they stack as one cluster glyph carrying their key-list numbers, from
+// here inward each draws as its own displaced diamond tethered to the point it
+// really occupies.
+const SPLIT_VIEW_M = 1200;
 
 // Transit pins are limited to stops within this distance of the festival
 // center, as the retired SVG map did it -- the extent reaches both downtowns
@@ -68,6 +73,8 @@ const MAP_COLOR_VARS = {
   labelSpine: '--map-label-spine',
   labelArterial: '--map-label-arterial',
   labelStation: '--map-label-station',
+  leaderDot: '--map-leader-dot',
+  leaderLine: '--map-leader-line',
   surface: '--color-surface',
 };
 
@@ -160,8 +167,21 @@ const CLUSTER_R = 17;
 // the diamond's sloping sides: at the label's cap height the diamond is about
 // 2 * (VENUE_R - 6) = 26 px wide, and "11" sets to ~20 px here.
 const VENUE_TEXT_PX = 16;
+// Two member numbers stacked inside a CLUSTER_R diamond. Two lines at this size
+// reach ~8.5 px either side of the centre, where the diamond is still ~17 px
+// wide, and a two-digit number sets to ~12 px (measured in the engine's own
+// font stack, 2026-08-23).
+const CLUSTER_TEXT_PX = 10;
 // The tap-highlight halo extends this far beyond the pin it rings.
 const HALO_PAD = 6;
+// Displaced-pin geometry. Members of a coincident group sit in east-west lanes
+// a pin wide plus a leader run either side, which is what makes adjacent
+// diamonds clear each other AND leaves each line long enough to be seen: at
+// the minimum 2 * VENUE_R spacing the diamond's inner tip lands on its own dot.
+const LEADER_RUN_PX = 13;
+const LEADER_LANE_PX = 2 * (VENUE_R + LEADER_RUN_PX);
+const LEADER_DOT_R = 3.5;
+const LEADER_LINE_W = 2;
 // Taps are matched against a box around the touch point rather than the icon's
 // own pixels, which is how the SVG map's oversized diamond hit targets are
 // reproduced without inflating the icons (and their collision boxes) to match.
@@ -231,8 +251,77 @@ async function loadTransitStops() {
  * intended, which is subtle enough to look merely "a bit close" rather than wrong.
  */
 function zoomForMeters(meters, pixels, lat) {
-  const mPerPixelAtZ0 = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2;
-  return Math.log2((mPerPixelAtZ0 * pixels) / meters);
+  return Math.log2((metersPerPixel(0, lat) * pixels) / meters);
+}
+
+/** The same relation read the other way: ground meters per screen pixel at `zoom`. */
+function metersPerPixel(zoom, lat) {
+  return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 / 2 ** zoom;
+}
+
+/**
+ * Venues the split zoom cannot draw apart, and the east-west offset each one
+ * is displaced by from there inward.
+ *
+ * Two diamonds with half-diagonal R overlap when their centres are closer than
+ * 2R measured |dx| + |dy| -- the measure VENUE_R itself was sized against.
+ * Anything failing that test at the split zoom, the widest view where
+ * individual numbered pins draw, is grouped by single linkage; zooming further
+ * in only spreads true positions apart, so one static offset per venue holds
+ * for the whole range. Membership comes from the coordinates alone: the sheet's
+ * coincident venues are a fact about the addresses, not a list of ids.
+ */
+function coincidentGroups(venues, { splitZoom, lat }) {
+  const mPerPx = metersPerPixel(splitZoom, lat);
+  const mPerDegLat = 111320;
+  const mPerDegLng = mPerDegLat * Math.cos((lat * Math.PI) / 180);
+  const parent = venues.map((_, i) => i);
+  const root = (i) => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+  for (let i = 0; i < venues.length; i++) {
+    for (let j = i + 1; j < venues.length; j++) {
+      const dx = Math.abs(venues[i].lng - venues[j].lng) * mPerDegLng;
+      const dy = Math.abs(venues[i].lat - venues[j].lat) * mPerDegLat;
+      if ((dx + dy) / mPerPx < 2 * VENUE_R) parent[root(i)] = root(j);
+    }
+  }
+
+  const members = new Map();
+  venues.forEach((_, i) => members.set(root(i), [...(members.get(root(i)) ?? []), i]));
+  const offsets = new Map();
+  for (const group of members.values()) {
+    if (group.length < 2) continue;
+    // Lanes run west to east so a displaced diamond stays on the side of the
+    // group its venue is really on. An odd group's middle lane is offset 0 --
+    // that member draws at its own coordinate, needing no tether.
+    group.sort((a, b) => venues[a].lng - venues[b].lng || a - b);
+    group.forEach((index, lane) => {
+      offsets.set(index, (lane - (group.length - 1) / 2) * LEADER_LANE_PX);
+    });
+  }
+  return offsets;
+}
+
+function diamondPath(ctx, cx, cy, radius) {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - radius);
+  ctx.lineTo(cx + radius, cy);
+  ctx.lineTo(cx, cy + radius);
+  ctx.lineTo(cx - radius, cy);
+  ctx.closePath();
+}
+
+/**
+ * A canvas at `dpr`, sized in CSS pixels, plus the centre to draw around. The
+ * centre is where MapLibre anchors the image on the feature's coordinate, so a
+ * composite icon states its true position by what it draws there.
+ */
+function pinCanvas(halfWidth, halfHeight, dpr) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(halfWidth * 2 * dpr);
+  canvas.height = Math.ceil(halfHeight * 2 * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, cx: canvas.width / (2 * dpr), cy: canvas.height / (2 * dpr) };
 }
 
 /**
@@ -241,20 +330,9 @@ function zoomForMeters(meters, pixels, lat) {
  * an outline; this reproduces both.
  */
 function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
-  const pad = 2 + strokeWidth;
-  const size = Math.ceil((radius + pad) * 2 * dpr);
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  const c = size / (2 * dpr);
-  ctx.beginPath();
-  ctx.moveTo(c, c - radius);
-  ctx.lineTo(c + radius, c);
-  ctx.lineTo(c, c + radius);
-  ctx.lineTo(c - radius, c);
-  ctx.closePath();
+  const half = radius + 2 + strokeWidth;
+  const { ctx, cx, cy } = pinCanvas(half, half, dpr);
+  diamondPath(ctx, cx, cy, radius);
   if (fill) {
     ctx.fillStyle = fill;
     ctx.fill();
@@ -264,38 +342,25 @@ function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
     ctx.lineWidth = strokeWidth;
     ctx.stroke();
   }
-  return { data: ctx.getImageData(0, 0, size, size), pixelRatio: dpr };
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
 }
 
 /**
- * The cluster symbol: three diamonds fanned behind each other, no number.
+ * The cluster symbol: three diamonds fanned behind each other. The front one is
+ * centred on the anchor, so a label placed on the feature lands on it.
  *
- * A count here is actively misleading. Venue pins carry a venue's number from
+ * A *count* here is actively misleading. Venue pins carry a venue's number from
  * the key list, so a cluster reading "3" is indistinguishable from venue 3 --
- * on the phone it was read as exactly that (Anthony, 2026-08-10). The stack
- * says "more than one venue, zoom or tap" using the same diamond vocabulary,
- * and numbers stay the exclusive property of individual venue pins.
+ * on the phone it was read as exactly that (Anthony, 2026-08-10). The member
+ * venues' own numbers are the sanctioned exception (2026-08-23): those digits
+ * are the pin vocabulary rather than a competing one. Past two members they
+ * stop fitting and the glyph goes back to saying only "more than one venue".
  */
 function clusterImage(radius, { fill, stroke }, dpr) {
   const offset = Math.round(radius * 0.34);
   const strokeWidth = 2;
-  const pad = 2 + strokeWidth + offset * 2;
-  const size = Math.ceil((radius + pad) * 2 * dpr);
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(dpr, dpr);
-  const c = size / (2 * dpr);
-
-  const diamond = (cx, cy, r) => {
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r);
-    ctx.lineTo(cx + r, cy);
-    ctx.lineTo(cx, cy + r);
-    ctx.lineTo(cx - r, cy);
-    ctx.closePath();
-  };
+  const half = radius + 2 + strokeWidth + offset * 2;
+  const { ctx, cx, cy } = pinCanvas(half, half, dpr);
 
   // Back to front. Each rear diamond is outlined in the surface color so the
   // stack reads as separate sheets rather than one blurred blob.
@@ -304,15 +369,84 @@ function clusterImage(radius, { fill, stroke }, dpr) {
     [offset / 2, -offset / 2],
     [0, 0],
   ]) {
-    diamond(c + dx, c + dy, radius);
+    diamondPath(ctx, cx + dx, cy + dy, radius);
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = stroke;
     ctx.lineWidth = strokeWidth;
     ctx.stroke();
   }
-  return { data: ctx.getImageData(0, 0, size, size), pixelRatio: dpr };
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
 }
+
+/**
+ * A venue pin displaced `offset` pixels east or west of the coordinate it
+ * belongs to, with a dot back at that coordinate and a line joining the two.
+ *
+ * All three parts are one image, anchored on the dot. MapLibre has no
+ * leader-line primitive and its collision handling hides symbols rather than
+ * moving them (which is why addPins turns collision off entirely), so the
+ * displacement is precomputed and static -- and baking the line into the icon
+ * is what makes it impossible for another label to be placed across it.
+ */
+function leaderImage(offset, { fill, dot, line }, dpr) {
+  const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + VENUE_R + 2, VENUE_R + 2, dpr);
+
+  if (offset !== 0) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + offset, cy);
+    ctx.strokeStyle = line;
+    ctx.lineWidth = LEADER_LINE_W;
+    ctx.stroke();
+  }
+
+  diamondPath(ctx, cx + offset, cy, VENUE_R);
+  ctx.fillStyle = fill;
+  ctx.fill();
+
+  // Drawn last: the dot is the one part that must never be covered, since it is
+  // the only thing on the map claiming the venue's real position. A member the
+  // lane layout leaves at its own coordinate has nothing to point at.
+  if (offset !== 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, LEADER_DOT_R, 0, Math.PI * 2);
+    ctx.fillStyle = dot;
+    ctx.fill();
+  }
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
+}
+
+/**
+ * The tap-highlight ring for a displaced pin, positioned inside the image the
+ * same way leaderImage() positions its diamond.
+ *
+ * The circle layers the other pins use draw at the feature's geometry, which
+ * for these pins is the dot rather than the diamond -- a halo around empty
+ * paper. Sharing one offset between two composite images is what keeps ring and
+ * diamond aligned by construction instead of by two expressions agreeing.
+ */
+function leaderHaloImage(offset, { fill, stroke }, dpr) {
+  const radius = VENUE_R + HALO_PAD;
+  const strokeWidth = 2;
+  const pad = 2 + strokeWidth;
+  const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + radius + pad, radius + pad, dpr);
+
+  ctx.beginPath();
+  ctx.arc(cx + offset, cy, radius, 0, Math.PI * 2);
+  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = strokeWidth;
+  ctx.stroke();
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
+}
+
+/** Image ids for a displaced pin. One pair per distinct offset. */
+const leaderIconId = (offset) => `pin-venue-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
+const leaderHaloId = (offset) => `halo-venue-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
 
 // The three zooms every zoom-keyed stop below is pinned to: the full extent,
 // the home view, and the closest zoom. They follow from the calibration and the
@@ -681,6 +815,15 @@ export async function renderMap(container, content) {
   // overzoomed: a clusterMaxZoom of 18 would bake clusters into the last real
   // tile, so they would never break apart no matter how far you zoomed.
   const clusterMaxZoom = Math.min(17, Math.round(zoomForMeters(210, framePx, lat)));
+  // A whole zoom level, like clusterMaxZoom: the filter that drops a stack of
+  // displaced venues reads `zoom`, which MapLibre evaluates only at integer
+  // zooms (tile zoom), so a fractional split would swap the two treatments in
+  // at different moments and briefly draw both.
+  const splitZoom = Math.round(zoomForMeters(SPLIT_VIEW_M, framePx, lat));
+  const groupOffsets = coincidentGroups(venues, { splitZoom, lat });
+  const displaced = [...groupOffsets.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([index, offset]) => ({ venue: venues[index], label: String(index + 1), offset }));
 
   wrap.innerHTML = '<div class="map-gl" id="map-gl" data-testid="map-canvas"></div>';
   const glHost = wrap.querySelector('#map-gl');
@@ -795,17 +938,25 @@ export async function renderMap(container, content) {
     if (selectedPin) map.setFeatureState(selectedPin, { selected: true });
   };
 
+  // Which source holds the feature that draws a given venue: a displaced venue
+  // is drawn from its own unclustered source, and feature-state addresses the
+  // feature that is actually on screen.
+  const pinRef = new Map(venues.map((v, i) => [v.id, { source: 'venues', id: i, center: [v.lng, v.lat] }]));
+  displaced.forEach((d, i) =>
+    pinRef.set(d.venue.id, { source: 'venue-groups', id: i, center: [d.venue.lng, d.venue.lat] })
+  );
+
   map.on('load', () => {
     if (generation !== renderGeneration) return;
-    addPins(map, { venues, stops: pinnedStops, sponsors: pinnedSponsors, clusterMaxZoom, colors });
+    addPins(map, { venues, stops: pinnedStops, sponsors: pinnedSponsors, clusterMaxZoom, colors, displaced, splitZoom });
     wirePinTaps(map, { transitById, maxZoom, selectPin });
     // A venue card in the key list behaves as though its pin was tapped:
     // highlight the pin and recenter on it, on top of opening the sheet.
     linkVenueToMap = (venueId) => {
-      const idx = venues.findIndex((v) => v.id === venueId);
-      if (idx < 0) return;
-      selectPin('venues', idx);
-      map.easeTo({ center: [venues[idx].lng, venues[idx].lat], duration: cameraDuration(450) });
+      const ref = pinRef.get(venueId);
+      if (!ref) return;
+      selectPin(ref.source, ref.id);
+      map.easeTo({ center: ref.center, duration: cameraDuration(450) });
     };
   });
 
@@ -879,9 +1030,19 @@ function renderPinAltList(container, stops, sponsors) {
   });
 }
 
-function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
+function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displaced, splitZoom }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  // Zero is always a legal lane -- an odd group's middle member keeps its own
+  // coordinate -- and seeding it keeps the text-offset match below well formed
+  // when nothing is displaced at all.
+  const laneOffsets = [...new Set([0, ...displaced.map((d) => d.offset)])];
   map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
+  const leaderColors = { fill: colors.venue, dot: colors.leaderDot, line: colors.leaderLine };
+  const haloColors = { fill: colors.accent, stroke: colors.accentDark };
+  for (const offset of laneOffsets) {
+    map.addImage(leaderIconId(offset), leaderImage(offset, leaderColors, dpr).data, { pixelRatio: dpr });
+    map.addImage(leaderHaloId(offset), leaderHaloImage(offset, haloColors, dpr).data, { pixelRatio: dpr });
+  }
   map.addImage('pin-cluster', clusterImage(CLUSTER_R, { fill: colors.venue, stroke: colors.surface }, dpr).data, {
     pixelRatio: dpr,
   });
@@ -898,18 +1059,63 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
   // can address it — the tap highlight is a paint expression keyed on
   // `feature-state.selected`, and feature-state only works on features with
   // ids. The slug stays in properties; it is what the sheets open with.
+  const displacedIds = new Set(displaced.map((d) => d.venue.id));
   map.addSource('venues', {
     type: 'geojson',
     cluster: true,
     clusterRadius: 26,
     clusterMaxZoom,
+    // Displaced venues stay in here, clustering exactly as they always did, so
+    // that the wide zooms this source owns are unchanged -- they are only
+    // filtered out of the individual-pin layers, where their own source draws
+    // them instead.
+    clusterProperties: {
+      // The member numbers a two-venue stack labels itself with. min/max rather
+      // than a joined list because supercluster promises nothing about the order
+      // it reduces leaves in, and these two digits have to come out stable.
+      labelMin: ['min', ['get', 'labelNum']],
+      labelMax: ['max', ['get', 'labelNum']],
+      // A stack of nothing but displaced venues is drawn by those pins from the
+      // split zoom inward, so it drops out of this layer there.
+      groupedCount: ['+', ['case', ['get', 'grouped'], 1, 0]],
+    },
     data: {
       type: 'FeatureCollection',
       features: venues.map((v, i) => ({
         type: 'Feature',
         id: i,
-        properties: { id: v.id, label: String(i + 1), name: v.name },
+        properties: {
+          id: v.id,
+          label: String(i + 1),
+          labelNum: i + 1,
+          name: v.name,
+          grouped: displacedIds.has(v.id),
+        },
         geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
+      })),
+    },
+  });
+
+  // Venues no zoom can draw apart, one feature each at its true coordinate,
+  // never clustered: the clustered source hides them inside a stack for as long
+  // as they are within clusterRadius, which is most of the range where they need
+  // to be individually visible and tappable.
+  map.addSource('venue-groups', {
+    type: 'geojson',
+    data: {
+      type: 'FeatureCollection',
+      features: displaced.map((d, i) => ({
+        type: 'Feature',
+        id: i,
+        properties: {
+          id: d.venue.id,
+          label: d.label,
+          name: d.venue.name,
+          offset: d.offset,
+          icon: leaderIconId(d.offset),
+          halo: leaderHaloId(d.offset),
+        },
+        geometry: { type: 'Point', coordinates: [d.venue.lng, d.venue.lat] },
       })),
     },
   });
@@ -962,21 +1168,10 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
     'circle-stroke-width': 2,
     'circle-stroke-opacity': selectedOnly(1),
   });
-  map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', paint: haloPaint(SMALL_R) });
-  map.addLayer({ id: 'sponsor-highlight', type: 'circle', source: 'sponsors', paint: haloPaint(SMALL_R) });
-  map.addLayer({
-    id: 'venue-highlight',
-    type: 'circle',
-    source: 'venues',
-    filter: ['!', ['has', 'point_count']],
-    paint: haloPaint(VENUE_R),
-  });
-
-  // Layer order IS paint order, lowest first: transit, featured destination,
-  // sponsor, venue -- the priority the SVG map gets from document order.
   // allow-overlap/ignore-placement keep every pin drawn: MapLibre's collision
   // handling HIDES the loser, which would be worse than today's overlap. What
-  // stops venues piling up is the clustering above, not collision.
+  // stops venues piling up is the clustering and the displacement above, not
+  // collision.
   const pinLayout = { 'icon-allow-overlap': true, 'icon-ignore-placement': true };
   const labelLayout = {
     'text-allow-overlap': true,
@@ -984,6 +1179,34 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
     'text-font': FONT_BOLD,
   };
 
+  map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', paint: haloPaint(SMALL_R) });
+  map.addLayer({ id: 'sponsor-highlight', type: 'circle', source: 'sponsors', paint: haloPaint(SMALL_R) });
+  // The individual venues this source still draws: not a stack, and not one of
+  // the venues whose own source draws it displaced.
+  const plainVenue = ['all', ['!', ['has', 'point_count']], ['==', ['get', 'grouped'], false]];
+  map.addLayer({
+    id: 'venue-highlight',
+    type: 'circle',
+    source: 'venues',
+    filter: plainVenue,
+    paint: haloPaint(VENUE_R),
+  });
+  // A displaced pin's halo is a symbol rather than a circle, for the one reason
+  // that a circle layer draws at the feature's geometry -- which for these pins
+  // is the leader dot, so the ring would land on empty paper beside the diamond
+  // it is meant to mark. The ring sits inside its image exactly where the
+  // diamond sits inside the pin's, both placed from the same offset.
+  map.addLayer({
+    id: 'venue-leader-halo',
+    type: 'symbol',
+    source: 'venue-groups',
+    minzoom: splitZoom,
+    layout: { ...pinLayout, 'icon-image': ['get', 'halo'] },
+    paint: { 'icon-opacity': selectedOnly(1) },
+  });
+
+  // Layer order IS paint order, lowest first: transit, featured destination,
+  // sponsor, venue -- the priority the SVG map gets from document order.
   map.addLayer({
     id: 'transit-pin',
     type: 'symbol',
@@ -1016,22 +1239,69 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors }) {
     id: 'venue-cluster',
     type: 'symbol',
     source: 'venues',
-    filter: ['has', 'point_count'],
-    // No text of any kind: see clusterImage(). The stacked glyph carries the
-    // meaning, and a digit here would read as a venue number.
-    layout: { ...pinLayout, 'icon-image': 'pin-cluster' },
+    filter: [
+      'all',
+      ['has', 'point_count'],
+      [
+        'any',
+        ['<', ['zoom'], splitZoom],
+        ['<', ['to-number', ['get', 'groupedCount']], ['to-number', ['get', 'point_count']]],
+      ],
+    ],
+    layout: {
+      ...pinLayout,
+      ...labelLayout,
+      'icon-image': 'pin-cluster',
+      // Member venue numbers, stacked the way transit pins stack line letters.
+      // Two fit; past that the fallback is no text at all, which is what keeps
+      // a count off the glyph -- see clusterImage().
+      'text-field': [
+        'case',
+        ['==', ['get', 'point_count'], 2],
+        ['concat', ['to-string', ['get', 'labelMin']], '\n', ['to-string', ['get', 'labelMax']]],
+        '',
+      ],
+      'text-size': CLUSTER_TEXT_PX,
+      'text-line-height': 0.95,
+    },
+    paint: { 'text-color': '#ffffff' },
   });
   map.addLayer({
     id: 'venue-pin',
     type: 'symbol',
     source: 'venues',
-    filter: ['!', ['has', 'point_count']],
+    filter: plainVenue,
     layout: {
       ...pinLayout,
       ...labelLayout,
       'icon-image': 'pin-venue',
       'text-field': ['get', 'label'],
       'text-size': VENUE_TEXT_PX,
+    },
+    paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: 'venue-leader-pin',
+    type: 'symbol',
+    source: 'venue-groups',
+    minzoom: splitZoom,
+    layout: {
+      ...pinLayout,
+      ...labelLayout,
+      'icon-image': ['get', 'icon'],
+      'text-field': ['get', 'label'],
+      'text-size': VENUE_TEXT_PX,
+      // The number rides the diamond, so it is displaced by as much as the icon
+      // draws it -- in ems here, unlike every other measure in this file. Built
+      // as a match over the lane rather than read from the feature because the
+      // GeoJSON-to-tile conversion stringifies any property that isn't a scalar,
+      // and an array offset comes back as "[-2,0]" and silently falls back to 0.
+      'text-offset': [
+        'match',
+        ['get', 'offset'],
+        ...laneOffsets.flatMap((offset) => [offset, ['literal', [offset / VENUE_TEXT_PX, 0]]]),
+        ['literal', [0, 0]],
+      ],
     },
     paint: { 'text-color': '#ffffff' },
   });
@@ -1052,7 +1322,25 @@ function makeTransitFilter(home) {
 
 function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
   // Topmost first, so an overlap resolves the way the SVG map's paint order does.
-  const PIN_LAYERS = ['venue-pin', 'venue-cluster', 'sponsor-generic-pin', 'sponsor-featured-pin', 'transit-pin'];
+  const PIN_LAYERS = [
+    'venue-leader-pin',
+    'venue-pin',
+    'venue-cluster',
+    'sponsor-generic-pin',
+    'sponsor-featured-pin',
+    'transit-pin',
+  ];
+
+  // Where a pin's tappable diamond is drawn, which for a displaced venue is not
+  // where its coordinate is. Measuring the coordinate instead is the one hazard
+  // in this treatment: the two Hamline Park venues share theirs exactly, so
+  // every tap ties and resolves by whichever feature the engine enumerated
+  // first -- one of the two could not be opened at all.
+  const drawnPoint = (feature) => {
+    const point = map.project(feature.geometry.coordinates);
+    const offset = feature.properties.offset;
+    return typeof offset === 'number' ? { x: point.x + offset, y: point.y } : point;
+  };
 
   const openTransit = (id) => {
     const stop = transitById.get(id);
@@ -1075,7 +1363,7 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
     for (let i = 0; i < PIN_LAYERS.length; i++) {
       const layer = PIN_LAYERS[i];
       for (const f of map.queryRenderedFeatures(box, { layers: [layer] })) {
-        const p = map.project(f.geometry.coordinates);
+        const p = drawnPoint(f);
         const d = Math.hypot(p.x - e.point.x, p.y - e.point.y);
         if (!best || d < best.d - 0.5 || (Math.abs(d - best.d) <= 0.5 && i < best.rank)) {
           best = { layer, feature: f, d, rank: i };
@@ -1088,8 +1376,8 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
       return;
     }
 
-    if (best.layer === 'venue-pin') {
-      selectPin('venues', best.feature.id);
+    if (best.layer === 'venue-pin' || best.layer === 'venue-leader-pin') {
+      selectPin(best.layer === 'venue-pin' ? 'venues' : 'venue-groups', best.feature.id);
       openVenueSheet(best.feature.properties.id);
     } else if (best.layer === 'venue-cluster') {
       // No highlight for a cluster: it stands for several pins, and the halo
@@ -1119,7 +1407,8 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
  * Tapping a cluster zooms until its venues separate. When they can't -- two
  * venues in this sheet share identical coordinates, and coincident points have
  * no expansion zoom -- it lists them instead, so the pin underneath is reachable
- * either way. That case is the whole reason the overlapping-pin item was open.
+ * either way. Only stacks below the split zoom reach this: from there inward
+ * such a stack is drawn as displaced pins, one tap each.
  */
 function expandCluster(map, feature, { maxZoom }) {
   const source = map.getSource('venues');

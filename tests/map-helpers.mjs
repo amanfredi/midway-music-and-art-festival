@@ -92,7 +92,8 @@ export async function centreOnPin(page, layer, id) {
   return page.evaluate(
     async ([layerId, wanted, featuresFn]) => {
       const map = window.__mmafMap;
-      const source = layerId === 'transit-pin' ? 'transit' : layerId === 'venue-pin' ? 'venues' : 'sponsors';
+      const source =
+        { 'transit-pin': 'transit', 'venue-pin': 'venues', 'venue-leader-pin': 'venue-groups' }[layerId] ?? 'sponsors';
       const features = new Function('return ' + featuresFn)()(map, source);
       const match = features.find((f) => f.properties.id === wanted);
       if (!match) return null;
@@ -120,9 +121,14 @@ export async function findEmptySpot(page, { slop = 14 } = {}) {
     ([pad]) => {
       const map = window.__mmafMap;
       const rect = map.getCanvas().getBoundingClientRect();
-      const layers = ['venue-pin', 'venue-cluster', 'sponsor-generic-pin', 'sponsor-featured-pin', 'transit-pin'].filter(
-        (id) => map.getLayer(id),
-      );
+      const layers = [
+        'venue-pin',
+        'venue-leader-pin',
+        'venue-cluster',
+        'sponsor-generic-pin',
+        'sponsor-featured-pin',
+        'transit-pin',
+      ].filter((id) => map.getLayer(id));
       for (let fy = 0.15; fy < 0.9; fy += 0.1) {
         for (let fx = 0.15; fx < 0.9; fx += 0.1) {
           const x = rect.width * fx;

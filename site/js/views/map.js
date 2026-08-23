@@ -36,6 +36,13 @@ const MIN_VIEW_M = 120;
 // treatment itself starts one whole zoom level wider when it provably fits
 // there -- see leaderStartZoom.
 const SPLIT_VIEW_M = 1200;
+// Collision-behavior zooms (cluster release, split, leader zoom) derive from
+// this fixed reference frame, never the device's: pins are constant CSS pixels
+// at a given zoom everywhere, so where they stop fitting apart is a property
+// of the venue set, not the screen -- frame-derived, a 560 px frame decided
+// membership a level deeper than every phone and shipped a different map
+// (2026-08-23). View zooms (extent, home, closest) still use the real frame.
+const PIN_GEOMETRY_REF_PX = 375;
 
 // Transit pins are limited to stops within this distance of the festival
 // center, as the retired SVG map did it -- the extent reaches both downtowns
@@ -338,15 +345,15 @@ function leastDrawnL1(a, b, sMax, sFrom = 1) {
  * zoom itself.
  *
  * Membership is decided at the split zoom; one level out every true position
- * sits at half the pixel distance, so the fit cannot be assumed -- on a phone
- * frame the two Hamline-side groups' displaced diamonds would land 21.7 px
- * apart against the 38 they need, while a 560 px frame clears with room to
- * spare (measured 2026-08-23, a property of the current venue set). Plain
- * pairs only count from the zoom where clustering releases them; a grouped
- * venue within clusterRadius of a plain one rejects outright, because that
- * stack would draw the venue twice (once in the glyph, once displaced). Both
- * cluster tests are pairwise, a conservative stand-in for supercluster's
- * hierarchical merge.
+ * sits at half the pixel distance, so the fit cannot be assumed -- the current
+ * venue sheet rejects it (two ungrouped venues would draw 33 px apart there
+ * against the 38 they need, measured 2026-08-23). Plain pairs only count from
+ * the zoom where clustering releases them -- an integer tile zoom, since
+ * supercluster builds per tile, so modeling release as continuous rejected
+ * states that never render. A grouped venue within clusterRadius of a plain
+ * one rejects outright, because that stack would draw the venue twice (once
+ * in the glyph, once displaced). Both cluster tests are pairwise, a
+ * conservative stand-in for supercluster's hierarchical merge.
  */
 function leaderStartZoom(venues, offsets, { splitZoom, maxZoom, lat }) {
   const candidate = splitZoom - 1;
@@ -362,7 +369,10 @@ function leaderStartZoom(venues, offsets, { splitZoom, maxZoom, lat }) {
       const b = points[j];
       const euclid = Math.hypot(b.x - a.x, b.y - a.y);
       if (a.grouped !== b.grouped && euclid < 26) return splitZoom;
-      const sFrom = !a.grouped && !b.grouped && euclid < 26 ? 26 / euclid : 1;
+      // Released at the first integer tile zoom where the pair spans more than
+      // clusterRadius; `candidate` is itself whole, so powers of two land on
+      // tile boundaries.
+      const sFrom = !a.grouped && !b.grouped && euclid < 26 ? 2 ** Math.ceil(Math.log2(26 / euclid)) : 1;
       if (sFrom <= sMax && leastDrawnL1(a, b, sMax, sFrom) < 2 * VENUE_R) return splitZoom;
     }
   }
@@ -936,12 +946,12 @@ export async function renderMap(container, content) {
   // at 17 because a GeoJSON source's own maxzoom is 18 and tiles above it are
   // overzoomed: a clusterMaxZoom of 18 would bake clusters into the last real
   // tile, so they would never break apart no matter how far you zoomed.
-  const clusterMaxZoom = Math.min(17, Math.round(zoomForMeters(210, framePx, lat)));
+  const clusterMaxZoom = Math.min(17, Math.round(zoomForMeters(210, PIN_GEOMETRY_REF_PX, lat)));
   // A whole zoom level, like clusterMaxZoom: the filter that drops a stack of
   // displaced venues reads `zoom`, which MapLibre evaluates only at integer
   // zooms (tile zoom), so a fractional split would swap the two treatments in
   // at different moments and briefly draw both.
-  const splitZoom = Math.round(zoomForMeters(SPLIT_VIEW_M, framePx, lat));
+  const splitZoom = Math.round(zoomForMeters(SPLIT_VIEW_M, PIN_GEOMETRY_REF_PX, lat));
   const groupOffsets = coincidentGroups(venues, { splitZoom, lat });
   const leaderZoom = leaderStartZoom(venues, groupOffsets, { splitZoom, maxZoom, lat });
   const displaced = [...groupOffsets.entries()]

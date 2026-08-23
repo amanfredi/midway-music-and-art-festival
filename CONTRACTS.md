@@ -415,9 +415,17 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   350 m floor, two venues 14 m apart rendered closer together than one pin is
   wide at every frame width, so no collision or cluster handling could separate
   them. The map frame is a fixed square capped at 560px.
-  Zooms are derived at runtime from the frame's pixel width, never hardcoded
-  (see `zoomForMeters` in `map.js` for the one constant that is easy to get
-  wrong).
+  Zooms are derived at runtime, never hardcoded (see `zoomForMeters` in
+  `map.js` for the one constant that is easy to get wrong) — but from two
+  different widths, on purpose. **View zooms** (extent, home, closest) come
+  from the real frame's pixel width: they decide how much map is visible.
+  **Collision-behavior zooms** (cluster release, the split, the leader zoom)
+  come from a fixed 375 px reference frame (`PIN_GEOMETRY_REF_PX`): pins are
+  constant CSS pixels at a given zoom on every device, so where two pins stop
+  fitting apart is a property of the venue set and the latitude, not of the
+  screen. Deriving those from the live frame made a 560 px desktop frame
+  decide group membership a whole zoom level deeper than every phone and ship
+  a visibly different map (deployed, caught 2026-08-23).
 - **Pins hold a constant on-screen size** because symbol layers are sized in
   screen pixels; nothing counter-scales.
 - Transit pins are limited to stops within **1.5 miles** of `home_center`. The
@@ -560,13 +568,12 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   each.
 
   **Venues that share a location are displaced from the leader zoom inward.**
-  Group membership is decided at the split — a ~1200 m view, rounded to a
-  whole zoom level and derived at runtime from the frame width like every
-  other zoom here — and the treatment starts one whole level wider than the
-  split when every drawn pin provably clears there (`leaderStartZoom`; a
-  560 px frame clears, phone frames do not — their two groups' diamonds would
-  land 21.7 px apart against the 38 they need — so their leader zoom stays at
-  the split). Wider than the leader zoom, venues whose diamonds would overlap
+  Group membership is decided at the split — a ~1200 m view over the fixed
+  375 px reference frame (see the zoom clause above), rounded to a whole zoom
+  level — and the treatment starts one whole level wider than the split when
+  every drawn pin provably clears there (`leaderStartZoom`; the current venue
+  sheet rejects it, so the leader zoom equals the split). Both are the same on
+  every device. Wider than the leader zoom, venues whose diamonds would overlap
   stack as one cluster glyph. From it inward, each of them draws its own
   numbered diamond, displaced east or west into a lane a pin wide plus a
   leader run either side (2 × (`VENUE_R` + 13) px), with a dot at the

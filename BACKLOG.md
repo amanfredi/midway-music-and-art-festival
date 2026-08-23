@@ -131,6 +131,18 @@ lane — but sponsor content is still placeholder fixtures. When the live
 sponsor sheet lands, re-check the spacing; extending `displacedStopOffsets` to
 sponsors is mechanical (small-pin lanes, no letters to offset).
 
+**Map presentation is CI-validated against fixtures only** (added 2026-08-23).
+The venues sheet is live, and pin-collision outcomes (group membership, the
+leader-zoom guard, displaced-stop lanes) are data-dependent with margins as
+thin as ~1 px. This bit once: the sheet's Hamline Park point moved ~77 m after
+the fixtures were snapshotted, and the deployed map regressed in a way every
+fixture-based test missed. Runtime derivation plus the frame-independent
+reference frame now absorb coordinate drift, but near-threshold flips remain
+silent. Consider a build-time report in `scripts/build.mjs` that recomputes
+pair margins from the fetched sheet and warns when any drawn-pin clearance
+falls under a floor — the build already refuses invalid rows, so it is the
+natural choke point.
+
 **Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure
 in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
 map frame — 38 px venue pins, pin-matched legend swatches, the pan d-pad, and
@@ -301,10 +313,11 @@ None of these can be checked from the screenshot harness or the test suite.
       leader zoom inward, and the two displaced transit stops (beside Ginkgo
       and Black Garnet) — do the dot and line read as "this pin belongs
       there", and do the 10 px digits on a stack stay legible?
-      Note the venue-pin lane clearance at a 343 px frame is ~1 px (39.06 px
-      between centres against 38 px pins, limiting pair venues 1 and 4, a
-      property of the current venue set) — if the sheet gains venues,
-      re-measure before trusting the home view.
+      Note the tightest venue-pin clearance is ~1 px (39.07 px between centres
+      against 38 px pins at the leader zoom, limiting pair venues 1 and 4, a
+      property of the current venue set and now the same on every frame
+      width) — if the sheet gains venues, re-measure before trusting the home
+      view.
 - [ ] Sticky control bar against the iOS status bar when installed.
       `.schedule-controls` pins at `top: var(--safe-top)`, which *should*
       evaluate to 0 given `apple-mobile-web-app-status-bar-style: default`.

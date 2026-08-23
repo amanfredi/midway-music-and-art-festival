@@ -10,7 +10,7 @@
 // icons are read back pixel by pixel, because where the diamond sits inside its
 // image is the whole of what "displaced" means.
 import { test, expect } from '@playwright/test';
-import { gotoMap, mapEval, sheet, sourceFeatures, SOURCE_FEATURES_FN } from './map-helpers.mjs';
+import { gotoMap, mapEval, sheet, sourceFeatures, waitForMapIdle, SOURCE_FEATURES_FN } from './map-helpers.mjs';
 
 /**
  * Where the biggest thing in a composite icon sits, in CSS pixels from the
@@ -232,11 +232,9 @@ test('no two venue symbols draw on top of each other from the split zoom inward'
   await expectNoOverlapFromSplitZoom(page);
 });
 
-// The same check on a phone-width frame, because the split is derived from the
-// frame width and lands a whole zoom level lower there — which puts the two
-// groups closer together in pixels than any wider frame does. The band where
-// these pins would overlap "varies sharply and unpredictably with frame width",
-// so one viewport does not settle it.
+// The same check on a phone-width frame. The collision zooms no longer vary
+// with frame width, but the walk can only measure what is on screen, and a
+// narrow frame crops a different pin set into view at every stop.
 test.describe('on a phone-width frame', () => {
   test.use({ viewport: { width: 375, height: 667 } });
 
@@ -443,6 +441,42 @@ test.describe('cross-type spacing on a phone-width frame', () => {
   test('no pin of one type draws on a pin of another from the leader zoom inward', async ({ page }) => {
     await expectNoCrossTypeOverlapFromLeaderZoom(page);
   });
+});
+
+// The regression that shipped 2026-08-23: collision zooms derived from the
+// live frame width gave a 560 px desktop frame a different leader zoom — and
+// different group membership — than every phone, so desktops kept the stacks
+// the leader treatment was supposed to replace. Pins are constant CSS pixels
+// at a given zoom on every device; the treatment must not depend on the screen.
+test('the leader treatment is identical at desktop and phone frame widths', async ({ page }) => {
+  const snapshot = () =>
+    mapEval(
+      page,
+      (map, featuresFn) => ({
+        leaderZoom: map.getLayer('venue-leader-pin').minzoom,
+        displacedVenues: new Function('return ' + featuresFn)()(map, 'venue-groups')
+          .map((f) => `${f.properties.id}@${f.properties.offset}`)
+          .sort(),
+        displacedStops: [
+          ...new Set(
+            new Function('return ' + featuresFn)()(map, 'transit')
+              .filter((f) => f.properties.grouped)
+              .map((f) => `${f.properties.id}@${f.properties.offset}`)
+          ),
+        ].sort(),
+      }),
+      SOURCE_FEATURES_FN,
+    );
+
+  await gotoMap(page);
+  const desktop = await snapshot();
+  await page.setViewportSize({ width: 375, height: 667 });
+  await page.reload();
+  await waitForMapIdle(page);
+  const phone = await snapshot();
+
+  expect(desktop.displacedVenues.length).toBeGreaterThan(0);
+  expect(phone).toEqual(desktop);
 });
 
 test('every displaced venue is one of the venues the key list numbers', async ({ page }) => {

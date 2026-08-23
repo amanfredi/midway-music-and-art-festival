@@ -38,6 +38,39 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-23 — deployed regression: collision zooms now frame-independent
+
+The QA round below shipped and Anthony's desktop still showed the 6/10 and
+12/14 stacks at zoom 14 with the A-line stop under pin 2. Two data-dependent
+flips between what was validated and what deployed. First, **the live sheet
+had changed**: Hamline Park's point moved ~77 m (it no longer shares Mosaic on
+a Stick's coordinate — the fixtures, snapshotted earlier, still have them at
+0 m), and the sheet is mid-edit (four new venues with incomplete rows, which
+currently fail `npm run build`'s validation — a push cannot deploy until the
+rows are finished). Second, and the real defect: **the split zoom was derived
+from the device's frame width**, so a 560 px desktop frame computed split 15
+and decided group membership there, where 77 m no longer qualifies as
+"cannot draw apart" — phones computed 14 and grouped the pair. Every sim and
+test had run against fixtures (0 m pair) at widths where the numbers happened
+to agree.
+
+Fix: collision-behavior zooms (cluster release, split, leader zoom) now
+derive from a fixed 375 px reference frame (`PIN_GEOMETRY_REF_PX`) — pins are
+constant CSS pixels at a given zoom on every device, so collision behavior is
+a property of the venue set, not the screen; only the view zooms (extent,
+home, closest) still read the real frame. The split lands at 14 everywhere,
+membership at 14 groups {6,10} and {12,14} on the live coordinates and on the
+fixtures alike, and both conflicted stops displace. The leader-zoom guard's
+cluster-release model also moves from continuous to integer tile zooms
+(supercluster builds per tile), which stops it rejecting states that never
+render; the one-level-out attempt is now rejected on real geometry (two
+ungrouped venues would draw 33 px apart at 13) identically on every frame.
+Verified against the deployed live content.json at 700 px and 375 px
+viewports: leader zoom 14, four leader pins, two displaced stops, zero stacks
+at 14.2 — plus the fixture suite, and a new test pinning that the leader
+treatment is identical across frame widths. BACKLOG gains the residual gap:
+CI validates against fixtures while collision outcomes ride the live sheet.
+
 ### 2026-08-23 — map QA round: legend order, earlier leaders, route 67 bridge, cross-type spacing
 
 Four fixes from Anthony's pass over the deployed site. **Legend** now leads

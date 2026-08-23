@@ -357,8 +357,10 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   generated offline by `tools/make-map-geojson.mjs` from the committed Overpass
   response in `tools/osm-cache.json`. Every feature carries `kind`: `street`
   (plus `tier` — `spine`/`arterial`/`motorway` — and `name` where OSM has one),
-  `rail` (plus `line`: `green`/`blue`), `station` (plus `name`), `water-area`,
-  or `water-line`. Extent: a **10-mile square centered on Hamline Park** — lng
+  `rail` (plus `line`: `green`/`blue`), `bus-route` (plus `ref` — `A`/`B`/`67`/
+  `72` — and `class`: `brt`/`local`; one feature per OSM member way, unmerged,
+  nothing labels them), `station` (plus `name`), `water-area`, or `water-line`.
+  Extent: a **10-mile square centered on Hamline Park** — lng
   [-93.268842, -93.064533], lat [44.887653, 45.032222]. Square and generously
   margined on purpose: a way is fetched whenever it intersects the bbox and
   Overpass returns its *whole* geometry, so a tight boundary left the edges
@@ -386,6 +388,12 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   colors, as one thick solid stroke rather than two thin dashed ones (each
   direction is a separate way, so thin dashes read as two railways). Both lines
   carry a stroke swatch and their name in the HTML legend below the map.
+- **Bus routes** (`bus-route` layer) draw the same way, one relation per route
+  per direction, above the street fills and beneath `rail-green`/`rail-blue` —
+  thinner and solid, reading as background subordinate to rail. Color is
+  data-driven on the feature's `class`, not `ref`: `--bus-route-brt` (A, B) and
+  `--bus-route-local` (67, 72), Metro Transit's own map convention. Both
+  classes carry a stroke swatch and their refs in the HTML legend.
 - **Level of detail is the engine's**, not a baked classification. Labels are
   symbol layers, so placement re-runs at every zoom and collision decides what
   survives; layer `minzoom` supplies the coarse steps — spines always, arterial
@@ -733,7 +741,7 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   Layer ids are part of the hook: `venue-pin`, `venue-cluster`, `transit-pin`,
   `sponsor-featured-pin`, `sponsor-generic-pin`, the tap-highlight halos
   `venue-highlight`, `transit-highlight`, `sponsor-highlight`, and for the
-  ground `arterial-fill`, `spine-fill`, `rail-green`, `rail-blue`,
+  ground `arterial-fill`, `spine-fill`, `rail-green`, `rail-blue`, `bus-route`,
   `street-label-spine`, `street-label-arterial`, `station-label`. Source ids:
   `mapdata`, `venues`, `transit`, `sponsors`; features in the four pin sources
   are id'd by their index, which is what `setFeatureState` addresses.

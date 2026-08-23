@@ -47,8 +47,6 @@ leaves this list when its work lands:
 - `definitions/coincident-pin-presentation.md` — stacked cluster glyph with
   member numbers at wide zooms, displaced leader-line pins from a mid-zoom
   split inward. Subsumes the tied-tap bug under Map.
-- `definitions/bus-route-lines.md` — option (a): refetch the main cache with
-  bus relations A/B/67/72, draw all four; BRT dark gray, locals dark purple.
 
 **Venue popup: ruled deferred, nothing to build (2026-08-21).** No felt
 problem — the popup was an idea, not friction — so the `<dialog>` sheet
@@ -120,6 +118,16 @@ through the key list — but the tap is broken. Cheap fix: route a tied
 venue-pin hit to the picker sheet, which already handles the unsplittable
 cluster; the fuller treatment is the leader-lines definition awaiting a
 ruling (see Decisions).
+
+**Route 72 (and 67 westbound) are missing upstream in OSM** (found 2026-08-23
+while drawing bus routes; verified with an unscoped metro-wide query). The map
+draws A and B (both directions) and 67 (eastbound only); 72 draws nothing, and
+the legend deliberately names only Route 67 until that changes. The Overpass
+query, generator class map, and colors are already wired for both 67 and 72,
+so the fix is upstream: wait for an OSM edit, or contribute the missing
+`route=bus` relations to OSM ourselves — then rerun
+`node tools/make-map.mjs --refresh`, regenerate the GeoJSON, and restore
+"& 72" to the legend string in `map.js` plus its test.
 
 **Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure
 in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
@@ -280,6 +288,11 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] Confirm map pan/zoom still feels smooth on a mid-range Android, not
       just the iPhone the migration was evaluated on. WebGL2 is a harder floor
       than SVG was.
+- [ ] Judge the bus route lines at the 10-mile view on a phone (added
+      2026-08-23): they draw at every zoom, subordination carried by width
+      (~55–60% of rail) and muted color rather than a `minzoom`. If the wide
+      view reads cluttered, give the `bus-route` layer a `minzoom` like the
+      arterial labels' 11.6.
 - [ ] Sticky control bar against the iOS status bar when installed.
       `.schedule-controls` pins at `top: var(--safe-top)`, which *should*
       evaluate to 0 given `apple-mobile-web-app-status-bar-style: default`.

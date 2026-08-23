@@ -54,6 +54,8 @@ const MAP_COLOR_VARS = {
   sponsor: '--pin-sponsor',
   railGreen: '--rail-green',
   railBlue: '--rail-blue',
+  busRouteBrt: '--bus-route-brt',
+  busRouteLocal: '--bus-route-local',
   accent: '--color-accent',
   accentDark: '--color-accent-dark',
   streetCasing: '--street-casing',
@@ -392,6 +394,27 @@ function groundLayersVector(colors) {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': colors.spineFill, 'line-width': widthByZoom(2.6, 7.8, 20) },
     },
+    // Color keys off `class`, not `ref`: Metro Transit's own map convention
+    // groups BRT (A, B) and local (67, 72) into two hues, not one per route.
+    {
+      id: 'bus-route',
+      type: 'line',
+      source: 'mapdata',
+      filter: ['==', ['get', 'kind'], 'bus-route'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': [
+          'match',
+          ['get', 'class'],
+          'brt',
+          colors.busRouteBrt,
+          'local',
+          colors.busRouteLocal,
+          colors.busRouteBrt,
+        ],
+        'line-width': widthByZoom(1.2, 2.5, 5),
+      },
+    },
     // One thick solid stroke per line, not two thin dashed ones: each direction
     // is a separate OSM way, so thin dashes read as two railways.
     {
@@ -556,6 +579,12 @@ export async function renderMap(container, content) {
                station pin within the pin radius to carry a letter. -->
           <li><svg class="legend-icon legend-icon--rail-green" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> METRO Green Line</li>
           <li><svg class="legend-icon legend-icon--rail-blue" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> METRO Blue Line</li>
+          <li><svg class="legend-icon legend-icon--bus-brt" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> METRO A &amp; B Line (bus rapid transit)</li>
+          <!-- Route 72 stays out of this label until OSM carries a relation for it
+               (none exists metro-wide as of 2026-08-23): the legend names what the
+               map draws, and 72 currently draws nothing. The query and class map
+               are already wired for it. -->
+          <li><svg class="legend-icon legend-icon--bus-local" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> Metro Transit Route 67 (local bus)</li>
           <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
           <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
         </ul>

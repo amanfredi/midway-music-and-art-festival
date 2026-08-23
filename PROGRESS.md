@@ -38,6 +38,33 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-23 — bus route lines: A, B and 67 drawn from a refreshed cache
+
+Shipped per `definitions/bus-route-lines.md`'s ruling (option (a)): the main
+OSM cache was refetched once with a `route=bus` relation clause scoped to refs
+A/B/67/72 and `network="Metro Transit"`, and `make-map-geojson.mjs` now emits
+`kind: "bus-route"` LineStrings (`ref` + `class`: `brt`/`local`) that one
+`bus-route` layer draws above the street fills, beneath rail, colored by class
+(`--bus-route-brt` #59595f at 5.99:1 against the paper, `--bus-route-local`
+#63478a at 6.46:1). Two legend entries, refs named, swatch-matches-paint test
+extended to both. No `minzoom` — width (1.2/2.5/5 px vs rail's 2/4.2/9) and
+muted color carry the subordination; judged on device later (see BACKLOG's
+device checklist).
+
+**What the map actually gained:** A and B both directions, **67 eastbound
+only, 72 nothing** — OSM carries no `route=bus` relation for 72 anywhere in
+the metro and only one direction for 67, verified with an unscoped diagnostic
+query. All four stay wired in the query and class map; the legend names only
+Route 67 until 72 exists upstream (BACKLOG has the follow-up). Relation
+`network`/`operator` tags were verified as Metro Transit in the fetched cache,
+per the acceptance criteria.
+
+**Costs, measured:** gzipped `map-vector.geojson` 306.8 KB → 329.1 KB
+(+22.3 KB, under the 30 KB budget — no bbox clipping needed). The wholesale
+refetch also brought upstream street drift: 2,564 → 2,662 street features,
+accepted by the ruling. `map-calibration.json` byte-identical; generator
+deterministic across two runs (hash-checked).
+
 ### 2026-08-23 — web share: Share buttons + the `#/venue/<id>` route
 
 Shipped per `definitions/web-share.md`'s 2026-08-23 ruling. Share buttons

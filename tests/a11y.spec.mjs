@@ -258,6 +258,32 @@ test('the legend names both rail lines in the colors the map draws them', async 
   }
 });
 
+// Bus routes are colored by class (brt/local), not by ref, so the swatch check
+// has to pull each class's color out of the layer's match expression rather
+// than reading a plain line-color the way the rail test does.
+test('the legend names both bus route classes in the colors the map draws them', async ({ page }) => {
+  await gotoMap(page);
+
+  const legend = page.locator('.map-legend__list');
+  await expect(legend).toContainText('A & B Line');
+  // Route 67 only: OSM has no relation for 72 yet, and the legend names what
+  // the map draws (see the legend markup in map.js).
+  await expect(legend).toContainText('Route 67');
+
+  const busPaint = await mapEval(page, (map) => map.getPaintProperty('bus-route', 'line-color'));
+  const colorFor = (cls) => busPaint[busPaint.indexOf(cls) + 1];
+
+  for (const [cls, swatch] of [
+    ['brt', 'bus-brt'],
+    ['local', 'bus-local'],
+  ]) {
+    const swatchColor = await page
+      .locator(`.legend-icon--${swatch} line`)
+      .evaluate((el) => getComputedStyle(el).stroke);
+    expect(swatchColor, `${cls} bus route swatch does not match the line it stands for`).toBe(colorFor(cls));
+  }
+});
+
 // A count on a cluster reads as a venue number — venue pins carry exactly that,
 // from the key list — so clusters carry no text at all (Anthony, 2026-08-10).
 test('clustered venue pins show no number that could be mistaken for a venue', async ({ page }) => {

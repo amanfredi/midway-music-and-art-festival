@@ -114,10 +114,16 @@ const HIGHWAY_TAGS =
 // Green Line (QA, 2026-08-09). A route relation contains only the revenue
 // alignment, and it also tells us which line each way belongs to, so Blue and
 // Green can be drawn in their own colors.
+//
+// Bus routes (definitions/bus-route-lines.md) come the same way, scoped to the
+// refs this map draws and to Metro Transit specifically -- ref alone isn't
+// enough to identify an operator. `network`/`operator` are verified in the
+// fetched cache, not assumed from ref matching.
 const QUERY = `[out:json][timeout:120];
 (
   way["highway"~"^(${HIGHWAY_TAGS})$"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});
   relation["route"="light_rail"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});
+  relation["route"="bus"]["ref"~"^(A|B|67|72)$"]["network"="Metro Transit"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});
   node["railway"~"^(station|tram_stop)$"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});
   way["natural"="water"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});
   way["waterway"="riverbank"](${BBOX.south},${BBOX.west},${BBOX.north},${BBOX.east});
@@ -325,6 +331,10 @@ function extractFromOverpass(elements) {
   const waterLines = [];
 
   for (const el of elements) {
+    // Bus route relations (definitions/bus-route-lines.md) are in the fetch but
+    // not this generator's business -- this SVG/calibration path draws no bus
+    // lines, so a relation with any other `route` tag falls through every
+    // branch below untouched. make-map-geojson.mjs is what reads them.
     if (el.type === 'relation' && el.tags?.route === 'light_rail') {
       const key = railLineKey(el.tags);
       if (!key) continue;

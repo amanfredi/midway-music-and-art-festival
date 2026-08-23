@@ -38,6 +38,13 @@
   --pin-sponsor: var(--color-danger);
   --rail-green: #2f7d4f;
   --rail-blue: #2b5fa8;
+  /* Bus routes (definitions/bus-route-lines.md): Metro Transit's own map
+     convention groups routes into two classes, not one color per route -- BRT
+     (A, B) and local (67, 72). Muted relative to rail so the lines read as
+     subordinate, and each still clears 3:1 against --map-paper (checked with
+     a contrast calculator, since "muted" pulls against that bar). */
+  --bus-route-brt: #59595f;
+  --bus-route-local: #63478a;
 
   /* The rest of the map's palette. site/js/views/map.js reads these and hands
      them to MapLibre as layer paint, so this block is the map's whole color
@@ -1149,6 +1156,29 @@ html:has(dialog.sheet[open]) {
 
 .legend-icon--rail-blue line {
   stroke: var(--rail-blue);
+}
+
+/* Bus route swatches, same stroke-not-diamond treatment as rail -- but
+   thinner, matching the map.js line weight (roughly 55% of the rail stroke),
+   so the legend restates "subordinate to rail" rather than just naming it. */
+.legend-icon--bus-brt,
+.legend-icon--bus-local {
+  width: 20px;
+  height: 20px;
+}
+
+.legend-icon--bus-brt line,
+.legend-icon--bus-local line {
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.legend-icon--bus-brt line {
+  stroke: var(--bus-route-brt);
+}
+
+.legend-icon--bus-local line {
+  stroke: var(--bus-route-local);
 }
 
 .legend-icon--sponsor-featured polygon {

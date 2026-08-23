@@ -93,6 +93,13 @@ function railLineKey(tags = {}) {
   return null;
 }
 
+// Metro Transit's own map convention (definitions/bus-route-lines.md): the two
+// BRT lines (A, B) read as one class, the two local routes (67, 72) as
+// another. The query is already scoped to these four refs and this network,
+// so this map is a lookup, not a filter -- an unrecognized ref is a fetch that
+// drifted from the query and is skipped rather than guessed at.
+const BUS_ROUTE_CLASS = { A: 'brt', B: 'brt', 67: 'local', 72: 'local' };
+
 /**
  * Chains ways that share a name and an endpoint into single LineStrings.
  *
@@ -182,7 +189,7 @@ function mergeNamedWays(segments) {
 
 const raw = JSON.parse(await readFile(CACHE_PATH, 'utf8'));
 const features = [];
-const counts = { street: 0, rail: 0, station: 0, waterArea: 0, waterLine: 0 };
+const counts = { street: 0, rail: 0, busRoute: 0, station: 0, waterArea: 0, waterLine: 0 };
 // Named streets are collected first and merged at the end; unnamed ways go
 // straight through, since only labels care about continuity.
 const namedStreets = new Map(); // tier -> name -> Map<wayId, coords>
@@ -201,6 +208,25 @@ for (const el of raw.elements) {
         geometry: { type: 'LineString', coordinates: coords },
       });
       counts.rail++;
+    }
+    continue;
+  }
+
+  if (el.type === 'relation' && el.tags?.route === 'bus') {
+    const cls = BUS_ROUTE_CLASS[el.tags.ref];
+    if (!cls) continue;
+    // Unmerged, one feature per member way -- unlike named streets, nothing
+    // labels these, so there is no placement contest a merge would win.
+    for (const member of el.members || []) {
+      if (member.type !== 'way' || !member.geometry) continue;
+      const coords = wayToCoords(member);
+      if (!coords) continue;
+      features.push({
+        type: 'Feature',
+        properties: { kind: 'bus-route', ref: el.tags.ref, class: cls },
+        geometry: { type: 'LineString', coordinates: coords },
+      });
+      counts.busRoute++;
     }
     continue;
   }
@@ -287,8 +313,8 @@ await writeFile(OUT, out, 'utf8');
 
 console.log(`Wrote ${path.relative(ROOT, OUT)} (${(Buffer.byteLength(out, 'utf8') / 1e6).toFixed(2)} MB)`);
 console.log(
-  `  streets ${counts.street}, rail ways ${counts.rail}, stations ${counts.station}, ` +
-    `water ${counts.waterArea} area(s) + ${counts.waterLine} centerline(s)`
+  `  streets ${counts.street}, rail ways ${counts.rail}, bus route ways ${counts.busRoute}, ` +
+    `stations ${counts.station}, water ${counts.waterArea} area(s) + ${counts.waterLine} centerline(s)`
 );
 const namedFeatures = features.filter((f) => f.properties.kind === 'street' && f.properties.name);
 const named = new Set(namedFeatures.map((f) => f.properties.name));

@@ -15,6 +15,7 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseCSV } from "../scripts/build.mjs";
 import {
   addColumn,
   dropColumn,
@@ -40,11 +41,11 @@ let outCounter = 0;
  * tests must not write into it.
  * Returns the spawn result with the output directory attached.
  */
-function runBuild(configPath) {
+function runBuild(configPath, extraArgs = []) {
   const outDir = path.join(TMP_ROOT, `out-${++outCounter}`);
   const args = [BUILD_SCRIPT];
   if (configPath) args.push(configPath);
-  args.push("--out", outDir);
+  args.push("--out", outDir, ...extraArgs);
   const result = spawnSync(process.execPath, args, {
     cwd: REPO_ROOT,
     encoding: "utf8",
@@ -57,9 +58,9 @@ function runBuild(configPath) {
  * loopback server below: spawnSync would block this process's event loop, and
  * the server that has to answer the child's fetch lives in it.
  */
-function runBuildAsync(configPath) {
+function runBuildAsync(configPath, extraArgs = []) {
   const outDir = path.join(TMP_ROOT, `out-${++outCounter}`);
-  const child = spawn(process.execPath, [BUILD_SCRIPT, configPath, "--out", outDir], {
+  const child = spawn(process.execPath, [BUILD_SCRIPT, configPath, "--out", outDir, ...extraArgs], {
     cwd: REPO_ROOT,
     encoding: "utf8",
   });
@@ -690,6 +691,104 @@ describe("url fields", () => {
     ]);
     const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+});
+
+describe("--skip-invalid-rows", () => {
+  const readContent = (result) => JSON.parse(readFileSync(result.contentPath, "utf8"));
+  const good = () => readContent(runBuild(GOOD_CONFIG));
+
+  test("publishes the rows that validate and leaves out the ones that don't", () => {
+    const config = makeFixtureSet(TMP_ROOT, "skip-one-bad-venue", [setCell("venues.csv", 2, "address", "")]);
+    assert.notEqual(runBuild(config).status, 0, "the same sources must still fail a normal build");
+
+    const result = runBuild(config, ["--skip-invalid-rows"]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+    const content = readContent(result);
+    assert.equal(content.venues.length, good().venues.length - 1, "exactly the bad venue should be missing");
+    assert.ok(
+      result.stdout.includes("SKIPPED") && result.stdout.includes("venues.csv row 2"),
+      `the run must say what it left out\n${result.stdout}`
+    );
+  });
+
+  test("drops the events a dropped venue leaves stranded", () => {
+    const config = makeFixtureSet(TMP_ROOT, "skip-venue-with-events", [setCell("venues.csv", 2, "address", "")]);
+    const content = readContent(runBuild(config, ["--skip-invalid-rows"]));
+    const droppedVenue = good().venues[0].id;
+    assert.ok(
+      good().events.some((e) => e.venue_id === droppedVenue),
+      "the fixture must have events at the venue being dropped, or this proves nothing"
+    );
+    assert.equal(
+      content.events.filter((e) => e.venue_id === droppedVenue).length,
+      0,
+      "an event whose venue was dropped must not be published pointing at nothing"
+    );
+    for (const event of content.events) {
+      assert.ok(
+        content.venues.some((v) => v.id === event.venue_id),
+        `event ${event.id} points at a venue that was not published`
+      );
+    }
+  });
+
+  test("still refuses to publish a source whose rows all failed", () => {
+    const rows = parseCSV(readFileSync(path.join(REPO_ROOT, "content/fixtures/vendors.csv"), "utf8"));
+    const emptyEveryLocation = rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "location", ""));
+    const config = makeFixtureSet(TMP_ROOT, "skip-every-row-bad", emptyEveryLocation);
+
+    const result = runBuild(config, ["--skip-invalid-rows"]);
+    assert.notEqual(result.status, 0, "emptying a tab one bad row at a time must fail like an emptied tab");
+    assert.match(result.stderr, /every data row failed validation/);
+    assert.ok(!existsSync(result.contentPath), "nothing should have been written");
+  });
+
+  test("keeps a sponsor whose logo is the only thing wrong, minus the logo", () => {
+    const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")]);
+    assert.notEqual(runBuild(config).status, 0, "a missing logo must still fail a normal build");
+
+    const result = runBuild(config, ["--skip-invalid-rows"]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+    const content = readContent(result);
+    assert.equal(content.sponsors.length, good().sponsors.length, "the sponsor keeps its place on the page");
+    const sponsor = content.sponsors.find((s) => s.name === "Shortline Credit Union"); // sponsors.csv row 2
+    assert.ok(sponsor, "expected to find the sponsor whose logo was broken");
+    assert.equal(sponsor.logo, "", "the sponsor is published without a logo rather than with a missing one");
+    assert.match(result.stdout, /published without its logo/);
+  });
+
+  test("does not treat an unreachable source as a bad row", async () => {
+    // The answer to an outage is --use-snapshot. Skipping rows must not become
+    // a second, quieter way to publish through one.
+    const result = await withLocalServer({}, (origin) => {
+      const config = makeFixtureSet(TMP_ROOT, "skip-unreachable-source", [], {
+        venues: `${origin}/gone.csv`,
+      });
+      return runBuildAsync(config, ["--skip-invalid-rows"]);
+    });
+    assert.notEqual(result.status, 0, "an unreachable source must still stop the build");
+    assert.match(result.stderr, /venues/);
+  });
+
+  test("refuses to write the snapshot on the same run", () => {
+    const result = runBuild(GOOD_CONFIG, ["--skip-invalid-rows", "--write-snapshot"]);
+    assert.notEqual(result.status, 0, "the snapshot may only hold sources that fully validated");
+    assert.match(result.stderr, /cannot be combined/);
+  });
+
+  test("is byte-identical on a rebuild, like every other build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "skip-deterministic", [setCell("venues.csv", 2, "address", "")]);
+    const first = runBuild(config, ["--skip-invalid-rows"]);
+    const second = runBuild(config, ["--skip-invalid-rows"]);
+    assert.equal(readFileSync(first.contentPath, "utf8"), readFileSync(second.contentPath, "utf8"));
+  });
+
+  test("changes nothing when every row is valid", () => {
+    const skipped = runBuild(GOOD_CONFIG, ["--skip-invalid-rows"]);
+    assert.equal(skipped.status, 0);
+    assert.equal(readFileSync(skipped.contentPath, "utf8"), readFileSync(runBuild(GOOD_CONFIG).contentPath, "utf8"));
+    assert.ok(!skipped.stdout.includes("SKIPPED"), "a clean build must not claim to have skipped anything");
   });
 });
 

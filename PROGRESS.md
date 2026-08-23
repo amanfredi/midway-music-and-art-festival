@@ -20,7 +20,8 @@ list instead of the map.
 Sheet (URL in `content/config.json`) — 14 venues on the live site, frozen
 since 2026-08-11: the sheet has since gained four incomplete venue rows
 that fail validation and block every rebuild (see the 2026-08-21 log
-entry).
+entry) — a deploy dispatched with `skip_invalid_rows` can now publish
+around them without waiting for the sheet fix.
 `content/fixtures/venues.csv` is a hand-committed copy that feeds the
 offline tests (refreshed 2026-08-09); the emergency-build copy
 (`content/snapshot/sources/venues.csv`) starts existing with the first
@@ -36,6 +37,60 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-08-22 — a deploy can now publish around bad rows, without banking them
+
+Deploy gained a third dispatch checkbox, `skip_invalid_rows`: fetch the
+sources live as usual, publish the rows that validate, leave out the ones
+that don't. It answers the incident below — four incomplete venue rows have
+held the live site at 14 venues since 2026-08-11 — where the only choices
+were a red build or a sheet fix nobody could make yet. It is dispatch-only
+by construction: a push cannot set an input, and the cron rebuild does not
+offer it, because a cron that silently drops rows is the same silent
+failure in a new costume.
+
+The flag is `build.mjs --skip-invalid-rows`, and the design turns on where
+the line between "a bad row" and "a broken file" sits. Structural problems
+still fail: an unreachable source, a renamed header column, an emptied tab,
+a bad config. Skipping is for rows, and an outage remains `--use-snapshot`'s
+job — otherwise this becomes a second, quieter way to publish through one.
+
+Four decisions worth the ink:
+
+- **Each validator runs twice** — once to learn which rows it objects to,
+  then again over the survivors. The second pass is what makes the output
+  trustworthy: nothing reaches `content.json` that a validator hasn't
+  approved as it stands. It should always be silent, and anything it does
+  report still fails the build.
+- **A dropped venue takes its events with it.** Events resolve against the
+  venues that survived, so the foreign key holds in what ships rather than
+  leaving cards pointing at a venue the app never received. On the current
+  fixtures, dropping one venue drops six events with it.
+- **A source cannot be emptied one bad row at a time.** If every row of a
+  tab fails, the build stops — the same call `validateSourceShape` already
+  makes for a tab that arrives empty, for the same reason.
+- **A bad logo costs the logo, not the sponsor** (Anthony's call). The row
+  is sound; a sponsor is likelier to want to appear without a wordmark than
+  to vanish over an oversized file. This is the one place the mode ships a
+  row the strict build would refuse, when the tier required a logo.
+
+`--write-snapshot` and `--skip-invalid-rows` are refused together, in
+`build.mjs` rather than only in the workflow: the snapshot is what
+`--use-snapshot` spends on the assumption that everything in it once passed
+in full, and a run that knowingly published less must not become that copy.
+The workflow drops `--write-snapshot` in the same branch that adds the skip
+flag, so the refusal is unreachable rather than a way to fail a deploy.
+
+Nobody is emailed. The run itself carries it: `SKIPPED n invalid row(s)` in
+the build log, a warning annotation, and the dropped rows in the job
+summary — the pattern the stale-content fallback already uses, and the
+operator who ticked the box is watching. `--report` gains `skipInvalidRows`
+and `droppedRows` for the workflow to read.
+
+Row-level errors now carry the row they came from (`errorMsg` returns
+`{ rowNum, message }`), which is what makes any of this possible; file-level
+errors stay bare strings and are, by that fact, the ones no row can be
+dropped to answer. Suite green: 143 unit (16 new) + 88 Playwright.
 
 ### 2026-08-22 — star restored to its place; category chips dropped; dead CSS out
 

@@ -104,9 +104,9 @@ logged and never changes the run's own result.
 
 ## Emergency deploys
 
-Two outages can stop a deploy, and each has one command that gets around it.
-Both are deliberate acts: nothing falls back on its own. A rebuild can also stop
-on its own, deliberately — the last case below.
+Three things can stop a deploy — two outages and a bad sheet edit — and each has
+one command that gets around it. All are deliberate acts: nothing falls back on
+its own. A rebuild can also stop on its own, deliberately — the last case below.
 
 ### The content sheet is unreachable
 
@@ -151,6 +151,34 @@ gh workflow run deploy.yml -f skip_tests=true
 
 That publishes with no tests run at all. It exists for the case where the
 alternative is not shipping.
+
+### The sheet has bad rows and the fix can't wait
+
+The failing run names the rows: `venues.csv row 16 ("Hive Collaborative"):
+missing required field "location".` The fix is sheet-side, but if a deploy has
+to go out first, publish the rows that are good:
+
+```sh
+gh workflow run deploy.yml -f skip_invalid_rows=true
+```
+
+Sources are fetched live as usual and every row is validated as usual — the run
+just leaves out the ones that fail instead of stopping. An event whose venue was
+dropped is dropped with it, so nothing ships pointing at a venue that isn't
+there. A sponsor whose logo is the only problem keeps its place and publishes
+without the logo.
+
+It says what it left out: `SKIPPED n invalid row(s)` in the build log, a warning
+annotation on the run, and the rows in the job summary.
+
+This skips rows, not files. An unreachable source, a renamed header column, or a
+tab with no data rows still fails — as does a tab where *every* row is bad, which
+would empty the guide. And it never updates `content/snapshot/`: that copy stays
+the last content that passed in full, so a later `use_content_snapshot` deploy
+isn't quietly building on a partial one.
+
+The 6-hour rebuild has no such flag and keeps failing on those rows. Fix the
+sheet.
 
 ### A rebuild publishes nothing
 

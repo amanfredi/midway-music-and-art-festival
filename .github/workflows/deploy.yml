@@ -13,6 +13,10 @@ on:
         description: "npm unreachable: publish without the test job (emergency only)"
         type: boolean
         default: false
+      skip_invalid_rows:
+        description: "Bad rows in the sheet: publish the rows that validate and leave the invalid ones out (does not update the snapshot)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -101,13 +105,25 @@ jobs:
       - name: Build the site
         env:
           USE_SNAPSHOT: ${{ inputs.use_content_snapshot }}
+          SKIP_INVALID_ROWS: ${{ inputs.skip_invalid_rows }}
         run: |
           flags=""
           if [ "$USE_SNAPSHOT" = "true" ]; then
-            flags="--use-snapshot"
+            flags="$flags --use-snapshot"
             echo "::notice::Unreachable sources will be served from content/snapshot for this run."
           fi
-          node scripts/build.mjs --write-snapshot $flags --report "$BUILD_REPORT"
+          # --write-snapshot is dropped rather than made conditional inside the
+          # build: a run that knowingly published less than the sheet holds must
+          # not become the copy a later --use-snapshot run trusts. build.mjs
+          # refuses the two flags together, so this branch is the contract, not
+          # a convention.
+          if [ "$SKIP_INVALID_ROWS" = "true" ]; then
+            flags="$flags --skip-invalid-rows"
+            echo "::notice::Rows that fail validation will be left out of this build, and the snapshot will not be updated."
+          else
+            flags="$flags --write-snapshot"
+          fi
+          node scripts/build.mjs $flags --report "$BUILD_REPORT"
           node scripts/build-sw.mjs
       # Every date below comes from the snapshot's own record of when those
       # bytes last changed, never from the build clock: content.json must stay
@@ -123,6 +139,24 @@ jobs:
             const lines = used.map((e) => e.label + " — saved bytes unchanged since " + (e.lastChanged || "an unrecorded date"));
             console.log("::warning title=Published stale content::" + lines.join("; "));
             appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published from the content snapshot", "", "These sources could not be reached, so this deploy shipped saved copies:", "", ...lines.map((l) => "- " + l), ""].join("\n"));
+          '
+      # A skipped-row run is green, so nothing else would say that the site now
+      # holds less than the sheet does. The rows still need fixing, and this is
+      # where the operator who ticked the box goes looking.
+      - name: Flag skipped rows
+        run: |
+          node -e '
+            const { existsSync, readFileSync, appendFileSync } = require("node:fs");
+            const reportPath = process.env.BUILD_REPORT;
+            if (!existsSync(reportPath)) process.exit(0);
+            const dropped = JSON.parse(readFileSync(reportPath, "utf8")).droppedRows || [];
+            if (dropped.length === 0) process.exit(0);
+            // Flattened on the way out for the same reason the build log is:
+            // these strings quote spreadsheet cells, and a cell containing a
+            // newline must not forge extra log lines.
+            const lines = dropped.map((d) => String(d.message).replace(/\s+/g, " ").trim() + (d.logoOnly ? " (published without its logo)" : ""));
+            console.log("::warning title=Published without " + dropped.length + " invalid row(s)::" + lines.join("; "));
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out of this deploy. The snapshot was not updated, so it still holds the last fully valid content:", "", ...lines.map((l) => "- " + l), "", "Fix them in the spreadsheet; the next normal run publishes them.", ""].join("\n"));
           '
       - name: Commit the refreshed snapshot
         # Only from main: this workflow can be dispatched against any ref, and

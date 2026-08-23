@@ -209,7 +209,10 @@ sheet. Sequencing: once the deploy-robustness work is pushed, every failed
 cron emails both recipient lists naming exactly these rows — four times a
 day until the sheet is fixed — which is either the system doing its job or
 mail the organizers weren't warned about, depending on what they've been
-told.
+told. Since 2026-08-22 there is a way to ship without waiting for the sheet:
+`gh workflow run deploy.yml -f skip_invalid_rows=true` publishes the valid
+rows and leaves these four out. It does not fix the cron, which still fails
+on them by design, and it does not update the snapshot.
 
 Two venue-location facts are **valid data, not sheet errors** (ruled by
 Anthony 2026-08-10, after repeated sessions flagged them; also recorded in

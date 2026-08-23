@@ -87,8 +87,11 @@ describe("the content-only path", () => {
 
 describe("the snapshot refresh", () => {
   test("is carried by both publishing paths, best-effort, with [skip ci]", () => {
+    // Deploy assembles its flags in shell (it has three checkboxes to honour),
+    // so the two files spell the same intent differently.
+    assert.match(code(REBUILD), /node scripts\/build\.mjs --write-snapshot/, "the rebuild must refresh the snapshot");
+    assert.match(code(DEPLOY), /flags="\$flags --write-snapshot"/, "the deploy must refresh the snapshot");
     for (const [name, text] of [["deploy.yml", DEPLOY], ["rebuild-content.yml", REBUILD]]) {
-      assert.match(code(text), /node scripts\/build\.mjs --write-snapshot/, `${name} must refresh the snapshot`);
       assert.match(code(text), /git commit -m "refresh content snapshot \[skip ci\]"/, `${name} must commit it`);
       assert.match(code(text), /git push origin HEAD:main \|\| echo/, `${name}'s push must not fail the run`);
       const commitStep = around(text, "git add content/snapshot", 12).join("\n");
@@ -134,7 +137,7 @@ describe("the npm-down mitigations", () => {
   test("the fallback is opt-in, and the flag only reaches the build when it is set", () => {
     assert.match(code(DEPLOY), /use_content_snapshot:\n\s+description:.*\n\s+type: boolean\n\s+default: false/);
     assert.match(code(DEPLOY), /USE_SNAPSHOT: \$\{\{ inputs\.use_content_snapshot \}\}/);
-    assert.match(code(DEPLOY), /if \[ "\$USE_SNAPSHOT" = "true" \]; then\n\s+flags="--use-snapshot"/);
+    assert.match(code(DEPLOY), /if \[ "\$USE_SNAPSHOT" = "true" \]; then\n\s+flags="\$flags --use-snapshot"/);
   });
 
   test("a fallback deploy is flagged in the run itself", () => {
@@ -143,6 +146,38 @@ describe("the npm-down mitigations", () => {
     // The dates come from the report, which reads them off the snapshot — never
     // from the build clock, which would make output non-deterministic.
     assert.match(code(DEPLOY), /lastChanged/);
+  });
+});
+
+describe("skip_invalid_rows", () => {
+  test("exists as a dispatch input, and reaches the build only when it is set", () => {
+    assert.match(code(DEPLOY), /skip_invalid_rows:\n\s+description:.*\n\s+type: boolean\n\s+default: false/);
+    assert.match(code(DEPLOY), /SKIP_INVALID_ROWS: \$\{\{ inputs\.skip_invalid_rows \}\}/);
+    assert.match(code(DEPLOY), /if \[ "\$SKIP_INVALID_ROWS" = "true" \]; then\n\s+flags="\$flags --skip-invalid-rows"/);
+    // A push cannot set inputs, so the normal path is untouched by this.
+    assert.doesNotMatch(code(DEPLOY), /--skip-invalid-rows(?!"\n)/);
+  });
+
+  test("never refreshes the snapshot on the same run", () => {
+    // The snapshot is what --use-snapshot spends on the assumption that
+    // everything in it once validated in full. build.mjs refuses the two flags
+    // together; this pins the workflow to the else-branch that makes that
+    // refusal unreachable rather than a way to fail a deploy.
+    const build = around(DEPLOY, "node scripts/build.mjs", 20).join("\n");
+    assert.match(build, /flags="\$flags --skip-invalid-rows"\n[\s\S]*?else\n\s+flags="\$flags --write-snapshot"/);
+  });
+
+  test("says in the run itself what was left out", () => {
+    assert.match(code(DEPLOY), /::warning title=Published without/);
+    assert.match(code(DEPLOY), /droppedRows/);
+    // The rows are quoted spreadsheet cells; a newline in one must not forge
+    // extra log lines, the same rule the build log follows.
+    const step = around(DEPLOY, "::warning title=Published without", 8).join("\n");
+    assert.match(step, /replace\(\/\\s\+\/g, " "\)/, "cell text must be flattened before it reaches the log");
+  });
+
+  test("is not offered on the cron rebuild, which nobody is watching", () => {
+    assert.doesNotMatch(code(REBUILD), /skip-invalid-rows/);
   });
 });
 

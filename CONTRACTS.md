@@ -78,7 +78,9 @@ The bytes of every resource the build fetched over the network, so a code
 deploy can still ship while those sources are unreachable. Written by
 `build.mjs --write-snapshot` **after** a build fully succeeds, so it can only
 ever hold content that passed validation; read only by `build.mjs
---use-snapshot`, and then only for a resource that could not be reached.
+--use-snapshot`, and then only for a resource that could not be reached. A build
+that skipped invalid rows never writes it — `--write-snapshot` and
+`--skip-invalid-rows` are refused together.
 
 ```
 content/snapshot/
@@ -255,6 +257,40 @@ date/time format and calendar validity, `end_time` equal to `start_time`,
 where the tier requires one). Collect ALL errors, then print all and exit —
 never stop at the first.
 
+### --skip-invalid-rows (deliberate partial publish)
+
+`build.mjs --skip-invalid-rows` publishes the rows that validate and leaves out
+the ones that don't, instead of failing. It exists for the case where a bad cell
+in the sheet is holding up a deploy that has to go out, and it is only ever
+reached by dispatching Deploy with `skip_invalid_rows` ticked — a push cannot
+set it, and the cron rebuild does not offer it.
+
+Binding rules:
+
+- **Rows only.** Everything the section above calls structural still fails the
+  build: a source that wouldn't load, a header missing or misspelling a known
+  column, a tab with no data rows, an unreachable source or logo host, a bad
+  config. A row is skippable; a file is not, and an outage is `--use-snapshot`'s
+  problem rather than this flag's.
+- **What is published has been validated as it stands.** Each validator runs
+  again over the surviving rows, and any error from that second pass fails the
+  build. Nothing reaches `content.json` that a validator has not approved.
+- **Dropping a venue drops its events.** Events resolve `venue_id` against the
+  venues that survived, so the foreign key holds in the published output.
+- **A source cannot be emptied this way.** If every row of a source fails, the
+  build stops with the same reasoning as an emptied tab: an empty guide over a
+  working one is exactly as bad however the tab was emptied.
+- **A bad logo costs the logo, not the row.** A sponsor whose logo fails
+  validation is published with a blank `logo`, including where the tier would
+  have required one — the single place this mode ships a row the strict build
+  would refuse.
+- **Never `--write-snapshot`.** The two flags are refused together (exit 1). The
+  snapshot's whole value is that everything in it once passed in full.
+- Output stays deterministic: identical sources and identical flags produce a
+  byte-identical `content.json`. `version` still hashes the raw source bytes, so
+  a partial publish shares its version with the strict build of the same bytes —
+  which is safe only because that strict build cannot succeed.
+
 ### Failure report (build.mjs --report, CI input)
 
 `--report <path>` writes the same outcome in machine-readable form, on success
@@ -276,6 +312,12 @@ are a contract:
 - `network` — nobody's edit: a source that could not be reached, or that 5xx'd
   on every attempt. Operator only.
 - `config` — a source path or config file the build could not use. Operator only.
+
+On a successful build the report also carries `skipInvalidRows` (whether the
+flag was set) and `droppedRows`: one `{ source, rowNum, message, logoOnly? }`
+entry per row left out, in the order the build found them. It is what the run's
+"Published without N invalid row(s)" warning and job summary are built from, and
+it is empty on every normal build.
 
 `snapshot.used` carries one entry per resource served from the snapshot
 (`{ id, label, url, lastChanged }`); it is what the run's staleness warning and

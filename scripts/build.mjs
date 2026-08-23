@@ -5,6 +5,7 @@
 //
 // Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
 //                               [--write-snapshot] [--use-snapshot]
+//                               [--skip-invalid-rows]
 //                               [--snapshot-dir dir] [--report path]
 //   config defaults to content/config.json, out defaults to site/,
 //   snapshot-dir defaults to content/snapshot/
@@ -13,6 +14,14 @@
 //                     remotely-fetched resource into the snapshot directory
 //   --use-snapshot    serve a remote resource from the snapshot when it cannot
 //                     be reached (never when it answers wrongly)
+//   --skip-invalid-rows
+//                     publish the rows that validate and leave out the ones
+//                     that don't, instead of failing the build. Row-level
+//                     problems only: an unreachable source, a renamed header
+//                     column, an emptied tab, or a source left with no valid
+//                     rows at all still stops the build. Refuses
+//                     --write-snapshot, because the snapshot exists to hold
+//                     bytes that passed the full validation.
 //   --report path     write a machine-readable outcome (failure classes,
 //                     snapshot state) for CI to route notifications with
 
@@ -313,9 +322,20 @@ async function loadSource(key, value, ctx) {
 // Error formatting + generic field validators
 // ---------------------------------------------------------------------------
 
+/**
+ * Every row-scoped complaint in this file is built here, and each one carries
+ * the row it came from as well as the text. That attribution is what lets a
+ * --skip-invalid-rows build drop exactly the rows it objected to: an error with
+ * no `rowNum` describes the file rather than a row, and no row can be dropped
+ * to answer it.
+ */
 function errorMsg(fileLabel, rowNum, identifier, message) {
-  return `${fileLabel} row ${rowNum} ("${identifier}"): ${message}`;
+  return { rowNum, message: `${fileLabel} row ${rowNum} ("${identifier}"): ${message}` };
 }
+
+/** Errors are either a row-scoped {rowNum, message} or a bare file-level string. */
+const messageOf = (err) => (typeof err === "string" ? err : err.message);
+const rowOf = (err) => (typeof err === "string" ? null : err.rowNum);
 
 /**
  * Every message the build prints can quote a spreadsheet cell, and the build log
@@ -1005,7 +1025,6 @@ function localLogoPath(logoValue) {
 }
 
 async function resolveSponsorLogos(records, ctx) {
-  const errors = [];
   const failures = [];
   const resolved = new Map(); // rowNum -> { filename, buffer }
   for (const rec of records) {
@@ -1019,9 +1038,8 @@ async function resolveSponsorLogos(records, ctx) {
     // the sponsor keeps two sponsors whose URLs both end /logo.svg apart.
     const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
     const fail = (message, failureClass = "validation") => {
-      const text = errorMsg("sponsors.csv", rec.rowNum, ident, message);
-      errors.push(text);
-      failures.push({ class: failureClass, source: "sponsors", message: text });
+      const err = errorMsg("sponsors.csv", rec.rowNum, ident, message);
+      failures.push({ class: failureClass, source: "sponsors", rowNum: err.rowNum, message: err.message });
     };
 
     let ext;
@@ -1090,7 +1108,7 @@ async function resolveSponsorLogos(records, ctx) {
 
     resolved.set(rec.rowNum, { filename: `${sponsorId}.${ext}`, buffer });
   }
-  return { errors, failures, resolved };
+  return { failures, resolved };
 }
 
 // ---------------------------------------------------------------------------
@@ -1338,10 +1356,22 @@ function reportErrorsAndExit(errors, { failures = [], reportPath = null, snapsho
  * deployable site/ tree.
  */
 const PATH_OPTIONS = { "--config": "configArg", "--out": "outArg", "--snapshot-dir": "snapshotArg", "--report": "reportArg" };
-const FLAG_OPTIONS = { "--write-snapshot": "writeSnapshot", "--use-snapshot": "useSnapshot" };
+const FLAG_OPTIONS = {
+  "--write-snapshot": "writeSnapshot",
+  "--use-snapshot": "useSnapshot",
+  "--skip-invalid-rows": "skipInvalidRows",
+};
 
 function parseArgs(argv) {
-  const parsed = { configArg: null, outArg: null, snapshotArg: null, reportArg: null, writeSnapshot: false, useSnapshot: false };
+  const parsed = {
+    configArg: null,
+    outArg: null,
+    snapshotArg: null,
+    reportArg: null,
+    writeSnapshot: false,
+    useSnapshot: false,
+    skipInvalidRows: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg in PATH_OPTIONS) {
@@ -1361,6 +1391,14 @@ function parseArgs(argv) {
       return { error: `unexpected argument "${arg}".` };
     }
   }
+  // The snapshot is the build's definition of "last known good", and
+  // --use-snapshot spends it on the assumption that everything in it once
+  // passed. Saving a build that knowingly skipped rows would poison that, so
+  // the two flags are refused together here rather than being left to whatever
+  // CI happens to pass.
+  if (parsed.writeSnapshot && parsed.skipInvalidRows) {
+    return { error: `--write-snapshot and --skip-invalid-rows cannot be combined: the snapshot may only hold sources that fully validated.` };
+  }
   return {
     ...parsed,
     configArg: parsed.configArg ?? DEFAULT_CONFIG,
@@ -1375,7 +1413,7 @@ async function main() {
     console.error(`Cannot start the build: ${args.error}`);
     process.exit(1);
   }
-  const { configArg, outArg, snapshotArg, reportArg, writeSnapshot, useSnapshot } = args;
+  const { configArg, outArg, snapshotArg, reportArg, writeSnapshot, useSnapshot, skipInvalidRows } = args;
   const configPath = path.resolve(CWD, configArg);
   const outDir = path.resolve(CWD, outArg);
   const snapshotDir = path.resolve(CWD, snapshotArg);
@@ -1406,9 +1444,9 @@ async function main() {
   const ctx = createFetchContext({ snapshotDir, useSnapshot });
   const errors = [];
   const failures = [];
-  const fail = (message, failureClass, source) => {
-    errors.push(message);
-    failures.push({ class: failureClass, source, message });
+  const fail = (err, failureClass, source) => {
+    errors.push(messageOf(err));
+    failures.push({ class: failureClass, source, rowNum: rowOf(err), message: messageOf(err) });
   };
 
   const loaded = {};
@@ -1451,18 +1489,83 @@ async function main() {
     for (const n of urlNotes) console.log(`  - ${oneLine(n)}`);
   }
 
-  const venuesResult = validateVenues(parsed.venues.records);
-  const vendorsResult = validateVendors(parsed.vendors.records);
-  const settingsResult = validateSettings(parsed.settings.records);
-  const sponsorFieldErrors = validateSponsorFields(parsed.sponsors.records);
+  // Rows dropped by --skip-invalid-rows, for the log, the step summary, and
+  // the report. A successful build with a non-empty list here published less
+  // than the sheet holds, and the operator has to be able to see exactly what.
+  const dropped = [];
 
+  /**
+   * Without --skip-invalid-rows this is just `validate(records)`.
+   *
+   * With it, the validator runs twice: once to learn which rows it objects to,
+   * then again on the survivors to produce the output. The second pass is what
+   * makes the result trustworthy — nothing reaches content.json that a
+   * validator hasn't approved as it stands. It is also expected to be silent,
+   * because every check here is either per-row or "this row conflicts with an
+   * earlier one", so removing rows can only remove complaints; anything it
+   * still reports is a real error and still stops the build.
+   *
+   * Dropping every row is refused. That is the emptied-tab case
+   * validateSourceShape already exists to catch, and publishing an empty guide
+   * over a working one is exactly as bad whether the tab arrived empty or was
+   * emptied one bad row at a time.
+   */
+  const runValidator = (source, records, validate) => {
+    const first = validate(records);
+    if (!skipInvalidRows || first.errors.length === 0) return { ...first, records };
+
+    const rowScoped = first.errors.filter((err) => rowOf(err) !== null);
+    const fileLevel = first.errors.filter((err) => rowOf(err) === null);
+    const badRows = new Set(rowScoped.map(rowOf));
+    const survivors = records.filter((rec) => !badRows.has(rec.rowNum));
+
+    if (survivors.length === 0) {
+      return {
+        ...first,
+        records: survivors,
+        errors: [
+          ...first.errors,
+          `${SOURCE_LABEL[source]}: every data row failed validation, so skipping the invalid rows would publish ` +
+            `nothing at all in place of the live ${source}. Fix the rows above; the build stops rather than empty the tab.`,
+        ],
+      };
+    }
+
+    for (const err of rowScoped) dropped.push({ source, rowNum: rowOf(err), message: messageOf(err) });
+    const second = validate(survivors);
+    return { ...second, records: survivors, errors: [...fileLevel, ...second.errors] };
+  };
+
+  const venuesResult = runValidator("venues", parsed.venues.records, validateVenues);
+  const vendorsResult = runValidator("vendors", parsed.vendors.records, validateVendors);
+  const settingsResult = runValidator("settings", parsed.settings.records, validateSettings);
+  const sponsorsResult = runValidator("sponsors", parsed.sponsors.records, (records) => ({
+    errors: validateSponsorFields(records),
+  }));
+
+  // Events resolve against the venues that survived, so an event whose venue
+  // was dropped is dropped with it rather than left pointing at a venue the
+  // app never received.
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
-  const eventsResult = validateEvents(parsed.events.records, venueIds);
+  const eventsResult = runValidator("events", parsed.events.records, (records) => validateEvents(records, venueIds));
 
-  const { errors: logoErrors, failures: logoFailures, resolved: logoFiles } = await resolveSponsorLogos(
-    parsed.sponsors.records,
-    ctx
-  );
+  const { failures: logoFailures, resolved: logoFiles } = await resolveSponsorLogos(sponsorsResult.records, ctx);
+
+  // A logo that fails validation costs the sponsor its logo, not its place on
+  // the page (ruled 2026-08-22): the row itself is sound, and a sponsor is
+  // likelier to want to appear without a wordmark than to disappear over an
+  // oversized file. The sponsor then renders with a blank logo, which the app
+  // already handles because it is legal for the lowest tier — including where
+  // the tier would have required one, the one place this mode ships a row the
+  // strict build would have refused.
+  //
+  // A logo host being down is not a bad row and stays fatal: --use-snapshot is
+  // the answer to an outage, and skipping rows must not quietly become a way
+  // to publish through one.
+  const droppedLogos = skipInvalidRows ? logoFailures.filter((f) => f.class === "validation") : [];
+  for (const failure of droppedLogos) {
+    dropped.push({ source: "sponsors", rowNum: failure.rowNum, message: failure.message, logoOnly: true });
+  }
 
   // Everything below this line is a spreadsheet cell somebody can fix, so it is
   // all the validation class; the logo fetches classify themselves, because a
@@ -1471,14 +1574,17 @@ async function main() {
     ["venues", venuesResult.errors],
     ["vendors", vendorsResult.errors],
     ["events", eventsResult.errors],
-    ["sponsors", sponsorFieldErrors],
+    ["sponsors", sponsorsResult.errors],
     ["settings", settingsResult.errors],
   ];
   for (const [source, messages] of byType) {
     for (const message of messages) fail(message, "validation", source);
   }
-  errors.push(...logoErrors);
-  failures.push(...logoFailures);
+  for (const failure of logoFailures) {
+    if (droppedLogos.includes(failure)) continue;
+    errors.push(failure.message);
+    failures.push(failure);
+  }
 
   if (errors.length > 0) {
     reportErrorsAndExit(errors, { failures, reportPath, snapshot: { used: snapshotUsedEntries(ctx), written: false, changed: [] } });
@@ -1486,7 +1592,7 @@ async function main() {
 
   // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
   // tier rewritten from the CSV slug to its display label + intrinsic rank).
-  const sponsorsClean = parsed.sponsors.records.map((rec) => {
+  const sponsorsClean = sponsorsResult.records.map((rec) => {
     const tierDef = SPONSOR_TIER_BY_SLUG.get(rec.fields.tier);
     return {
       id: rec.fields.id ?? "",
@@ -1548,6 +1654,16 @@ async function main() {
       `${content.vendors.length} vendors, ${content.sponsors.length} sponsors, version ${version}`
   );
 
+  if (dropped.length > 0) {
+    console.log(
+      `SKIPPED ${dropped.length} invalid row(s) at --skip-invalid-rows; the site above was published without them:`
+    );
+    for (const entry of dropped) {
+      console.log(`  - ${oneLine(entry.message)}${entry.logoOnly ? " [published without its logo]" : ""}`);
+    }
+    console.log(`  Fix these in the spreadsheet and re-run a normal build to publish them.`);
+  }
+
   const shownSnapshotDir = path.relative(CWD, snapshotDir) || snapshotDir;
   const staleLines = snapshotStalenessLines(ctx);
   if (staleLines.length > 0) {
@@ -1577,6 +1693,8 @@ async function main() {
     ok: true,
     failureClasses: [],
     failures: [],
+    skipInvalidRows,
+    droppedRows: dropped,
     snapshot: {
       dir: shownSnapshotDir,
       used: snapshotUsedEntries(ctx),

@@ -54,8 +54,10 @@ device checklist).
 **What the map actually gained:** A and B both directions, **67 eastbound
 only, 72 nothing** — OSM carries no `route=bus` relation for 72 anywhere in
 the metro and only one direction for 67, verified with an unscoped diagnostic
-query. All four stay wired in the query and class map; the legend names only
-Route 67 until 72 exists upstream (BACKLOG has the follow-up). Relation
+query. **Shipping without 72 is accepted, not owed** (Anthony, 2026-08-23) —
+no follow-up item. All four stay wired in the query and class map at zero
+carrying cost, so if OSM ever gains the relation it flows in on the next
+refresh, and only then does the legend string gain "& 72" back. Relation
 `network`/`operator` tags were verified as Metro Transit in the fetched cache,
 per the acceptance criteria.
 

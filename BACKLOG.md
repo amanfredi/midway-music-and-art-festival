@@ -119,16 +119,6 @@ venue-pin hit to the picker sheet, which already handles the unsplittable
 cluster; the fuller treatment is the leader-lines definition awaiting a
 ruling (see Decisions).
 
-**Route 72 (and 67 westbound) are missing upstream in OSM** (found 2026-08-23
-while drawing bus routes; verified with an unscoped metro-wide query). The map
-draws A and B (both directions) and 67 (eastbound only); 72 draws nothing, and
-the legend deliberately names only Route 67 until that changes. The Overpass
-query, generator class map, and colors are already wired for both 67 and 72,
-so the fix is upstream: wait for an OSM edit, or contribute the missing
-`route=bus` relations to OSM ourselves — then rerun
-`node tools/make-map.mjs --refresh`, regenerate the GeoJSON, and restore
-"& 72" to the legend string in `map.js` plus its test.
-
 **Venue names as map labels at close zoom** (idea, Anthony 2026-08-23). At
 the closest zooms the numbered diamonds have room for the venue's name beside
 them — either a name-label symbol layer over the venues source (`minzoom`

@@ -167,3 +167,11 @@ geometry reconstruction.
   the pending VoiceOver pass.
 - **minzoom**: implementer's default, judged on device later.
 - Ruling lands in this doc; the BACKLOG entry disappears when the work lands.
+
+**Addendum (Anthony, 2026-08-23, post-implementation):** OSM turned out to
+carry no `route=bus` relation for 72 anywhere in the metro, and only the
+eastbound relation for 67 (verified unscoped, not assumed from the bbox
+fetch). Shipping without 72 is **accepted** — not a tracked gap. The query
+and generator stay wired for all four refs, so an upstream OSM edit flows in
+on any future `--refresh`; the legend names only what the map draws (Route
+67) until then.

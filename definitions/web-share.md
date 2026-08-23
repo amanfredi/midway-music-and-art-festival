@@ -1,7 +1,7 @@
 # Web Share — share buttons for events and venues
 
-Status: drafted 2026-08-10, awaiting Anthony's ruling on the open questions
-below | Confidence: high on mechanics, open on scope and copy
+Status: drafted 2026-08-10, ruled 2026-08-23 (see Ruling) | Confidence: high
+on mechanics
 
 ## Problem & motivation
 
@@ -149,6 +149,19 @@ with cached `index.html` per the SW contract.
    shouldn't hand the recipient a frozen clock.
 4. **Venue route event list: all festival days (recommended) or today-only
    (exact sheet reuse)?** Cost difference is near zero either way.
+
+## Ruling (Anthony, 2026-08-23)
+
+All four recommendations accepted as written: the `#/venue/<id>` route is in
+scope, the payload is `{ title: <item name>, url }` with no `text`, shared
+URLs strip `?t=`, and the venue route lists all festival days grouped by day.
+
+On the id-rename exposure: broken shared links are tolerated **provided they
+degrade to the not-found treatment with a way back to a list view** — never a
+blank or broken page. Follow-up accepted as a BACKLOG item: the content build
+compares ids against the previous snapshot and errors on a changed or removed
+id, so an organizer's rename is caught at build time instead of by a dead
+link.
 
 ## Ledger
 

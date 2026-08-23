@@ -1,6 +1,6 @@
 # Coincident-pin presentation — labelling venues that share a location
 
-Status: defined 2026-08-11 | Overall confidence: medium-high
+Status: defined 2026-08-11, ruled 2026-08-23 (see Ruling) | Overall confidence: medium-high
 
 ## Problem & motivation
 
@@ -137,3 +137,37 @@ back to (d).
   now, annoying to retrofit.
 - Where does the ruling land — this doc plus a BACKLOG line, or does the
   BACKLOG leader-lines entry get replaced by a pointer here?
+
+## Ruling (Anthony, 2026-08-23)
+
+Composite of (b) and (c), split by zoom — stacking is acceptable only at wide
+zooms; from a mid-zoom split in through max zoom the members of the two static
+groups render as **individual displaced pins**, tolerating the positional
+error at the roughly four closest zoom levels. (Recorded interpretation of
+"only stack at higher zooms (>= 5 or 6), prevent overlap at lower zooms":
+"higher zoom" was the altitude sense — wider view — so stack when wide,
+displace when close. The displaced band starts around a ~1200 m view on a
+phone frame; exact split is the implementer's, derived at runtime like the
+other zoom constants.)
+
+- **Native-collision question, answered:** Anthony preferred MapLibre's own
+  label collision avoidance over a hand-rolled treatment, *if it exists*. It
+  doesn't, in the needed sense: the engine's collision handling **hides** the
+  losing symbol (the reason every pin layer sets `icon-allow-overlap` +
+  `icon-ignore-placement`, per the comment in `addPins`), `text-variable-anchor`
+  moves text only, and clustering is the engine's one coincident-point answer —
+  already shipped. Displacement is therefore hand-rolled either way, and per
+  Anthony's conditional, **the leader dot + line ships with it** (option (a)'s
+  honesty), provided it neither clutters the map nor complicates the
+  implementation; baking dot, line and displaced diamond into one composite
+  icon also guarantees the line can never be covered by another label, his
+  stated worry.
+- **(c) accepted**: member venue numbers on the cluster glyph at wide zooms.
+  CONTRACTS.md's no-count clause and the `venue-cluster` no-text assertion in
+  `tests/a11y.spec.mjs` are amended together; the anonymous stacked glyph stays
+  as the overflow form where numbers stop being legible.
+- **The ~14 m pair is in scope**: no two venue symbols may overlap at any zoom.
+- **Offset direction**: the east–west default stands.
+- **The picker stays** for stacks that cannot split below the displaced range.
+- Ruling lands in this doc; the BACKLOG entries reduce to implementation items
+  and disappear when the work lands.

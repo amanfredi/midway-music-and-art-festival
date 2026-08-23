@@ -40,20 +40,17 @@ Items are not prioritized against each other. The festival is October 2–4,
 
 ## Decisions that need Anthony
 
-**Three definitions await rulings (written 2026-08-11).** Each doc collects
-its open questions at the end; the one-line asks:
+**Three definitions ruled 2026-08-23** — each ruling is recorded in a
+"Ruling" section of its doc. Implementation is in flight; each line below
+leaves this list when its work lands:
 
-- `definitions/coincident-pin-presentation.md` — leader lines for pin groups
-  no zoom can separate; the cheap fallback is routing a tied venue tap to the
-  picker sheet. The tap bug it found is under Map and stands regardless of
-  the ruling.
-- `definitions/bus-route-lines.md` — recommends drawing the A/B Line BRT
-  first from geometry already committed (~11.6 KB gzipped marginal), then
-  extending the transit query for 67/72. Inverts if the interest is
-  specifically 67/72.
-- `definitions/web-share.md` — share buttons on event and venue detail; the
-  prerequisite `#/venue/<id>` route is a CONTRACTS routes change and the
-  scope question.
+- `definitions/coincident-pin-presentation.md` — stacked cluster glyph with
+  member numbers at wide zooms, displaced leader-line pins from a mid-zoom
+  split inward. Subsumes the tied-tap bug under Map.
+- `definitions/bus-route-lines.md` — option (a): refetch the main cache with
+  bus relations A/B/67/72, draw all four; BRT dark gray, locals dark purple.
+- `definitions/web-share.md` — share on event and venue detail;
+  `#/venue/<id>` route ruled in scope, all recommendations accepted.
 
 **Venue popup: ruled deferred, nothing to build (2026-08-21).** No felt
 problem — the popup was an idea, not friction — so the `<dialog>` sheet
@@ -234,6 +231,15 @@ near-identical coordinates were a rendering limitation of the retired SVG map
 (overlapping pins, one pointer-unreachable). The MapLibre migration fixed it
 with clustering plus a picker sheet for pins no zoom can separate — not data
 changes or build validation.
+
+**Detect changed or removed content ids at build time** (accepted with the
+web-share ruling, 2026-08-23). A venue or event `id` edited in the live sheet
+silently kills previously shared `#/venue/<id>` / `#/event/<id>` links and
+starred-event ids — one rename has already happened (the `ginkgocoffehouse`
+typo fix, 2026-08-02). The build already snapshots the last-published sources,
+so compare the incoming id set against the previous snapshot's and raise a
+build error naming the changed/removed id, forcing the rename to be a
+deliberate act rather than an accident.
 
 Two live venue `url` cells are schemeless (`hamline.edu/sundin-music-hall`,
 `blackgarnetbooks.com`). The build completes them to `https://` with a logged

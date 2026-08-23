@@ -1,6 +1,6 @@
 # Bus route lines — drawing the corridor instead of pinning its stops
 
-Status: defined 2026-08-11 | Overall confidence: medium-high
+Status: defined 2026-08-11, ruled 2026-08-23 (see Ruling) | Overall confidence: medium-high
 
 ## Problem & motivation
 
@@ -144,3 +144,26 @@ line and one cache refresh.
   device.
 - Where does the ruling land — this doc plus a BACKLOG line, or does the
   BACKLOG bus-routes entry get replaced by a pointer here?
+
+## Ruling (Anthony, 2026-08-23)
+
+**Option (a)**, over the doc's (c)-then-(b) recommendation. The anti-refetch
+protections defend a goal Anthony doesn't hold: the cache exists to make
+routine redeploys fast and network-free, not to freeze the data forever — a
+one-off refetch takes moments, and upstream drift since the last fetch is more
+likely corrections worth taking than regressions worth fearing. A and B stay
+in scope alongside 67 and 72, so the refetch adds all four refs to the main
+cache's query and every bus route arrives inline, with no second-cache
+geometry reconstruction.
+
+- **Colors: two, per Metro Transit's own map convention** — dark gray for the
+  A/B BRT lines, dark purple for the 67/72 locals. Both ≥3:1 against
+  `--map-paper`, both as `app.css` custom properties.
+- **Legend names the refs** (recommended answer stands); one entry per color
+  class.
+- **Text alternative: legend-only.** A fully accessible transit map is ruled
+  out of scope — better tools already exist (Google Maps, Metro Transit's
+  own), and every sheet links Google Maps when online. Judged no further at
+  the pending VoiceOver pass.
+- **minzoom**: implementer's default, judged on device later.
+- Ruling lands in this doc; the BACKLOG entry disappears when the work lands.

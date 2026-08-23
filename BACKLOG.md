@@ -129,6 +129,19 @@ so the fix is upstream: wait for an OSM edit, or contribute the missing
 `node tools/make-map.mjs --refresh`, regenerate the GeoJSON, and restore
 "& 72" to the legend string in `map.js` plus its test.
 
+**Venue names as map labels at close zoom** (idea, Anthony 2026-08-23). At
+the closest zooms the numbered diamonds have room for the venue's name beside
+them — either a name-label symbol layer over the venues source (`minzoom`
+near the close range; let the engine's collision handling hide names that
+don't fit rather than allow-overlap, since names are long), or the cheaper
+selected-only variant: the tap-highlight feature-state that drives the halo
+also drives a name label's opacity, confirming on the map which pin a
+key-list tap just recentered on. Constraints if attempted: 4.5:1 with a
+paper-colored halo like the street labels (map type is never "large text" per
+CONTRACTS); and the label must reuse the displaced-pin offsets from the
+coincident-pin work, or it labels the empty true coordinate of a leader-line
+pin.
+
 **Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure
 in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
 map frame — 38 px venue pins, pin-matched legend swatches, the pan d-pad, and

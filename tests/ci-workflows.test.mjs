@@ -55,9 +55,16 @@ describe("the content-only path", () => {
   });
 
   test("shares the pages concurrency group with Deploy", () => {
-    for (const [name, text] of [["deploy.yml", DEPLOY], ["rebuild-content.yml", REBUILD]]) {
-      assert.match(code(text), /concurrency:\s*\n\s*group: pages/, `${name} must serialize against the other on Pages`);
-    }
+    assert.match(code(REBUILD), /concurrency:\s*\n\s*group: pages/, "rebuild-content.yml must serialize on Pages");
+    // Deploy's group is an expression: publishing runs serialize on the same
+    // pages group, while a PR run — which never deploys — gets a per-PR group
+    // instead of holding a deploy back.
+    assert.match(
+      code(DEPLOY),
+      /group: \$\{\{ github\.event_name == 'pull_request' && format\('pr-tests-\{0\}', github\.ref\) \|\| 'pages' \}\}/,
+      "deploy.yml must serialize publishing runs on pages and keep PR runs out of that group"
+    );
+    assert.match(code(DEPLOY), /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/, "only PR runs may be cancelled by a newer push");
   });
 
   test("checks that the code it republishes has passed a Deploy run", () => {
@@ -82,6 +89,27 @@ describe("the content-only path", () => {
         `${marker} must be gated on something having changed`
       );
     }
+  });
+});
+
+describe("pull request runs", () => {
+  test("every PR runs the tests", () => {
+    assert.match(code(DEPLOY), /^on:\n(.*\n)*?\s*pull_request:\s*$/m, "deploy.yml must trigger on pull_request");
+  });
+
+  test("a PR run tests and stops: no deploy, no failure email", () => {
+    assert.match(
+      code(DEPLOY),
+      /if: \$\{\{ github\.event_name != 'pull_request' && !cancelled\(\)/,
+      "the deploy job must never run for a pull_request event"
+    );
+    const testJob = code(DEPLOY).slice(code(DEPLOY).indexOf("\n  test:"), code(DEPLOY).indexOf("\n  deploy:"));
+    const mailStep = around(testJob, "notify-failure.mjs", 12).join("\n");
+    assert.match(
+      mailStep,
+      /if: failure\(\) && github\.event_name != 'pull_request'/,
+      "the test job's mail step must stay quiet on PRs, whose runs cannot read the secrets"
+    );
   });
 });
 

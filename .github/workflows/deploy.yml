@@ -3,6 +3,10 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # PRs run only the test job: the deploy job and the failure email are gated
+  # off pull_request events below. Failures show on the PR itself, and
+  # dependabot-triggered runs have no access to the mail secrets anyway.
+  pull_request:
   workflow_dispatch:
     inputs:
       use_content_snapshot:
@@ -21,9 +25,12 @@ on:
 permissions:
   contents: read
 
+# A PR run never deploys, so it must not hold the pages group a deploy (or the
+# cron rebuild) serializes on — each PR gets its own group instead, and a new
+# push to the PR cancels the stale run rather than queueing behind it.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pr-tests-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # A fixed path rather than runner.temp, which no workflow-level context can
@@ -72,8 +79,9 @@ jobs:
       - name: Email the failure
         # Deliberately allowed to fail: this only runs on an already-failed
         # run, and an unsent alarm must show as a red step, not hide behind a
-        # green one (ruled 2026-08-22).
-        if: failure()
+        # green one (ruled 2026-08-22). Not on PRs: the failure is already on
+        # the PR, and dependabot-triggered runs cannot read the secrets.
+        if: failure() && github.event_name != 'pull_request'
         env:
           FASTMAIL_USER: ${{ secrets.FASTMAIL_USER || vars.FASTMAIL_USER }}
           FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
@@ -84,8 +92,9 @@ jobs:
   deploy:
     needs: test
     # skip_tests skips the test job outright, so "skipped" has to be as good as
-    # "success" here — while a real test failure still stops the deploy.
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    # "success" here — while a real test failure still stops the deploy. A PR
+    # run stops here: it exists to test, never to publish.
+    if: ${{ github.event_name != 'pull_request' && !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       # contents: write is for the snapshot refresh below, and is scoped to this

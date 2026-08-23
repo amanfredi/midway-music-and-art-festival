@@ -38,6 +38,44 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-22 — pin numbers in the wrong font on Safari: a bare "Bold" is a font
+
+Reported from Safari/macOS: the digits on the map pins were not the digits on
+the venue cards below them. This is the same defect as the "serif digits"
+report of 2026-08-11, which 19a8ae2 could not reproduce because it was looked
+for on Chromium.
+
+MapLibre reads the label weight out of the FIRST family name in `text-font`
+and then hands the whole stack, weight word included, to a canvas as a CSS
+`font-family`. The stack led with a bare `Bold` (and `Semibold` for the
+smaller labels) on the assumption that a style word is not a real family and
+would fall through. On WebKit it is one: CoreText matches bare style words
+against face names, so `Bold` resolved to a real face — 277.4 units/digit
+against `system-ui`'s 299.5, measured in Playwright WebKit on this Mac — and
+`system-ui` and everything behind it was dead code. Blink resolves none of
+those words, which is exactly why the report only ever came from Safari, and
+why the two rounds of work in August fixed real problems in the stack behind
+the weight word without touching the thing shadowing it.
+
+`MMAF Bold` / `MMAF Semibold` fixes it: still a `\bbold\b` match for the weight
+sniff, resolves nowhere on either engine. Verified by screenshot diff under
+WebKit — before and after differ only inside the map frame, and the after
+digits match the key list's.
+
+The test already asserted the right relationship and still passed, because it
+runs on Chromium where the bug is invisible. It now also asserts, for every
+`text-font` in the style, that the weight word is not a bare style word (a
+static check, so Chromium CI catches a regression) and that it measures as an
+unresolvable family (a live check, so an engine that resolves some other word
+is caught too). Both fail against the old stack on both engines.
+
+A WebKit lane in CI would not have caught this: the resolution is CoreText's,
+and CI is Linux. What catches it is running the suite against WebKit on a Mac,
+which is now a BACKLOG line. That run is not clean today — 9 of 88 fail, all
+in the service-worker/offline group, and the one checked fails with "WebKit
+encountered an internal error" on an offline navigation, i.e. the Playwright
+harness rather than the app. The font test passes there.
+
 ### 2026-08-22 — a deploy can now publish around bad rows, without banking them
 
 Deploy gained a third dispatch checkbox, `skip_invalid_rows`: fetch the

@@ -343,7 +343,7 @@ test('map labels resolve to the platform UI font, not the platform serif', async
   // font stack (no `glyphs` URL, so TinySDF draws them locally), which is a
   // different resolution path from the DOM's — hence measuring the stacks the
   // way the engine does rather than comparing the declarations.
-  const { stack, widths } = await page.evaluate(() => {
+  const { stack, widths, weightWords } = await page.evaluate(() => {
     const map = window.__mmafMap;
     const stack = map.getLayoutProperty('venue-pin', 'text-font').join(',');
     const uiFamily = getComputedStyle(document.querySelector('.venue-key-btn__pin text')).fontFamily;
@@ -362,12 +362,39 @@ test('map labels resolve to the platform UI font, not the platform serif', async
         ui: width(uiFamily),
         systemUi: width('system-ui'),
         serif: width('serif'),
+        unresolvable: width('ZzNoSuchFamily-9f3a'),
       },
+      // Every distinct stack in the style, and its weight word measured on its
+      // own: the engine falls back to the same default for that word and for a
+      // family that cannot exist iff the word matches nothing.
+      weightWords: [...new Set(map.getStyle().layers
+        .map((layer) => layer.layout?.['text-font']?.[0])
+        .filter(Boolean)
+        .map((first) => first.split(',')[0]))]
+        .map((word) => ({ word, w: width(word) })),
     };
   });
 
-  // The engine reads the weight off the first family name, so it has to stay first.
-  expect(stack).toMatch(/^Bold\b/);
+  // The engine reads the weight off the first family name, so it has to stay
+  // first and has to keep the word.
+  expect(stack).toMatch(/^[^,]*\bbold\b/i);
+
+  // ...but it is also handed to the canvas as a real family name, ahead of
+  // everything else, so it has to resolve nowhere. A BARE style word does not
+  // qualify: WebKit/CoreText matches those against face names, so a leading
+  // `Bold` resolved on Safari/macOS and the whole stack behind it never ran.
+  // Two checks per stack, because neither alone holds everywhere — the shape
+  // check runs on any engine, the resolution check only fails on an engine
+  // that actually resolves the word.
+  const bareStyleWord =
+    /^\s*(thin|hairline|extra ?light|ultra ?light|light|normal|regular|medium|semi ?bold|demi ?bold|bold|extra ?bold|ultra ?bold|black|heavy)\s*$/i;
+  expect(weightWords.length).toBeGreaterThan(0);
+  for (const { word, w } of weightWords) {
+    expect(word, `"${word}" is a bare style word, which resolves as a face name on WebKit`)
+      .not.toMatch(bareStyleWord);
+    expect(w, `the weight word "${word}" resolves to a real face and shadows the stack behind it`)
+      .toBeCloseTo(widths.unresolvable, 1);
+  }
 
   // A family the stack actually names has to match. If none did, the generic
   // the engine appends would be the only thing between the labels and the

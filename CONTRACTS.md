@@ -453,14 +453,25 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   Map labels are rasterised by the engine itself: the styles carry no `glyphs`
   URL, so MapLibre draws every codepoint locally with TinySDF and nothing is
   fetched for type. It does that from a **CSS font stack** given as the layer's
-  `text-font`, reading the weight out of the first family name (`Bold`,
-  `Semibold` — not real families) and appending a `sans-serif` generic of its
-  own. Every family after the weight word must be one that really resolves
-  inside a canvas: engine-specific aliases (`-apple-system`,
-  `BlinkMacSystemFont`) resolve on one engine each, which is how pin numbers
-  end up in a face the venue key list beside them is not using. The stack asks
-  for `system-ui` — the standard name for the platform UI font — and falls back
-  through real installed faces.
+  `text-font`, reading the weight out of the first family name (`MMAF Bold`,
+  `MMAF Semibold`) and appending a `sans-serif` generic of its own.
+
+  The weight word is also handed to the canvas as a real family name, ahead of
+  everything else, so it **must be a name that resolves nowhere**. A bare style
+  word is not: WebKit/CoreText matches bare style words against face names, so
+  a leading `Bold` resolved to a real face on Safari/macOS (measured: 277.4
+  units/digit against `system-ui`'s 299.5) and the whole stack behind it never
+  ran. Blink skips those words, so the mismatch showed only in Safari. Hence
+  the `MMAF ` prefix — and hence no punctuation beyond `-` in these names, since
+  MapLibre leaves them unquoted and a paren or comma would make the whole
+  declaration unparseable.
+
+  Every family after the weight word must be one that really resolves inside a
+  canvas: engine-specific aliases (`-apple-system`, `BlinkMacSystemFont`)
+  resolve on one engine each, which is how pin numbers end up in a face the
+  venue key list beside them is not using. The stack asks for `system-ui` — the
+  standard name for the platform UI font — and falls back through real
+  installed faces.
 
   The app's own stack in `app.css` predates `system-ui` and still leads with
   those aliases, so the two agree wherever an alias reaches the platform UI

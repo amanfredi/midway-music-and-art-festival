@@ -99,10 +99,23 @@ function resolveMapColors(host) {
 // PBFs, nothing fetched, and labels come out in the device's own UI font, which
 // is what the rest of the site already uses.
 //
-// The engine reads a weight out of the FIRST family name in the stack and uses
-// the whole stack as a CSS font-family (it appends `sans-serif` itself).
-// "Bold"/"Semibold" are not real families, so they set the weight and then
-// fall through to whatever follows.
+// The engine reads a weight out of the FIRST family name in the stack
+// (GlyphManager._fontWeight, a case-insensitive `\bbold\b`-style word match)
+// and then uses the whole stack, weight word included, as a CSS font-family --
+// appending `sans-serif` itself. So the weight word has to be a family that
+// resolves NOWHERE, or it wins the cascade and the rest of the stack is never
+// consulted.
+//
+// A bare "Bold" or "Semibold" is not that. WebKit/CoreText matches bare style
+// words against face names, so on Safari/macOS `Bold` resolved to a real face
+// (measured: 277.4 units/digit against system-ui's 299.5) and pin numbers came
+// out in a font nothing else on the page uses -- the whole stack behind it dead
+// code. Blink skips those words, which is why it only ever showed up in Safari.
+// Prefixing the project's initialism kills the match on both engines while
+// keeping the word the weight sniff needs. Any name that surrounds the style
+// word would do, with one limit: keep to letters, digits, spaces and `-`,
+// because MapLibre leaves these names unquoted and a paren or comma would make
+// the whole declaration unparseable.
 //
 // Everything after the weight word is a family that really resolves inside a
 // canvas: `system-ui` is the standard generic for the platform UI font, which
@@ -114,8 +127,8 @@ function resolveMapColors(host) {
 // entries are dead weight is how pin labels end up in a font nothing else on
 // the page uses.
 const UI_FONT_STACK = 'system-ui,Helvetica Neue,Helvetica,Arial';
-const FONT_BOLD = [`Bold,${UI_FONT_STACK}`];
-const FONT_SEMIBOLD = [`Semibold,${UI_FONT_STACK}`];
+const FONT_BOLD = [`MMAF Bold,${UI_FONT_STACK}`];
+const FONT_SEMIBOLD = [`MMAF Semibold,${UI_FONT_STACK}`];
 
 // Pin geometry in CSS pixels. The SVG map authors pins in map units at home-view
 // scale and counter-scales them on every zoom to hold a constant on-screen size;

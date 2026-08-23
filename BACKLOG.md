@@ -189,6 +189,17 @@ outside the map (which is above):
       color-scheme follow-ups (by-category chip, dead kind CSS,
       day-prefix gold) were all ruled and landed the same day.
 
+- [ ] **Run the suite against WebKit on a Mac before a release.**
+      `npx playwright test --browser=webkit` — not in CI, which is Linux and
+      would have missed the 2026-08-22 pin-font bug for the same reason
+      Chromium did: the misresolution was CoreText's. Two rounds of work
+      chased that bug on the wrong engine. Not turnkey yet: 9 of 88 fail
+      under Playwright WebKit, all service-worker/offline, and the one
+      checked failed inside the harness ("WebKit encountered an internal
+      error" on an offline navigation) rather than the app. Worth an hour to
+      find out whether those can be made to pass or should be skipped for
+      that project.
+
 **QA on Android**, and an **agent review from a user's perspective**, possibly
 using Claude for Chrome.
 

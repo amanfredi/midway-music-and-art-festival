@@ -152,7 +152,8 @@ typed are kept. Two consequences worth relying on:
 - The same function runs on both sides of the events→venues reference, so
   `Mamas Market & Deli`, `mamasmarket&deli` and `mamasmarketdeli` are one key.
 - It is a no-op for any id that already matches `[a-z0-9-]+`, so normalization
-  can never invalidate a starred event id or a shared `#/event/<id>` link.
+  can never invalidate a starred event id or a shared `#/event/<id>` or
+  `#/venue/<id>` link.
 
 Build errors remain for a value that slugifies to nothing (`&&&`) and for two
 rows that slugify to the same id. The build prints every rewrite it made.
@@ -543,7 +544,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 ## UI contract
 
 Single-page app, hash routing: `#/now` (default), `#/schedule`, `#/map`,
-`#/event/<id>`, `#/starred`, `#/vendors`, `#/sponsors`. Loads
+`#/event/<id>`, `#/venue/<id>`, `#/starred`, `#/vendors`, `#/sponsors`. Loads
 `data/content.json` at startup (relative fetch). All URLs in HTML/CSS/JS are
 **relative** (site must work at `https://user.github.io/repo/` and at a
 custom-domain root). No external requests of any kind: system font stack, no
@@ -714,6 +715,8 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   `aria-pressed` reflecting selection
 - `.event-group__title` on the heading of a group of event rows, in every
   grouped list (the schedule's three groupings, the Now view's per-venue lists)
+- `[data-testid="venue-view"]` on the `#/venue/<id>` route's container
+- `[data-testid="share-btn"]` on every Share button (event detail, venue sheet, venue route)
 - `[data-testid="star-toggle"]` on the star button in event detail (attribute `aria-pressed` reflects state)
 - `[data-testid="row-star-toggle"]` on the star button within an event row (schedule/now/starred lists); attribute `aria-pressed` reflects state
 - `[data-testid="starred-list"]` on the starred-events view container

@@ -138,6 +138,14 @@ test('cold start offline: a page that was never online boots from cache', async 
   await expect(cold.locator('[data-testid="schedule-list"]')).toBeVisible();
   expect(await cold.locator('[data-testid="event-row"]').count()).toBeGreaterThan(10);
 
+  // The route a shared link actually lands on: it adds no files of its own
+  // (CONTRACTS.md), so this is really re-proving hash navigation renders from
+  // the same cached index.html — but a shared #/venue/<id> link is the one
+  // navigation this whole feature exists to make work cold.
+  await cold.goto('/' + T + '#/venue/creativewritinghouse');
+  await expect(cold.locator('[data-testid="venue-view"]')).toBeVisible();
+  await expect(cold.locator('[data-testid="venue-view"] h1')).toHaveText('Creative Writing House');
+
   // The map is the heaviest thing in the precache — the engine's four modules
   // plus the street GeoJSON — and the most likely thing to be missing.
   await cold.goto('/' + T + '#/map');

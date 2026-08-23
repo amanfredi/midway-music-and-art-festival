@@ -67,3 +67,37 @@ export function showToast(message, duration = 3200) {
     setTimeout(() => el.remove(), 300);
   }, duration);
 }
+
+/** Shareable URL for a route: the live origin, hash replaced, demo clock (?t=) stripped. */
+export function shareUrlFor(routeHash) {
+  const url = new URL(location.href);
+  url.searchParams.delete('t');
+  url.hash = routeHash;
+  return url.toString();
+}
+
+// navigator.share where present, clipboard + toast otherwise. AbortError is
+// the user cancelling the OS share sheet, not a failure — no toast for it.
+export async function shareOrCopy(title, url) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url });
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Link copied');
+  } catch {
+    showToast("Couldn't share on this browser");
+  }
+}
+
+/** Wires a rendered [data-testid="share-btn"] within `root` to share `title` at `routeHash`. */
+export function wireShareButton(root, title, routeHash) {
+  const btn = root?.querySelector('[data-testid="share-btn"]');
+  if (!btn) return;
+  btn.addEventListener('click', () => shareOrCopy(title, shareUrlFor(routeHash)));
+}

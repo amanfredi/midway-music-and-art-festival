@@ -44,6 +44,9 @@ test('every route names itself in the document title', async ({ page }) => {
 
   await page.goto('/' + T + '#/event/pottery-showcase');
   await expect(page).toHaveTitle(`Event detail — ${SITE}`);
+
+  await page.goto('/' + T + '#/venue/creativewritinghouse');
+  await expect(page).toHaveTitle(`Venue detail — ${SITE}`);
 });
 
 test('opening the venue sheet moves focus into the dialog; closing it restores focus to the trigger', async ({ page }) => {

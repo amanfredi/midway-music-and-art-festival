@@ -49,8 +49,6 @@ leaves this list when its work lands:
   split inward. Subsumes the tied-tap bug under Map.
 - `definitions/bus-route-lines.md` — option (a): refetch the main cache with
   bus relations A/B/67/72, draw all four; BRT dark gray, locals dark purple.
-- `definitions/web-share.md` — share on event and venue detail;
-  `#/venue/<id>` route ruled in scope, all recommendations accepted.
 
 **Venue popup: ruled deferred, nothing to build (2026-08-21).** No felt
 problem — the popup was an idea, not friction — so the `<dialog>` sheet

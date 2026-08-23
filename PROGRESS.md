@@ -38,6 +38,28 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-23 — web share: Share buttons + the `#/venue/<id>` route
+
+Shipped per `definitions/web-share.md`'s 2026-08-23 ruling. Share buttons
+(`[data-testid="share-btn"]`, `btn btn--secondary`, sheet.js's SHARE_GLYPH) on
+event detail, the venue sheet, and the new `#/venue/<id>` route: `navigator.share`
+where present, clipboard + "Link copied" toast otherwise, AbortError treated as
+a silent cancel. Payload is `{ title, url }` — url is `location.href` with the
+hash swapped in and `?t=` stripped, never a hardcoded origin.
+
+`#/venue/<id>` renders like `#/event/<id>` (route announcer "Venue detail",
+per-route title, back via `getLastListRoute()`, not-found state linking to
+`#/map`), built from `sheet.js#buildVenueDetailHtml`, a builder now shared with
+`openVenueSheet` so there is still exactly one venue detail builder. **One
+deliberate divergence:** the sheet lists only today's events at the venue; the
+route lists every festival day, grouped by day, since a shared link may be
+opened days early. Nothing else differs between the two surfaces.
+
+A resumed session should know: id-rename exposure for `#/venue/<id>` links is
+accepted per the ruling (degrades to not-found, never a blank page) — the
+build-time changed-id check that would catch the rename earlier is still a
+BACKLOG item, not built yet.
+
 ### 2026-08-22 — pin numbers in the wrong font on Safari: a bare "Bold" is a font
 
 Reported from Safari/macOS: the digits on the map pins were not the digits on

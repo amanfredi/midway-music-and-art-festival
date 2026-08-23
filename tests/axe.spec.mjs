@@ -38,6 +38,7 @@ const ROUTES = [
   { name: 'Starred', url: '/' + T + '#/starred', ready: '[data-testid="starred-list"]' },
   { name: 'Vendors', url: '/' + T + '#/vendors', ready: '[data-testid="vendor-list"]' },
   { name: 'Support', url: '/' + T + '#/sponsors', ready: '[data-testid="sponsor-list"]' },
+  { name: 'Venue detail', url: '/' + T + '#/venue/creativewritinghouse', ready: '[data-testid="venue-view"]' },
 ];
 
 for (const route of ROUTES) {

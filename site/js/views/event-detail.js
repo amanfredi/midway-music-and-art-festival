@@ -1,8 +1,8 @@
-import { esc, mapsDirectionsHref, NEW_TAB_HINT } from '../util.js';
+import { esc, mapsDirectionsHref, NEW_TAB_HINT, wireShareButton } from '../util.js';
 import { parseEventTimes, formatDayLabel, formatTime } from '../time.js';
 import { findVenue, isStarred, toggleStar } from '../store.js';
 import { navigate, getLastListRoute } from '../router.js';
-import { openVenueSheet } from './sheet.js';
+import { openVenueSheet, shareButtonHtml } from './sheet.js';
 import { ticketIconHtml, ageBadgeHtml } from './event-row.js';
 
 // Age limits read as a sentence here rather than as a bare badge: the detail
@@ -50,10 +50,12 @@ export function renderEventDetail(container, content, eventId) {
           <span class="star-label">${starred ? 'Starred' : 'Star this event'}</span>
         </button>
         ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>` : ''}
+        ${shareButtonHtml()}
       </div>
     </section>`;
 
   container.querySelector('#back-btn').addEventListener('click', () => navigate(getLastListRoute()));
+  wireShareButton(container, event.title, `#/event/${event.id}`);
   if (venue) {
     container.querySelector('#venue-link').addEventListener('click', () => openVenueSheet(venue.id));
   }

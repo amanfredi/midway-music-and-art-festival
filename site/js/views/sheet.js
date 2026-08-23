@@ -1,7 +1,7 @@
 // Bottom-sheet overlay used both by the map view (tap a pin) and event detail
 // (tap the venue name) so there is exactly one venue/vendor detail surface.
 
-import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT } from '../util.js';
+import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT, wireShareButton } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
 import { findVenue, findSponsor, eventsForVenue } from '../store.js';
 import { kindTintClass } from './event-row.js';
@@ -66,6 +66,43 @@ export function closeSheet() {
   dialog.remove();
 }
 
+// Drawn, not linked: Apple's share glyph is what the toolbar actually shows,
+// and it's inline SVG because the site ships no external assets at all.
+export const SHARE_GLYPH = `
+  <svg class="inline-glyph" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Share" focusable="false">
+    <path d="M8.5 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 17.5 10h-2"
+          fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M12 14.5V3.5M8.5 7 12 3.5 15.5 7"
+          fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+// aria-hidden on the wrapper hides the glyph's own role="img"/aria-label from
+// the accessibility tree, so the button's accessible name is the visible
+// "Share" text alone, not "Share Share" (same shape as the star button's
+// aria-hidden icon plus visible label).
+export function shareButtonHtml() {
+  return `<button type="button" class="btn btn--secondary" data-testid="share-btn"><span aria-hidden="true">${SHARE_GLYPH}</span> Share</button>`;
+}
+
+// Venue detail body shared by the sheet (today's events) and the standalone
+// #/venue/<id> route (all days) — one venue detail builder. eventsSectionHtml
+// is the one part that differs between the two callers.
+export function buildVenueDetailHtml(venue, { headingTag = 'h2', headingId = 'sheet-title', eventsSectionHtml }) {
+  const mapsHref = mapsDirectionsHref(venue.lat, venue.lng);
+  const websiteHref = safeHref(venue.url);
+  return `
+    <${headingTag} class="sheet__title" id="${headingId}">${esc(venue.name)}</${headingTag}>
+    <p class="sheet__address">${esc(venue.address)}</p>
+    ${venue.description ? `<p class="sheet__description">${esc(venue.description)}</p>` : ''}
+    ${eventsSectionHtml}
+    <div class="sheet__actions">
+      ${shareButtonHtml()}
+      ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>` : ''}
+      ${websiteHref ? `<a class="btn btn--secondary" href="${esc(websiteHref)}" target="_blank" rel="noopener">Visit venue website${NEW_TAB_HINT}</a>` : ''}
+    </div>
+  `;
+}
+
 export function openVenueSheet(venueId) {
   const venue = findVenue(venueId);
   if (!venue) return;
@@ -73,24 +110,16 @@ export function openVenueSheet(venueId) {
   const todaysEvents = eventsForVenue(venueId)
     .filter((e) => dateKey(parseEventTimes(e).start) === todayKey)
     .sort((a, b) => a.start.localeCompare(b.start));
-  const mapsHref = mapsDirectionsHref(venue.lat, venue.lng);
-  const websiteHref = safeHref(venue.url);
-
-  open(`
-    <h2 class="sheet__title" id="sheet-title">${esc(venue.name)}</h2>
-    <p class="sheet__address">${esc(venue.address)}</p>
-    ${venue.description ? `<p class="sheet__description">${esc(venue.description)}</p>` : ''}
+  const eventsSectionHtml = `
     <h3 class="sheet__subtitle">Today at this venue</h3>
     ${todaysEvents.length
       ? `<ul class="sheet__event-list">${todaysEvents
           .map((e) => `<li><a class="sheet__event-link ${kindTintClass(e.kind)}" data-close-sheet href="#/event/${esc(e.id)}">${esc(formatTime(parseEventTimes(e).start))} &mdash; ${esc(e.title)}</a></li>`)
           .join('')}</ul>`
-      : '<p class="empty-state">Nothing scheduled here today.</p>'}
-    <div class="sheet__actions">
-      ${mapsHref ? `<a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>` : ''}
-      ${websiteHref ? `<a class="btn btn--secondary" href="${esc(websiteHref)}" target="_blank" rel="noopener">Visit venue website${NEW_TAB_HINT}</a>` : ''}
-    </div>
-  `);
+      : '<p class="empty-state">Nothing scheduled here today.</p>'}`;
+
+  open(buildVenueDetailHtml(venue, { eventsSectionHtml }));
+  wireShareButton(currentDialog(), venue.name, `#/venue/${venue.id}`);
 }
 
 // SPIKE (maplibre-spike branch). Disambiguation for pins that no amount of
@@ -129,19 +158,9 @@ export function openPickerSheet(title, items, onPick) {
 // Safari has no beforeinstallprompt API, so the install button opens this
 // instead: the same steps a person would find under Safari's Share button,
 // kept in-page because the site has no external links to send them to
-// (offline-first).
+// (offline-first). "Tap the Share button" is easier to follow next to the
+// icon, hence SHARE_GLYPH inline in the step text below.
 //
-// Drawn, not linked: Apple's share glyph is what the toolbar actually shows,
-// and "tap the Share button" is much easier to follow next to the icon. It's
-// inline SVG because the site ships no external assets at all.
-const SHARE_GLYPH = `
-  <svg class="inline-glyph" viewBox="0 0 24 24" width="18" height="18" role="img" aria-label="Share" focusable="false">
-    <path d="M8.5 10H6.5A1.5 1.5 0 0 0 5 11.5v8A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 17.5 10h-2"
-          fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M12 14.5V3.5M8.5 7 12 3.5 15.5 7"
-          fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>`;
-
 // macOS Safari installs to the Dock, iOS to the Home Screen — different menu
 // item, different verb. See pwa-install.js#safariFlavor for how they're told
 // apart.

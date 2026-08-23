@@ -5,6 +5,7 @@ import { closeSheet } from './views/sheet.js';
 import { renderNow } from './views/now.js';
 import { renderSchedule } from './views/schedule.js';
 import { renderEventDetail } from './views/event-detail.js';
+import { renderVenueDetail } from './views/venue-detail.js';
 import { renderMap } from './views/map.js';
 import { renderStarred } from './views/starred.js';
 import { renderVendors } from './views/vendors.js';
@@ -32,6 +33,7 @@ const ROUTE_NAMES = {
   vendors: 'Vendors',
   sponsors: 'Support',
   event: 'Event detail',
+  venue: 'Venue detail',
 };
 
 // WCAG 2.4.2: each route titles the tab "<Route name> — <site name>", using
@@ -99,8 +101,9 @@ async function handleRoute(route) {
   window.scrollTo(0, 0);
 
   const name = route.parts[0] || 'now';
-  setActiveTab(name === 'event' ? '' : name);
-  if (name !== 'event') recordListRoute(location.hash || '#/now');
+  const isDetailRoute = name === 'event' || name === 'venue';
+  setActiveTab(isDetailRoute ? '' : name);
+  if (!isDetailRoute) recordListRoute(location.hash || '#/now');
 
   let cleanup;
   switch (name) {
@@ -109,6 +112,9 @@ async function handleRoute(route) {
       break;
     case 'event':
       cleanup = renderEventDetail(viewEl, content, route.parts[1]);
+      break;
+    case 'venue':
+      cleanup = renderVenueDetail(viewEl, content, route.parts[1]);
       break;
     case 'map':
       cleanup = await renderMap(viewEl, content);

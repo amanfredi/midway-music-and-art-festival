@@ -773,8 +773,8 @@ html:has(dialog.sheet[open]) {
   overflow: hidden;
 }
 
-/* Stacked, left-aligned: the maps link is always first, so adding a venue's
-   website below it never moves the button people already know. */
+/* Stacked, left-aligned: order is fixed (Share, then Maps, then the venue's
+   website), so a venue with fewer optional links never moves the ones above it. */
 .sheet__actions {
   display: flex;
   flex-direction: column;

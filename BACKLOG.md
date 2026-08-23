@@ -114,6 +114,23 @@ CONTRACTS); and the label must reuse the displaced-pin offsets from the
 coincident-pin work, or it labels the empty true coordinate of a leader-line
 pin.
 
+**Fix route 67 upstream in OSM** (added 2026-08-23). Relation 2449177 (Metro
+Transit 67, eastbound) is missing its member ways across the Franklin Avenue
+bridge — verified against live Overpass, not just the cache — so the map
+completes the line locally from cached highway ways (`BUS_ROUTE_GAP_FILL` in
+`tools/make-map-geojson.mjs`). The durable fix is an OSM edit adding the seven
+bridge/approach ways to the relation; after the next cache refresh the
+generator warns that the patch is redundant and it can be deleted. Needs an
+OSM account and editing by hand — Anthony's call whether it's worth it.
+
+**Sponsor pins never get a displacement lane** (added 2026-08-23). Cross-type
+displacement covers transit stops only; sponsor pins participate in the
+clearance checks but are assumed static. Today the nearest sponsor–venue pair
+is 368 m apart (clear by ~z12.2, wider than the home view), so nothing needs a
+lane — but sponsor content is still placeholder fixtures. When the live
+sponsor sheet lands, re-check the spacing; extending `displacedStopOffsets` to
+sponsors is mechanical (small-pin lanes, no letters to offset).
+
 **Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure
 in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
 map frame — 38 px venue pins, pin-matched legend swatches, the pan d-pad, and
@@ -139,8 +156,8 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
       of them 2.5.8 measures here is the question to settle before deciding
       there is anything to fix; the map re-audit item above is the natural
       place. The coincident-venue half of this is fully closed as of
-      2026-08-23: clustering plus the picker below the split zoom, and
-      displaced leader pins with a tap each from the split inward (the
+      2026-08-23: clustering plus the picker below the leader zoom, and
+      displaced leader pins with a tap each from the leader zoom inward (the
       close-zoom tie that broke one venue's tap is fixed and pinned by test).
 - [ ] **Station and arterial label size floors** (guide Part C #4). Advisory
       rather than a WCAG failure — the contrast passes. The old measurement
@@ -279,10 +296,11 @@ None of these can be checked from the screenshot harness or the test suite.
       (~55–60% of rail) and muted color rather than a `minzoom`. If the wide
       view reads cluttered, give the `bus-route` layer a `minzoom` like the
       arterial labels' 11.6.
-- [ ] Eyeball the coincident-venue treatment on a phone (added 2026-08-23):
-      the two-member numbered stacks below the split zoom, and the displaced
-      leader pins from the split inward — do the dot and line read as "this
-      pin belongs there", and do the 10 px digits on a stack stay legible?
+- [ ] Eyeball the displaced-pin treatment on a phone (added 2026-08-23):
+      the stacks below the leader zoom, the displaced leader pins from the
+      leader zoom inward, and the two displaced transit stops (beside Ginkgo
+      and Black Garnet) — do the dot and line read as "this pin belongs
+      there", and do the 10 px digits on a stack stay legible?
       Note the venue-pin lane clearance at a 343 px frame is ~1 px (39.06 px
       between centres against 38 px pins, limiting pair venues 1 and 4, a
       property of the current venue set) — if the sheet gains venues,

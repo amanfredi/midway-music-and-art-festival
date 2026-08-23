@@ -284,6 +284,18 @@ test('the legend names both bus route classes in the colors the map draws them',
   }
 });
 
+// The legend ranks what attendees came for above how they get there: venue and
+// the two sponsor tiers first, every transit entry after (requested 2026-08-23).
+test('the legend lists venue, featured destination and sponsor before transit', async ({ page }) => {
+  await gotoMap(page);
+
+  const items = page.locator('.map-legend__list li');
+  await expect(items.nth(0)).toHaveText(/Venue/);
+  await expect(items.nth(1)).toHaveText(/Featured Destination/);
+  await expect(items.nth(2)).toHaveText(/Sponsor/);
+  await expect(items.nth(3)).toHaveText(/Transit/);
+});
+
 // A count on a cluster reads as a venue number — venue pins carry exactly that,
 // from the key list (Anthony, 2026-08-10). The members' own numbers are the one
 // sanctioned exception (2026-08-23): those digits ARE the pin vocabulary. So the
@@ -316,41 +328,73 @@ test('a venue stack shows its members numbers and never a count', async ({ page 
 });
 
 // Every venue must be reachable even when zoom cannot separate its pin from a
-// neighbour's. Two venues share a coordinate (Mosaic on a Stick sits inside
-// Hamline Park — valid data, see CLAUDE.md), so a cluster that cannot expand
-// opens a picker listing what is under it. This is the path below the split
-// zoom; above it the pair draws as displaced pins with a tap each
-// (map-coincident.spec.mjs), so the view is set from the split rather than from
-// the closest zoom.
-test('a cluster that no zoom can split opens a picker instead of a dead tap', async ({ page }) => {
+// neighbour's. From the leader zoom inward the coincident venues draw as
+// displaced pins with a tap each (map-coincident.spec.mjs). Below it they sit
+// inside a stack, and with the leader zoom a level out the stack holding them
+// merges in the pairs' neighbours — so a tap on it zooms to where the displaced
+// pins take over, rather than opening a picker for a stack that can split.
+async function centreOnStackBelowLeaderZoom(page, dz) {
+  return mapEval(
+    page,
+    async (map, arg) => {
+      const [featuresFn, delta] = arg;
+      const byPosition = new Map();
+      for (const f of new Function('return ' + featuresFn)()(map, 'venue-groups')) {
+        const key = f.geometry.coordinates.join(',');
+        byPosition.set(key, [...(byPosition.get(key) ?? []), f.properties.name]);
+      }
+      const [key, names] = [...byPosition.entries()].find(([, list]) => list.length > 1) ?? [];
+      if (!key) return null;
+      map.jumpTo({ center: key.split(',').map(Number), zoom: map.getLayer('venue-leader-pin').minzoom - delta });
+      await new Promise((r) => map.once('idle', () => setTimeout(r, 300)));
+      const rect = map.getCanvas().getBoundingClientRect();
+      const point = map.project(key.split(',').map(Number));
+      return { names, x: rect.left + point.x, y: rect.top + point.y, zoom: map.getZoom() };
+    },
+    [SOURCE_FEATURES_FN, dz],
+  );
+}
+
+test('a tap on the stack below the leader zoom zooms to where its pins draw apart', async ({ page }) => {
   await gotoMap(page);
 
-  const coincident = await mapEval(page, async (map, featuresFn) => {
-    const byPosition = new Map();
-    for (const f of new Function('return ' + featuresFn)()(map, 'venues')) {
-      const key = f.geometry.coordinates.join(',');
-      byPosition.set(key, [...(byPosition.get(key) ?? []), f.properties.name]);
-    }
-    const [key, names] = [...byPosition.entries()].find(([, list]) => list.length > 1) ?? [];
-    if (!key) return null;
-    map.jumpTo({ center: key.split(',').map(Number), zoom: map.getLayer('venue-leader-pin').minzoom - 0.5 });
-    await new Promise((r) => map.once('idle', () => setTimeout(r, 300)));
-    const rect = map.getCanvas().getBoundingClientRect();
-    const point = map.project(key.split(',').map(Number));
-    return { names, x: rect.left + point.x, y: rect.top + point.y };
-  }, SOURCE_FEATURES_FN);
-  expect(coincident, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
+  const stack = await centreOnStackBelowLeaderZoom(page, 0.5);
+  expect(stack, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
 
-  await page.mouse.click(coincident.x, coincident.y);
+  await page.mouse.click(stack.x, stack.y);
+  // expandCluster eases over 400 ms; let it land before asking where we are.
+  await page.waitForTimeout(800);
+  const after = await mapEval(page, (map) => ({
+    zoom: map.getZoom(),
+    leaders: map.queryRenderedFeatures({ layers: ['venue-leader-pin'] }).length,
+  }));
+  expect(after.zoom, 'the stack tap did not zoom').toBeGreaterThan(stack.zoom + 0.05);
+  expect(after.leaders, 'zooming the stack did not reach the displaced pins').toBeGreaterThan(0);
+});
+
+// The picker is the fallback for a stack a tap cannot usefully split. With the
+// leader treatment a level out, the last stacked state is the sliver of display
+// zooms just under the leader zoom, where the stack's expansion zoom is within
+// the tap's own epsilon — zooming would move nowhere, so the tap must list what
+// is underneath instead of dying.
+test('a stack tapped at its own expansion zoom opens the picker', async ({ page }) => {
+  await gotoMap(page);
+
+  const stack = await centreOnStackBelowLeaderZoom(page, 0.005);
+  expect(stack, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
+
+  await page.mouse.click(stack.x, stack.y);
   const dialog = sheet(page);
   await expect(dialog).toBeVisible();
-  for (const name of coincident.names) {
+  for (const name of stack.names) {
     await expect(dialog).toContainText(name);
   }
 
   // Picking one opens that venue's own sheet.
-  await dialog.locator('.sheet__picker-btn').first().click();
-  await expect(page.locator('#sheet-title')).toHaveText(coincident.names[0]);
+  const first = dialog.locator('.sheet__picker-btn').first();
+  const firstName = (await first.textContent()).trim();
+  await first.click();
+  await expect(page.locator('#sheet-title')).toHaveText(firstName);
 });
 
 // Every target="_blank" link carries a visually-hidden "(opens in a new tab)"

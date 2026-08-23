@@ -32,7 +32,9 @@ const MIN_VIEW_M = 120;
 // Where the two treatments for venues that share a location meet: wider than
 // this they stack as one cluster glyph carrying their key-list numbers, from
 // here inward each draws as its own displaced diamond tethered to the point it
-// really occupies.
+// really occupies. Group membership is decided at this view; the displaced
+// treatment itself starts one whole zoom level wider when it provably fits
+// there -- see leaderStartZoom.
 const SPLIT_VIEW_M = 1200;
 
 // Transit pins are limited to stops within this distance of the festival
@@ -301,6 +303,123 @@ function coincidentGroups(venues, { splitZoom, lat }) {
   return offsets;
 }
 
+/** True positions as screen px at `zoom`, one shared frame for drawn-position checks. */
+function pxAtZoom(list, zoom, lat) {
+  const mPerPx = metersPerPixel(zoom, lat);
+  const mPerDegLat = 111320;
+  const mPerDegLng = mPerDegLat * Math.cos((lat * Math.PI) / 180);
+  return list.map((p) => ({ x: (p.lng * mPerDegLng) / mPerPx, y: (p.lat * mPerDegLat) / mPerPx }));
+}
+
+/**
+ * The minimum |dx| + |dy| between two drawn pins across a zoom range, each pin
+ * its true position (px at the range's widest zoom) plus a static lane offset.
+ *
+ * Static offsets make this non-monotone in zoom: one component can shrink
+ * toward a kink where offset and true separation cancel. It is piecewise
+ * linear in the zoom scale factor `s` (1 at the widest zoom, doubling per
+ * level), so the minimum sits at an endpoint or at the kink -- checked
+ * exactly, where sampling zooms could step over the dip.
+ */
+function leastDrawnL1(a, b, sMax, sFrom = 1) {
+  const dx = b.x - a.x;
+  const dy = Math.abs(b.y - a.y);
+  const dOff = (b.off ?? 0) - (a.off ?? 0);
+  const l1At = (s) => Math.abs(dx * s + dOff) + dy * s;
+  let least = Math.min(l1At(sFrom), l1At(sMax));
+  const kink = dx !== 0 ? -dOff / dx : -1;
+  if (kink > sFrom && kink < sMax) least = Math.min(least, l1At(kink));
+  return least;
+}
+
+/**
+ * Where the displaced-pin treatment starts: one whole zoom level outside the
+ * split zoom when every drawn pin provably clears there, otherwise the split
+ * zoom itself.
+ *
+ * Membership is decided at the split zoom; one level out every true position
+ * sits at half the pixel distance, so the fit cannot be assumed -- on a phone
+ * frame the two Hamline-side groups' displaced diamonds would land 21.7 px
+ * apart against the 38 they need, while a 560 px frame clears with room to
+ * spare (measured 2026-08-23, a property of the current venue set). Plain
+ * pairs only count from the zoom where clustering releases them; a grouped
+ * venue within clusterRadius of a plain one rejects outright, because that
+ * stack would draw the venue twice (once in the glyph, once displaced). Both
+ * cluster tests are pairwise, a conservative stand-in for supercluster's
+ * hierarchical merge.
+ */
+function leaderStartZoom(venues, offsets, { splitZoom, maxZoom, lat }) {
+  const candidate = splitZoom - 1;
+  const sMax = 2 ** (maxZoom - candidate);
+  const points = pxAtZoom(venues, candidate, lat).map((p, i) => ({
+    ...p,
+    off: offsets.get(i) ?? 0,
+    grouped: offsets.has(i),
+  }));
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const a = points[i];
+      const b = points[j];
+      const euclid = Math.hypot(b.x - a.x, b.y - a.y);
+      if (a.grouped !== b.grouped && euclid < 26) return splitZoom;
+      const sFrom = !a.grouped && !b.grouped && euclid < 26 ? 26 / euclid : 1;
+      if (sFrom <= sMax && leastDrawnL1(a, b, sMax, sFrom) < 2 * VENUE_R) return splitZoom;
+    }
+  }
+  return candidate;
+}
+
+// A displaced small pin's lane: far enough east or west of its own coordinate
+// that its diamond clears a venue diamond drawn at that exact coordinate, with
+// a leader run left visible between them.
+const SMALL_LEADER_OFF_PX = VENUE_R + LEADER_RUN_PX + SMALL_R;
+
+/**
+ * Transit stops whose pins cannot clear a venue pin somewhere in the displaced
+ * range, and the east-west offset each one moves by, keyed by stop index.
+ *
+ * The venue never moves: it is the primary content and its own placement is
+ * already spoken for by the venue groups, so the smaller pin is the one
+ * displaced, with the same dot-and-leader honesty. Preferred lane is the side
+ * of the map the stop is really on relative to the venue it dodges; if the
+ * displaced diamond would land on any other pin anywhere in the range the side
+ * flips, and if neither side clears, the stop stays put -- the overlap it had
+ * anyway, now a decision rather than an accident. Below the leader zoom the
+ * stop draws plain and can tuck under a venue pin, as every small pin may at
+ * wide zooms: that is ordinary map generalization, where the venue wins the
+ * space by paint order and the zoom that separates them is always available.
+ */
+function displacedStopOffsets(stops, venues, groupOffsets, sponsors, { leaderZoom, maxZoom, lat }) {
+  const sMax = 2 ** (maxZoom - leaderZoom);
+  const venuePins = pxAtZoom(venues, leaderZoom, lat).map((p, i) => ({
+    ...p,
+    off: groupOffsets.get(i) ?? 0,
+    clear: VENUE_R + SMALL_R,
+  }));
+  const sponsorPins = pxAtZoom(sponsors, leaderZoom, lat).map((p) => ({ ...p, off: 0, clear: 2 * SMALL_R }));
+  const stopPins = pxAtZoom(stops, leaderZoom, lat).map((p) => ({ ...p, off: 0 }));
+
+  const offsets = new Map();
+  const collides = (pin, index) =>
+    [...venuePins, ...sponsorPins].some((o) => leastDrawnL1(pin, o, sMax) < o.clear) ||
+    stopPins.some(
+      (s, j) => j !== index && leastDrawnL1(pin, { ...s, off: offsets.get(j) ?? 0 }, sMax) < 2 * SMALL_R
+    );
+
+  stopPins.forEach((pin, index) => {
+    const blocker = venuePins.find((v) => leastDrawnL1(pin, v, sMax) < v.clear);
+    if (!blocker) return;
+    const side = pin.x >= blocker.x ? 1 : -1;
+    for (const offset of [side * SMALL_LEADER_OFF_PX, -side * SMALL_LEADER_OFF_PX]) {
+      if (!collides({ ...pin, off: offset }, index)) {
+        offsets.set(index, offset);
+        return;
+      }
+    }
+  });
+  return offsets;
+}
+
 function diamondPath(ctx, cx, cy, radius) {
   ctx.beginPath();
   ctx.moveTo(cx, cy - radius);
@@ -380,8 +499,8 @@ function clusterImage(radius, { fill, stroke }, dpr) {
 }
 
 /**
- * A venue pin displaced `offset` pixels east or west of the coordinate it
- * belongs to, with a dot back at that coordinate and a line joining the two.
+ * A pin displaced `offset` pixels east or west of the coordinate it belongs
+ * to, with a dot back at that coordinate and a line joining the two.
  *
  * All three parts are one image, anchored on the dot. MapLibre has no
  * leader-line primitive and its collision handling hides symbols rather than
@@ -389,8 +508,8 @@ function clusterImage(radius, { fill, stroke }, dpr) {
  * displacement is precomputed and static -- and baking the line into the icon
  * is what makes it impossible for another label to be placed across it.
  */
-function leaderImage(offset, { fill, dot, line }, dpr) {
-  const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + VENUE_R + 2, VENUE_R + 2, dpr);
+function leaderImage(offset, radius, { fill, dot, line }, dpr) {
+  const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + radius + 2, radius + 2, dpr);
 
   if (offset !== 0) {
     ctx.beginPath();
@@ -401,7 +520,7 @@ function leaderImage(offset, { fill, dot, line }, dpr) {
     ctx.stroke();
   }
 
-  diamondPath(ctx, cx + offset, cy, VENUE_R);
+  diamondPath(ctx, cx + offset, cy, radius);
   ctx.fillStyle = fill;
   ctx.fill();
 
@@ -426,8 +545,8 @@ function leaderImage(offset, { fill, dot, line }, dpr) {
  * paper. Sharing one offset between two composite images is what keeps ring and
  * diamond aligned by construction instead of by two expressions agreeing.
  */
-function leaderHaloImage(offset, { fill, stroke }, dpr) {
-  const radius = VENUE_R + HALO_PAD;
+function leaderHaloImage(offset, pinRadius, { fill, stroke }, dpr) {
+  const radius = pinRadius + HALO_PAD;
   const strokeWidth = 2;
   const pad = 2 + strokeWidth;
   const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + radius + pad, radius + pad, dpr);
@@ -444,9 +563,9 @@ function leaderHaloImage(offset, { fill, stroke }, dpr) {
   return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
 }
 
-/** Image ids for a displaced pin. One pair per distinct offset. */
-const leaderIconId = (offset) => `pin-venue-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
-const leaderHaloId = (offset) => `halo-venue-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
+/** Image ids for a displaced pin. One pair per pin kind per distinct offset. */
+const leaderIconId = (kind, offset) => `pin-${kind}-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
+const leaderHaloId = (kind, offset) => `halo-${kind}-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
 
 // The three zooms every zoom-keyed stop below is pinned to: the full extent,
 // the home view, and the closest zoom. They follow from the calibration and the
@@ -705,8 +824,13 @@ export async function renderMap(container, content) {
       </div>
       <div class="map-legend">
         <h2 class="map-legend__title sr-only">Legend</h2>
+        <!-- Festival content first (venue, then the two sponsor tiers), transit
+             after: the legend ranks what attendees came for above how they get
+             there. -->
         <ul class="map-legend__list">
           <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Venue</li>
+          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
+          <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
           <li><svg class="legend-icon legend-icon--transit" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Transit</li>
           <!-- The two rail lines draw at the same weight in different colors,
                so their names live here or nowhere: the Blue Line has no
@@ -719,8 +843,6 @@ export async function renderMap(container, content) {
                map draws, and 72 currently draws nothing. The query and class map
                are already wired for it. -->
           <li><svg class="legend-icon legend-icon--bus-local" viewBox="0 0 32 32" aria-hidden="true"><line x1="2" y1="16" x2="30" y2="16"></line></svg> Metro Transit Route 67 (local bus)</li>
-          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
-          <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
         </ul>
       </div>
       ${content.settings.map_attribution ? `<p class="map-attribution">${esc(content.settings.map_attribution)}</p>` : ''}
@@ -821,6 +943,7 @@ export async function renderMap(container, content) {
   // at different moments and briefly draw both.
   const splitZoom = Math.round(zoomForMeters(SPLIT_VIEW_M, framePx, lat));
   const groupOffsets = coincidentGroups(venues, { splitZoom, lat });
+  const leaderZoom = leaderStartZoom(venues, groupOffsets, { splitZoom, maxZoom, lat });
   const displaced = [...groupOffsets.entries()]
     .sort(([a], [b]) => a - b)
     .map(([index, offset]) => ({ venue: venues[index], label: String(index + 1), offset }));
@@ -926,6 +1049,12 @@ export async function renderMap(container, content) {
   );
   renderPinAltList(container, pinnedStops, pinnedSponsors);
 
+  const displacedStops = displacedStopOffsets(pinnedStops, venues, groupOffsets, pinnedSponsors, {
+    leaderZoom,
+    maxZoom,
+    lat,
+  });
+
   const transitById = new Map(pinnedStops.map((s) => [s.id, s]));
 
   // Tap highlight: one selected pin at a time, marked through feature-state.
@@ -948,7 +1077,16 @@ export async function renderMap(container, content) {
 
   map.on('load', () => {
     if (generation !== renderGeneration) return;
-    addPins(map, { venues, stops: pinnedStops, sponsors: pinnedSponsors, clusterMaxZoom, colors, displaced, splitZoom });
+    addPins(map, {
+      venues,
+      stops: pinnedStops,
+      sponsors: pinnedSponsors,
+      clusterMaxZoom,
+      colors,
+      displaced,
+      displacedStops,
+      leaderZoom,
+    });
     wirePinTaps(map, { transitById, maxZoom, selectPin });
     // A venue card in the key list behaves as though its pin was tapped:
     // highlight the pin and recenter on it, on top of opening the sheet.
@@ -1030,18 +1168,33 @@ function renderPinAltList(container, stops, sponsors) {
   });
 }
 
-function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displaced, splitZoom }) {
+function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displaced, displacedStops, leaderZoom }) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   // Zero is always a legal lane -- an odd group's middle member keeps its own
-  // coordinate -- and seeding it keeps the text-offset match below well formed
-  // when nothing is displaced at all.
+  // coordinate -- and seeding it keeps the text-offset matches below well
+  // formed when nothing is displaced at all.
   const laneOffsets = [...new Set([0, ...displaced.map((d) => d.offset)])];
+  const stopLaneOffsets = [...new Set([0, ...displacedStops.values()])];
   map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
-  const leaderColors = { fill: colors.venue, dot: colors.leaderDot, line: colors.leaderLine };
   const haloColors = { fill: colors.accent, stroke: colors.accentDark };
+  const leaderColors = (fill) => ({ fill, dot: colors.leaderDot, line: colors.leaderLine });
   for (const offset of laneOffsets) {
-    map.addImage(leaderIconId(offset), leaderImage(offset, leaderColors, dpr).data, { pixelRatio: dpr });
-    map.addImage(leaderHaloId(offset), leaderHaloImage(offset, haloColors, dpr).data, { pixelRatio: dpr });
+    map.addImage(leaderIconId('venue', offset), leaderImage(offset, VENUE_R, leaderColors(colors.venue), dpr).data, {
+      pixelRatio: dpr,
+    });
+    map.addImage(leaderHaloId('venue', offset), leaderHaloImage(offset, VENUE_R, haloColors, dpr).data, {
+      pixelRatio: dpr,
+    });
+  }
+  for (const offset of stopLaneOffsets) {
+    map.addImage(
+      leaderIconId('transit', offset),
+      leaderImage(offset, SMALL_R, leaderColors(colors.transit), dpr).data,
+      { pixelRatio: dpr }
+    );
+    map.addImage(leaderHaloId('transit', offset), leaderHaloImage(offset, SMALL_R, haloColors, dpr).data, {
+      pixelRatio: dpr,
+    });
   }
   map.addImage('pin-cluster', clusterImage(CLUSTER_R, { fill: colors.venue, stroke: colors.surface }, dpr).data, {
     pixelRatio: dpr,
@@ -1112,8 +1265,8 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
           label: d.label,
           name: d.venue.name,
           offset: d.offset,
-          icon: leaderIconId(d.offset),
-          halo: leaderHaloId(d.offset),
+          icon: leaderIconId('venue', d.offset),
+          halo: leaderHaloId('venue', d.offset),
         },
         geometry: { type: 'Point', coordinates: [d.venue.lng, d.venue.lat] },
       })),
@@ -1134,6 +1287,12 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
           // Multi-line stops stack their letters, as the SVG pins do: "G/A"
           // at pin size is less legible than two lines.
           letters: s.lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean).join('\n'),
+          grouped: displacedStops.has(i),
+          ...(displacedStops.has(i) && {
+            offset: displacedStops.get(i),
+            icon: leaderIconId('transit', displacedStops.get(i)),
+            halo: leaderHaloId('transit', displacedStops.get(i)),
+          }),
         },
         geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
       })),
@@ -1179,7 +1338,11 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     'text-font': FONT_BOLD,
   };
 
-  map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', paint: haloPaint(SMALL_R) });
+  // A displaced stop leaves the plain layers from the leader zoom inward, where
+  // its own leader layers draw it instead -- the same handoff the venues make,
+  // in one source since transit never clusters.
+  const plainTransit = ['any', ['<', ['zoom'], leaderZoom], ['==', ['get', 'grouped'], false]];
+  map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', filter: plainTransit, paint: haloPaint(SMALL_R) });
   map.addLayer({ id: 'sponsor-highlight', type: 'circle', source: 'sponsors', paint: haloPaint(SMALL_R) });
   // The individual venues this source still draws: not a stack, and not one of
   // the venues whose own source draws it displaced.
@@ -1200,7 +1363,16 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     id: 'venue-leader-halo',
     type: 'symbol',
     source: 'venue-groups',
-    minzoom: splitZoom,
+    minzoom: leaderZoom,
+    layout: { ...pinLayout, 'icon-image': ['get', 'halo'] },
+    paint: { 'icon-opacity': selectedOnly(1) },
+  });
+  map.addLayer({
+    id: 'transit-leader-halo',
+    type: 'symbol',
+    source: 'transit',
+    minzoom: leaderZoom,
+    filter: ['==', ['get', 'grouped'], true],
     layout: { ...pinLayout, 'icon-image': ['get', 'halo'] },
     paint: { 'icon-opacity': selectedOnly(1) },
   });
@@ -1211,6 +1383,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     id: 'transit-pin',
     type: 'symbol',
     source: 'transit',
+    filter: plainTransit,
     layout: {
       ...pinLayout,
       ...labelLayout,
@@ -1218,6 +1391,30 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
       'text-field': ['get', 'letters'],
       'text-size': 11,
       'text-line-height': 0.95,
+    },
+    paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: 'transit-leader-pin',
+    type: 'symbol',
+    source: 'transit',
+    minzoom: leaderZoom,
+    filter: ['==', ['get', 'grouped'], true],
+    layout: {
+      ...pinLayout,
+      ...labelLayout,
+      'icon-image': ['get', 'icon'],
+      'text-field': ['get', 'letters'],
+      'text-size': 11,
+      'text-line-height': 0.95,
+      // Letters ride the displaced diamond, offset in ems of their own size --
+      // a match over the lanes for the same reason as the venue layer below.
+      'text-offset': [
+        'match',
+        ['get', 'offset'],
+        ...stopLaneOffsets.flatMap((offset) => [offset, ['literal', [offset / 11, 0]]]),
+        ['literal', [0, 0]],
+      ],
     },
     paint: { 'text-color': '#ffffff' },
   });
@@ -1244,7 +1441,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
       ['has', 'point_count'],
       [
         'any',
-        ['<', ['zoom'], splitZoom],
+        ['<', ['zoom'], leaderZoom],
         ['<', ['to-number', ['get', 'groupedCount']], ['to-number', ['get', 'point_count']]],
       ],
     ],
@@ -1284,7 +1481,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     id: 'venue-leader-pin',
     type: 'symbol',
     source: 'venue-groups',
-    minzoom: splitZoom,
+    minzoom: leaderZoom,
     layout: {
       ...pinLayout,
       ...labelLayout,
@@ -1328,18 +1525,22 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
     'venue-cluster',
     'sponsor-generic-pin',
     'sponsor-featured-pin',
+    'transit-leader-pin',
     'transit-pin',
   ];
+  const LEADER_LAYERS = new Set(['venue-leader-pin', 'transit-leader-pin']);
 
   // Where a pin's tappable diamond is drawn, which for a displaced venue is not
   // where its coordinate is. Measuring the coordinate instead is the one hazard
   // in this treatment: the two Hamline Park venues share theirs exactly, so
   // every tap ties and resolves by whichever feature the engine enumerated
-  // first -- one of the two could not be opened at all.
-  const drawnPoint = (feature) => {
+  // first -- one of the two could not be opened at all. The offset applies only
+  // when a leader layer drew the pin: below the leader zoom the same displaced
+  // stop draws plain, at its own coordinate.
+  const drawnPoint = (feature, layer) => {
     const point = map.project(feature.geometry.coordinates);
     const offset = feature.properties.offset;
-    return typeof offset === 'number' ? { x: point.x + offset, y: point.y } : point;
+    return LEADER_LAYERS.has(layer) && typeof offset === 'number' ? { x: point.x + offset, y: point.y } : point;
   };
 
   const openTransit = (id) => {
@@ -1363,7 +1564,7 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
     for (let i = 0; i < PIN_LAYERS.length; i++) {
       const layer = PIN_LAYERS[i];
       for (const f of map.queryRenderedFeatures(box, { layers: [layer] })) {
-        const p = drawnPoint(f);
+        const p = drawnPoint(f, layer);
         const d = Math.hypot(p.x - e.point.x, p.y - e.point.y);
         if (!best || d < best.d - 0.5 || (Math.abs(d - best.d) <= 0.5 && i < best.rank)) {
           best = { layer, feature: f, d, rank: i };
@@ -1383,7 +1584,7 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
       // No highlight for a cluster: it stands for several pins, and the halo
       // marks exactly one.
       expandCluster(map, best.feature, { maxZoom });
-    } else if (best.layer === 'transit-pin') {
+    } else if (best.layer === 'transit-pin' || best.layer === 'transit-leader-pin') {
       selectPin('transit', best.feature.id);
       openTransit(best.feature.properties.id);
     } else {

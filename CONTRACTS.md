@@ -394,6 +394,12 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   data-driven on the feature's `class`, not `ref`: `--bus-route-brt` (A, B) and
   `--bus-route-local` (67, 72), Metro Transit's own map convention. Both
   classes carry a stroke swatch and their refs in the HTML legend.
+  Route 67 is completed across the Franklin Avenue bridge from cached highway
+  ways (`BUS_ROUTE_GAP_FILL` in `tools/make-map-geojson.mjs`): the OSM relation
+  is missing that span upstream, in the live data as well as the cache
+  (verified 2026-08-23), so a refetch alone cannot close it. A unit test
+  asserts the drawn route stays one connected piece, and the generator warns
+  when the upstream relation gains the bridge so the patch can be dropped.
 - **Level of detail is the engine's**, not a baked classification. Labels are
   symbol layers, so placement re-runs at every zoom and collision decides what
   survives; layer `minzoom` supplies the coarse steps — spines always, arterial
@@ -459,7 +465,8 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   keys (same guide: a legend symbol at a different size reads as a different
   symbol); the rail swatches are line strokes, exempt. The venue key list
   below the map repeats the venue pin's diamond (not a circle), and the
-  legend's venue swatch carries no number.
+  legend's venue swatch carries no number. The legend lists festival content
+  first — venue, featured destination, sponsor — and the transit entries after.
 
   Map labels are rasterised by the engine itself: the styles carry no `glyphs`
   URL, so MapLibre draws every codepoint locally with TinySDF and nothing is
@@ -520,10 +527,12 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   10 px away beat the transit pin directly under the finger.
 
   Distance is measured to where a pin's diamond is **drawn**, which for a
-  displaced venue is its coordinate plus its lane offset. Measuring the
-  coordinate is what breaks: the Hamline Park pair share theirs exactly, every
-  tap ties, and the tie-break is layer rank alone — so one of the two could not
-  be opened at all.
+  displaced venue or transit stop is its coordinate plus its lane offset —
+  applied only when a leader layer drew the pin, since below the leader zoom
+  the same stop draws plain at its own coordinate. Measuring the coordinate is
+  what breaks: the Hamline Park pair share theirs exactly, every tap ties, and
+  the tie-break is layer rank alone — so one of the two could not be opened at
+  all.
 
   Where pins overlap, paint order is lowest-to-highest: transit, featured
   destination, sponsor, venue.
@@ -542,19 +551,25 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   own `maxzoom` (18), or clusters bake into the last real tile and never break
   apart however far you zoom.
 
-  Tapping a cluster zooms to the point where it splits. When it *cannot* split
-  — venues that share a coordinate have no expansion zoom, and the sheet
-  legitimately contains such a pair (see CLAUDE.md) — it opens a picker sheet
-  listing what is underneath instead, so no venue is unreachable on the map.
-  Only stacks below the split zoom reach this: from there inward such a pair
-  draws as displaced pins, one tap each.
+  Tapping a cluster zooms to the point where it splits. When a tap *cannot*
+  usefully split it — venues that share a coordinate have no expansion zoom,
+  and a stack tapped within the tap epsilon of its own expansion zoom would
+  ease nowhere — it opens a picker sheet listing what is underneath instead,
+  so no venue is unreachable on the map. Only stacks below the leader zoom
+  reach this: from there inward such a pair draws as displaced pins, one tap
+  each.
 
-  **Venues that share a location are displaced from the split zoom inward.** The
-  split is a ~1200 m view, rounded to a whole zoom level and derived at runtime
-  from the frame width like every other zoom here. Wider than it, venues whose
-  diamonds would overlap stack as one cluster glyph. From it inward, each of them
-  draws its own numbered diamond, displaced east or west into a lane a pin wide
-  plus a leader run either side (2 × (`VENUE_R` + 13) px), with a dot at the
+  **Venues that share a location are displaced from the leader zoom inward.**
+  Group membership is decided at the split — a ~1200 m view, rounded to a
+  whole zoom level and derived at runtime from the frame width like every
+  other zoom here — and the treatment starts one whole level wider than the
+  split when every drawn pin provably clears there (`leaderStartZoom`; a
+  560 px frame clears, phone frames do not — their two groups' diamonds would
+  land 21.7 px apart against the 38 they need — so their leader zoom stays at
+  the split). Wider than the leader zoom, venues whose diamonds would overlap
+  stack as one cluster glyph. From it inward, each of them draws its own
+  numbered diamond, displaced east or west into a lane a pin wide plus a
+  leader run either side (2 × (`VENUE_R` + 13) px), with a dot at the
   coordinate it really occupies and a line joining dot to diamond. Every member
   carries **its own dot**, so an exactly coincident pair draws two dots at one
   point. Membership is derived at runtime from the coordinates — single linkage
@@ -571,15 +586,32 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   label to be placed across it. The displaced pins come from their own
   unclustered `venue-groups` source, because the clustered one hides them inside
   a stack for most of this range; a stack whose every member is displaced drops
-  out of `venue-cluster` here, which is why the split has to be a whole zoom
-  level (that filter reads `zoom`, and MapLibre evaluates zoom in filters only at
-  integer zooms). Their tap halo is a symbol layer, `venue-leader-halo`, rather
+  out of `venue-cluster` here, which is why the leader zoom has to be a whole
+  zoom level (that filter reads `zoom`, and MapLibre evaluates zoom in filters
+  only at integer zooms). Their tap halo is a symbol layer, `venue-leader-halo`, rather
   than a circle: a circle layer draws at the feature's geometry, which here is
   the dot, so the ring would mark empty paper beside the diamond. Ring and
   diamond are placed inside their two images from the same offset. Dot and
   line colors are `--map-leader-dot` and `--map-leader-line` in `app.css` —
   graphics, not type, so 3:1 against `--map-paper` is the floor; they hold
   6.77:1 and 4.77:1.
+
+  **A transit stop that cannot clear a venue pin is displaced the same way,
+  from the leader zoom inward.** The venue never moves — it is the primary
+  content — and the stop takes a small-pin lane (`VENUE_R` + 13 + `SMALL_R` px
+  east or west, preferring the side of the venue the stop is really on), with
+  its own dot and line, letters riding the diamond. Membership is derived at
+  runtime (`displacedStopOffsets`): a stop is displaced when its drawn pin
+  would come within `VENUE_R` + `SMALL_R` of a venue's drawn pin anywhere from
+  the leader zoom in, and a lane is assigned only after checking it clears
+  every other pin — venue, sponsor, and stop — across that whole range; if
+  neither side clears, the stop stays put. Below the leader zoom the stop
+  draws plain and may tuck under the venue pin: at wide zooms that is ordinary
+  map generalization — the venue wins the space by paint order, and the zoom
+  that separates them always exists (with the current data every cross-type
+  pair resolves by ~z15, against a max zoom near 18). Displaced stops keep
+  their feature ids and source, so the tap highlight is `transit-leader-halo`,
+  the symbol twin of the venue one.
 
   Vendor pins are removed from the map entirely (vendors moved to the
   `#/vendors` list view — see UI contract). Sponsor pins exist **only** for

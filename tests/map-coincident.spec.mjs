@@ -245,10 +245,16 @@ test.describe('on a phone-width frame', () => {
   });
 });
 
-test('below the split zoom the pair is one stack carrying both member numbers', async ({ page }) => {
+// The band just outside the leader zoom is where the pairs used to render as
+// their own numbered two-stacks; the leader treatment now starts a level
+// earlier and covers it (ruled 2026-08-23), so below the leader zoom the pair
+// is inside SOME stack — with the current venue set, the merged anonymous one,
+// since the two groups sit within clusterRadius of each other there. Any
+// two-venue stack that does render still carries its members' numbers.
+test('below the leader zoom the pair stacks, never as its own numbered pair', async ({ page }) => {
   await gotoMap(page);
 
-  const stack = await mapEval(
+  const state = await mapEval(
     page,
     async (map, featuresFn) => {
       const features = new Function('return ' + featuresFn)()(map, 'venue-groups');
@@ -261,35 +267,182 @@ test('below the split zoom the pair is one stack carrying both member numbers', 
       if (!key) return null;
       map.jumpTo({ center: key.split(',').map(Number), zoom: map.getLayer('venue-leader-pin').minzoom - 0.5 });
       await new Promise((r) => (map.loaded() ? setTimeout(r, 250) : map.once('idle', () => setTimeout(r, 250))));
-      // A stack's icon is wide enough that a box query at this point also
-      // catches the neighbouring group's, so the one standing for these venues
-      // is the nearest: two coincident points reduce to a cluster centred on
-      // them, give or take the tile grid the coordinates come back quantised to.
-      const point = map.project(key.split(',').map(Number));
-      const near = (f) => {
-        const p = map.project(f.geometry.coordinates);
-        return Math.hypot(p.x - point.x, p.y - point.y);
-      };
-      const stack = map
-        .queryRenderedFeatures({ layers: ['venue-cluster'] })
-        .filter((f) => near(f) < 4)
-        .sort((a, b) => near(a) - near(b))[0];
+      const source = map.getSource('venues');
+      const ids = members.map((f) => f.properties.id);
+      const seen = new Set();
+      const clusters = [];
+      let holder = null;
+      for (const f of map.queryRenderedFeatures({ layers: ['venue-cluster'] })) {
+        if (seen.has(f.properties.cluster_id)) continue;
+        seen.add(f.properties.cluster_id);
+        const leaves = await source.getClusterLeaves(f.properties.cluster_id, Infinity, 0);
+        const cluster = { properties: f.properties, leafLabels: leaves.map((l) => Number(l.properties.label)) };
+        clusters.push(cluster);
+        if (ids.every((id) => leaves.some((l) => l.properties.id === id))) holder = cluster;
+      }
       return {
         labels: members.map((f) => Number(f.properties.label)).sort((a, b) => a - b),
         leaders: map.queryRenderedFeatures({ layers: ['venue-leader-pin'] }).length,
-        cluster: stack ? stack.properties : null,
+        holder,
+        clusters,
       };
     },
     SOURCE_FEATURES_FN,
   );
 
-  expect(stack, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
-  expect(stack.leaders, 'displaced pins reach below the split zoom').toBe(0);
-  expect(stack.cluster, 'the pair does not stack below the split zoom').not.toBeNull();
-  expect(stack.cluster.point_count).toBe(2);
-  // The digits on the glyph are the members' own key-list numbers, in a fixed
-  // order: supercluster promises nothing about the order it reduces leaves in.
-  expect([stack.cluster.labelMin, stack.cluster.labelMax]).toEqual(stack.labels);
+  expect(state, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
+  expect(state.leaders, 'displaced pins reach below the leader zoom').toBe(0);
+  expect(state.holder, 'the pair does not stack below the leader zoom').not.toBeNull();
+  // The pair as its own stack is the state the leader zoom was moved out to
+  // remove; seeing it here means the treatment has retreated a level inward.
+  // A property of the current venue set — the groups merge with each other
+  // below the leader zoom — not a law for every dataset.
+  expect(
+    state.holder.properties.point_count,
+    'the pair still draws as its own numbered stack outside the leader zoom',
+  ).toBeGreaterThan(2);
+  // Whatever two-venue stacks do render carry their members' own key-list
+  // numbers, in a fixed order: supercluster promises nothing about leaf order.
+  for (const cluster of state.clusters.filter((c) => c.properties.point_count === 2)) {
+    const numbers = cluster.leafLabels.slice().sort((a, b) => a - b);
+    expect([cluster.properties.labelMin, cluster.properties.labelMax]).toEqual(numbers);
+  }
+});
+
+// Cross-type companion to the venue treatment: a transit stop whose pin cannot
+// clear a venue pin from the leader zoom inward draws displaced the same way —
+// dot at the stop's coordinate, line, diamond in a lane — while the venue, the
+// primary content, never moves. Below the leader zoom the stop draws plain and
+// may tuck under the venue pin, as any small pin may at wide zooms.
+test('a transit stop that cannot clear a venue pin draws displaced, with its own tap', async ({ page }) => {
+  await gotoMap(page);
+
+  const stop = await mapEval(
+    page,
+    async (map, featuresFn) => {
+      const displaced = new Function('return ' + featuresFn)()(map, 'transit')
+        .filter((f) => f.properties.grouped)
+        .sort((a, b) => (a.properties.id < b.properties.id ? -1 : 1));
+      if (!displaced.length) return null;
+      const f = displaced[0];
+      map.jumpTo({ center: f.geometry.coordinates, zoom: map.getMaxZoom() });
+      await new Promise((r) => (map.loaded() ? setTimeout(r, 250) : map.once('idle', () => setTimeout(r, 250))));
+      const rect = map.getCanvas().getBoundingClientRect();
+      const point = map.project(f.geometry.coordinates);
+      const drawnBy = (layer) =>
+        map.queryRenderedFeatures({ layers: [layer] }).some((r) => r.properties.id === f.properties.id);
+      return {
+        ...f.properties,
+        x: rect.left + point.x + f.properties.offset,
+        y: rect.top + point.y,
+        onLeaderLayer: drawnBy('transit-leader-pin'),
+        onPlainLayer: drawnBy('transit-pin'),
+      };
+    },
+    SOURCE_FEATURES_FN,
+  );
+  expect(stop, 'no transit stop is displaced; this test has lost its subject').not.toBeNull();
+
+  expect(stop.onLeaderLayer, 'the displaced stop is not drawn by its leader layer').toBe(true);
+  expect(stop.onPlainLayer, 'the stop draws twice, plain and displaced').toBe(false);
+  expect(stop.offset).not.toBe(0);
+  const probe = await mapEval(page, IMAGE_PROBE_FN, stop.icon);
+  expect(probe.centreColumn, 'the diamond is not at its offset').toBeCloseTo(stop.offset, 0);
+  expect(probe.opaqueAtAnchor, "nothing is drawn at the stop's own coordinate").toBe(true);
+
+  // A tap on the displaced diamond opens that stop's sheet — identified by
+  // name, read from the hidden keyboard list that shares the pinned subset.
+  const label = await page.locator(`.pin-alt-btn[data-kind="transit"][data-id="${stop.id}"]`).textContent();
+  await page.mouse.click(stop.x, stop.y);
+  await expect(sheet(page)).toBeVisible();
+  await expect(page.locator('#sheet-title')).toHaveText(label.split(' — ')[0]);
+  await page.keyboard.press('Escape');
+  await expect(sheet(page)).toBeHidden();
+});
+
+/** Every pin on screen with its drawn point and type, for cross-type spacing checks. */
+const TYPED_SYMBOLS_FN = `(map) => {
+  const out = [];
+  const grab = (layer, type) => {
+    for (const f of map.queryRenderedFeatures({ layers: [layer] })) {
+      const point = map.project(f.geometry.coordinates);
+      const offset = layer.includes('-leader-') && typeof f.properties.offset === 'number' ? f.properties.offset : 0;
+      const key = type + ':' + f.properties.id;
+      if (out.some((s) => s.key === key)) continue;
+      out.push({ key, type, x: point.x + offset, y: point.y });
+    }
+  };
+  grab('venue-pin', 'venue');
+  grab('venue-leader-pin', 'venue');
+  grab('transit-pin', 'transit');
+  grab('transit-leader-pin', 'transit');
+  grab('sponsor-featured-pin', 'sponsor');
+  grab('sponsor-generic-pin', 'sponsor');
+  return out;
+}`;
+
+async function expectNoCrossTypeOverlapFromLeaderZoom(page) {
+  await gotoMap(page);
+
+  // Centred on each displaced stop in turn: the walk can only measure what is
+  // on screen, and the displaced sites are where the mechanism under test does
+  // its work. Spacing away from them is enforced analytically at runtime by
+  // displacedStopOffsets, which checks every pin pair before assigning a lane.
+  const { worst, sites, needed } = await page.evaluate(
+    async ([symbolsFn, featuresFn]) => {
+      const map = window.__mmafMap;
+      const start = map.getLayer('transit-leader-pin').minzoom;
+      const centres = new Function('return ' + featuresFn)()(map, 'transit')
+        .filter((f) => f.properties.grouped)
+        .map((f) => f.geometry.coordinates);
+      const radius = (id) => {
+        const image = map.style.getImage(id);
+        return (image.data.width / image.pixelRatio - 4) / 2;
+      };
+      const radii = { venue: radius('pin-venue'), transit: radius('pin-transit'), sponsor: radius('pin-transit') };
+      const settle = () =>
+        new Promise((r) => (map.loaded() ? setTimeout(r, 150) : map.once('idle', () => setTimeout(r, 150))));
+      let worst = null;
+      for (const centre of centres) {
+        for (let zoom = start; zoom <= map.getMaxZoom() + 0.001; zoom += 0.5) {
+          map.jumpTo({ center: centre, zoom: Math.min(zoom, map.getMaxZoom()) });
+          await settle();
+          const pins = new Function('return ' + symbolsFn)()(map);
+          for (let i = 0; i < pins.length; i++) {
+            for (let j = i + 1; j < pins.length; j++) {
+              if (pins[i].type === pins[j].type) continue;
+              const distance = Math.abs(pins[i].x - pins[j].x) + Math.abs(pins[i].y - pins[j].y);
+              const margin = distance - (radii[pins[i].type] + radii[pins[j].type]);
+              if (!worst || margin < worst.margin) {
+                worst = { margin, zoom: map.getZoom(), pair: [pins[i].key, pins[j].key] };
+              }
+            }
+          }
+        }
+      }
+      return { worst, sites: centres.length, needed: radii };
+    },
+    [TYPED_SYMBOLS_FN, SOURCE_FEATURES_FN],
+  );
+
+  expect(sites, 'no transit stop is displaced; this test has lost its subject').toBeGreaterThan(0);
+  expect(worst, 'no cross-type pin pair was ever on screen; the check proves nothing').not.toBeNull();
+  expect(
+    worst.margin,
+    `${worst.pair?.join(' and ')} overlap at zoom ${worst.zoom?.toFixed(2)} (radii ${JSON.stringify(needed)})`,
+  ).toBeGreaterThanOrEqual(0);
+}
+
+test('no pin of one type draws on a pin of another from the leader zoom inward', async ({ page }) => {
+  await expectNoCrossTypeOverlapFromLeaderZoom(page);
+});
+
+test.describe('cross-type spacing on a phone-width frame', () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test('no pin of one type draws on a pin of another from the leader zoom inward', async ({ page }) => {
+    await expectNoCrossTypeOverlapFromLeaderZoom(page);
+  });
 });
 
 test('every displaced venue is one of the venues the key list numbers', async ({ page }) => {

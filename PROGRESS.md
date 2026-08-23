@@ -38,6 +38,47 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-23 — map QA round: legend order, earlier leaders, route 67 bridge, cross-type spacing
+
+Four fixes from Anthony's pass over the deployed site. **Legend** now leads
+with festival content — venue, featured destination, sponsor — ahead of the
+transit entries (order pinned by test). **The displaced-pin treatment starts
+one whole zoom level outside the split** where it provably fits: membership is
+still decided at the ~1200 m split, and `leaderStartZoom` adopts the wider
+level only after checking every drawn pin pair across the entire displaced
+range — analytically, not by sampling, since static lane offsets make drawn
+distance non-monotone in zoom (piecewise linear in the scale factor: endpoints
+plus the kink where offset and true separation cancel). A 560 px frame adopts
+it, so leader pins now cover the band where the 6/10 and 12/14 numbered
+stacks used to sit; phone frames reject it (their two groups' diamonds would
+land 21.7 px apart against the 38 they need) and keep the split — phones are
+unchanged. A consequence on both frames: the pairs never render as their own
+numbered two-stacks with this venue set (below the leader zoom the two groups
+merge into one anonymous stack), so the picker is reachable only in the
+display-zoom sliver just under the leader zoom where a stack's expansion zoom
+falls within the tap epsilon; the stack tap otherwise zooms straight into the
+leader band. Both paths tested; the numbered-stack glyph still serves
+transient pairs like 1/4.
+
+**Route 67** drew with a 441 m hole at the Franklin Avenue bridge: OSM
+relation 2449177 is missing that span upstream — live Overpass has the same
+115 members, so refetching cannot fix it. The seven cached highway ways that
+chain the approaches now complete the line (`BUS_ROUTE_GAP_FILL` in the
+generator, which warns when upstream gains the bridge); a unit test asserts
+route 67 stays one connected piece.
+
+**Cross-type pin overlap**: a transit stop whose pin cannot clear a venue pin
+anywhere from the leader zoom inward now draws displaced with the same
+dot-line-diamond treatment — small-pin lane (43 px), letters riding the
+diamond, tap and halo included, the venue itself never moving. With current
+data that is Snelling & Minnehaha (east, clearing Ginkgo) and Hamline Avenue
+(west, clearing Black Garnet), the same two stops on every frame width.
+Sponsor pins join the clearance checks but none needs a lane (nearest
+sponsor–venue pair is 368 m; see BACKLOG for the live-sheet caveat). Below the
+leader zoom small pins may still tuck under venue pins — ordinary map
+generalization: the venue wins the space by paint order, and every current
+cross-type pair resolves by ~z15 against a max zoom near 18.
+
 ### 2026-08-23 — coincident venues: numbered stacks wide, leader pins close
 
 Shipped per `definitions/coincident-pin-presentation.md`'s ruling — the (b)+(c)

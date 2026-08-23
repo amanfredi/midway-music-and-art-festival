@@ -100,6 +100,18 @@ function railLineKey(tags = {}) {
 // drifted from the query and is skipped rather than guessed at.
 const BUS_ROUTE_CLASS = { A: 'brt', B: 'brt', 67: 'local', 72: 'local' };
 
+// Route 67's OSM relation (2449177) is missing its span across the Franklin
+// Avenue bridge: the members stop at either end, in the live data as well as
+// the cache (verified against Overpass 2026-08-23), so a refetch does not fix
+// it and the drawn line breaks at the river. The roadway itself is in the
+// cache from the highway query; these seven ways chain the west approach to
+// the east approach and are emitted as extra route-67 members. Drop this once
+// the upstream relation carries the bridge -- the "already a member" warning
+// below is the signal.
+const BUS_ROUTE_GAP_FILL = {
+  67: [720899817, 720899833, 720899818, 720899816, 720897007, 1238383706, 720899815],
+};
+
 /**
  * Chains ways that share a name and an endpoint into single LineStrings.
  *
@@ -287,6 +299,34 @@ for (const el of raw.elements) {
       geometry: { type: 'Point', coordinates: [round(el.lon), round(el.lat)] },
     });
     counts.station++;
+  }
+}
+
+// Gap-fill members for bus routes whose OSM relation is incomplete (see
+// BUS_ROUTE_GAP_FILL); their geometry comes from the cached highway ways.
+const waysById = new Map(raw.elements.filter((el) => el.type === 'way').map((el) => [el.id, el]));
+const busMemberIds = new Set(
+  raw.elements
+    .filter((el) => el.type === 'relation' && el.tags?.route === 'bus')
+    .flatMap((el) => (el.members || []).map((m) => `${el.tags.ref}/${m.ref}`))
+);
+for (const [ref, wayIds] of Object.entries(BUS_ROUTE_GAP_FILL)) {
+  for (const id of wayIds) {
+    if (busMemberIds.has(`${ref}/${id}`)) {
+      console.warn(`Route ${ref} now carries way ${id} upstream; remove it from BUS_ROUTE_GAP_FILL.`);
+      continue;
+    }
+    const coords = waysById.has(id) ? wayToCoords(waysById.get(id)) : null;
+    if (!coords) {
+      console.warn(`Gap-fill way ${id} for route ${ref} is not in the cache; the route keeps its gap.`);
+      continue;
+    }
+    features.push({
+      type: 'Feature',
+      properties: { kind: 'bus-route', ref, class: BUS_ROUTE_CLASS[ref] },
+      geometry: { type: 'LineString', coordinates: coords },
+    });
+    counts.busRoute++;
   }
 }
 

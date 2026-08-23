@@ -127,6 +127,7 @@ export async function findEmptySpot(page, { slop = 14 } = {}) {
         'venue-cluster',
         'sponsor-generic-pin',
         'sponsor-featured-pin',
+        'transit-leader-pin',
         'transit-pin',
       ].filter((id) => map.getLayer(id));
       for (let fy = 0.15; fy < 0.9; fy += 0.1) {

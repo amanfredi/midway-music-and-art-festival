@@ -101,19 +101,6 @@ and re-spec. The 4.5:1 small-text requirement is unchanged.
 
 ## Map
 
-**Venue names as map labels at close zoom** (idea, Anthony 2026-08-23). At
-the closest zooms the numbered diamonds have room for the venue's name beside
-them — either a name-label symbol layer over the venues source (`minzoom`
-near the close range; let the engine's collision handling hide names that
-don't fit rather than allow-overlap, since names are long), or the cheaper
-selected-only variant: the tap-highlight feature-state that drives the halo
-also drives a name label's opacity, confirming on the map which pin a
-key-list tap just recentered on. Constraints if attempted: 4.5:1 with a
-paper-colored halo like the street labels (map type is never "large text" per
-CONTRACTS); and the label must reuse the displaced-pin offsets from the
-coincident-pin work, or it labels the empty true coordinate of a leader-line
-pin.
-
 **Fix route 67 upstream in OSM** (added 2026-08-23). Relation 2449177 (Metro
 Transit 67, eastbound) is missing its member ways across the Franklin Avenue
 bridge — verified against live Overpass, not just the cache — so the map

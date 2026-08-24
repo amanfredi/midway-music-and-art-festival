@@ -82,6 +82,8 @@ const MAP_COLOR_VARS = {
   labelSpine: '--map-label-spine',
   labelArterial: '--map-label-arterial',
   labelStation: '--map-label-station',
+  labelVenue: '--map-label-venue',
+  labelSponsor: '--map-label-sponsor',
   leaderDot: '--map-leader-dot',
   leaderLine: '--map-leader-line',
   surface: '--color-surface',
@@ -181,6 +183,17 @@ const VENUE_TEXT_PX = 16;
 // wide, and a two-digit number sets to ~12 px (measured in the engine's own
 // font stack, 2026-08-23).
 const CLUSTER_TEXT_PX = 10;
+// Name labels beside venue and sponsor pins, from the leader zoom inward.
+// NAME_CLEAR_PX is how far past the pin's radius the label starts, and it is
+// measured to the pin's COLLISION BOX, not its drawn diamond: a symbol's box
+// is the whole image rect -- 2 px of canvas bleed included -- inflated by the
+// engine's default icon-padding and text-padding (2 px each), so an offset
+// that only clears the visible shape is rejected by the very collision pass
+// that places the label, and every name silently disappears. 8 px is that
+// 6 px of box-beyond-diamond plus a 2 px visible gap.
+const NAME_TEXT_PX = 12;
+const SPONSOR_NAME_TEXT_PX = 11;
+const NAME_CLEAR_PX = 8;
 // The tap-highlight halo extends this far beyond the pin it rings.
 const HALO_PAD = 6;
 // Displaced-pin geometry. Members of a coincident group sit in east-west lanes
@@ -1316,7 +1329,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
       features: sponsors.map((s, i) => ({
         type: 'Feature',
         id: i,
-        properties: { id: s.id, featured: FEATURED_SPONSOR_TIERS.has(s.tier_slug) },
+        properties: { id: s.id, name: s.name, featured: FEATURED_SPONSOR_TIERS.has(s.tier_slug) },
         geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
       })),
     },
@@ -1337,11 +1350,14 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     'circle-stroke-width': 2,
     'circle-stroke-opacity': selectedOnly(1),
   });
-  // allow-overlap/ignore-placement keep every pin drawn: MapLibre's collision
-  // handling HIDES the loser, which would be worse than today's overlap. What
-  // stops venues piling up is the clustering and the displacement above, not
-  // collision.
-  const pinLayout = { 'icon-allow-overlap': true, 'icon-ignore-placement': true };
+  // allow-overlap keeps every pin drawn: MapLibre's collision handling HIDES
+  // the loser, which would be worse than today's overlap. What stops venues
+  // piling up is the clustering and the displacement above, not collision.
+  // ignore-placement stays OFF, though -- a pin that registers its collision
+  // box cannot be drawn across by the name and street labels placed after it,
+  // which is what makes the leader images' baked-in line actually
+  // untrespassable rather than only drawn on top of.
+  const pinLayout = { 'icon-allow-overlap': true, 'icon-ignore-placement': false };
   const labelLayout = {
     'text-allow-overlap': true,
     'text-ignore-placement': true,
@@ -1369,12 +1385,15 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
   // is the leader dot, so the ring would land on empty paper beside the diamond
   // it is meant to mark. The ring sits inside its image exactly where the
   // diamond sits inside the pin's, both placed from the same offset.
+  // Halos are the one exception to pins registering their boxes: a ring that
+  // is invisible until its pin is selected must not reserve label room around
+  // every displaced pin all the time.
   map.addLayer({
     id: 'venue-leader-halo',
     type: 'symbol',
     source: 'venue-groups',
     minzoom: leaderZoom,
-    layout: { ...pinLayout, 'icon-image': ['get', 'halo'] },
+    layout: { ...pinLayout, 'icon-ignore-placement': true, 'icon-image': ['get', 'halo'] },
     paint: { 'icon-opacity': selectedOnly(1) },
   });
   map.addLayer({
@@ -1383,7 +1402,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     source: 'transit',
     minzoom: leaderZoom,
     filter: ['==', ['get', 'grouped'], true],
-    layout: { ...pinLayout, 'icon-image': ['get', 'halo'] },
+    layout: { ...pinLayout, 'icon-ignore-placement': true, 'icon-image': ['get', 'halo'] },
     paint: { 'icon-opacity': selectedOnly(1) },
   });
 
@@ -1512,6 +1531,119 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
     },
     paint: { 'text-color': '#ffffff' },
   });
+
+  // Venue and sponsor names beside their pins, from the leader zoom inward --
+  // the same threshold as the leader treatment. Text only, and none of
+  // pinLayout's overlap escape hatches: names are long, so the engine's
+  // collision pass hides the ones that don't fit rather than piling them up.
+  // They are inserted BELOW every pin layer (before transit-highlight, the
+  // first layer this function added) and above the street labels: placement
+  // runs from the top of the stack down, so the pins are in the collision
+  // index before any name looks for room -- no name lands across a diamond, a
+  // number or a leader line -- and the names in turn outrank street names.
+  // Among themselves, venue names place before sponsor names. Transit stops
+  // get no name: their pins already say what they are, and a stop name is a
+  // sheet-tap away.
+  const nameLabelPaint = (color) => ({
+    'text-color': color,
+    'text-halo-color': colors.paper,
+    'text-halo-width': 1.5,
+  });
+  map.addLayer(
+    {
+      id: 'sponsor-name-label',
+      type: 'symbol',
+      source: 'sponsors',
+      minzoom: leaderZoom,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT_SEMIBOLD,
+        'text-size': SPONSOR_NAME_TEXT_PX,
+        // The engine tries each side in turn and keeps the first that fits.
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        // +3: the generic sponsor pin's stroke widens its image, and both
+        // sponsor kinds share this layer, so both clear the wider box.
+        'text-radial-offset': (SMALL_R + 3 + NAME_CLEAR_PX) / SPONSOR_NAME_TEXT_PX,
+        'text-justify': 'auto',
+      },
+      paint: nameLabelPaint(colors.labelSponsor),
+    },
+    'transit-highlight'
+  );
+  map.addLayer(
+    {
+      id: 'venue-name-label',
+      type: 'symbol',
+      source: 'venues',
+      minzoom: leaderZoom,
+      filter: plainVenue,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT_SEMIBOLD,
+        'text-size': NAME_TEXT_PX,
+        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-radial-offset': (VENUE_R + NAME_CLEAR_PX) / NAME_TEXT_PX,
+        'text-justify': 'auto',
+      },
+      paint: nameLabelPaint(colors.labelVenue),
+    },
+    'transit-highlight'
+  );
+  // A displaced venue's name goes where its diamond is DRAWN, not where its
+  // coordinate is (which is empty paper beside the leader line -- and for a
+  // coincident pair, the same box twice, so collision would keep one name of
+  // two). Anchored on the lane's outward side, the label grows away from the
+  // group instead of back across it; the middle lane of an odd group (offset
+  // 0) hangs its name below, since east and west belong to its neighbours.
+  // Fixed data-driven anchors rather than text-variable-anchor: variable
+  // anchoring treats text-offset as unsigned and re-aims it at whichever
+  // anchor it picks, which throws away the lane's side.
+  const laneSide = (offset, west, east, middle) => (offset < 0 ? west : offset > 0 ? east : middle);
+  map.addLayer(
+    {
+      id: 'venue-leader-name-label',
+      type: 'symbol',
+      source: 'venue-groups',
+      minzoom: leaderZoom,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': FONT_SEMIBOLD,
+        'text-size': NAME_TEXT_PX,
+        'text-anchor': [
+          'match',
+          ['get', 'offset'],
+          ...laneOffsets.flatMap((offset) => [offset, laneSide(offset, 'right', 'left', 'top')]),
+          'top',
+        ],
+        'text-justify': [
+          'match',
+          ['get', 'offset'],
+          ...laneOffsets.flatMap((offset) => [offset, laneSide(offset, 'right', 'left', 'center')]),
+          'center',
+        ],
+        // A match over the lanes for the same stringification reason as the
+        // number layer above. The clearance runs from the lane offset because
+        // the leader image's collision box spans the whole composite, dot to
+        // beyond the diamond's far tip.
+        'text-offset': [
+          'match',
+          ['get', 'offset'],
+          ...laneOffsets.flatMap((offset) => [
+            offset,
+            [
+              'literal',
+              offset === 0
+                ? [0, (VENUE_R + NAME_CLEAR_PX) / NAME_TEXT_PX]
+                : [(offset + Math.sign(offset) * (VENUE_R + NAME_CLEAR_PX)) / NAME_TEXT_PX, 0],
+            ],
+          ]),
+          ['literal', [0, 0]],
+        ],
+      },
+      paint: nameLabelPaint(colors.labelVenue),
+    },
+    'transit-highlight'
+  );
 }
 
 /**

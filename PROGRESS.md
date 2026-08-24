@@ -38,6 +38,36 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-08-23 — venue and sponsor names label their pins at close zoom
+
+The BACKLOG idea from earlier today, shipped as the always-on variant at
+Anthony's direction, extended to sponsor pins: from the leader zoom inward,
+venue, featured-destination and generic sponsor pins carry their name beside
+the diamond, in the pin's own hue over a paper halo (6.77:1 / 6.61:1). Names
+take none of the pins' overlap escape hatches — the collision pass hides the
+ones that don't fit (visible in practice: the two displaced groups' names
+give way to each other right at the leader zoom and appear a level in) — and
+displaced venues' names ride their lanes, anchored on the outward side, since
+a name at the true coordinate would label empty paper and a coincident pair's
+names would collide down to one.
+
+Two non-obvious pieces. First, the visible pin layers now REGISTER their
+collision boxes (`icon-ignore-placement` off, invisible halo layers
+excepted): pins still always draw, but names and street labels placed after
+them can no longer land across a diamond, a number or a leader line — which
+also makes the old comment about the baked-in leader line being
+untrespassable actually true. Second, label offsets must clear the pin's
+collision box, not its drawn shape: the box is the whole image rect (bleed,
+the generic sponsor pin's stroke) plus the engine's default 2 px icon- and
+text-padding, and an offset measured to the diamond is rejected by the very
+collision pass that places the label — every name silently vanishes.
+Transit stops stay unnamed: their pins already say what they are.
+
+New `tests/map-name-labels.spec.mjs` pins the layer gating, the
+no-allow-overlap posture, the box registration split, and both names of the
+fixtures' coincident pair rendering at once (impossible if labels sat at the
+shared coordinate). Full suite green; verified visually at 375 px.
+
 ### 2026-08-23 — deployed regression: collision zooms now frame-independent
 
 The QA round below shipped and Anthony's desktop still showed the 6/10 and

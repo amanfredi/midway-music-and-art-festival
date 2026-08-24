@@ -75,6 +75,11 @@
   --map-label-spine: #3f3f3f;
   --map-label-arterial: #565654;
   --map-label-station: #3d5c4d;
+  /* Pin-name labels reuse the pin hues, so a name reads as belonging to its
+     diamond. Both hues are dark enough to be type, not just graphics: 6.77:1
+     (venue) and 6.61:1 (sponsor) against --map-paper. */
+  --map-label-venue: var(--pin-venue);
+  --map-label-sponsor: var(--pin-sponsor);
 
   /* Event-kind tints. These paint whole event tiles now, not just chip fills,
      so each one is a background under body text: title, time, venue, day and

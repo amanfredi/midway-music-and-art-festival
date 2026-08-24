@@ -620,6 +620,28 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   their feature ids and source, so the tap highlight is `transit-leader-halo`,
   the symbol twin of the venue one.
 
+  **Pins are named from the leader zoom inward.** Venue, featured-destination
+  and generic sponsor pins carry their venue's or sponsor's name beside the
+  diamond (`venue-name-label`, `venue-leader-name-label`,
+  `sponsor-name-label`, all `minzoom` = leader zoom); transit stops do not —
+  their pins already say what they are, and the stop name is a tap away.
+  Names are type, not graphics: 4.5:1 against `--map-paper` with a 1.5 px
+  paper halo, in the pin's own hue (`--map-label-venue` 6.77:1,
+  `--map-label-sponsor` 6.61:1). Unlike the pins, names take **no overlap
+  escape hatch**: the engine's collision pass hides a name that doesn't fit,
+  and placement priority runs venue names, then sponsor names, then street
+  names. The visible pin layers register their collision boxes
+  (`icon-ignore-placement` off; the two invisible-until-selected halo layers
+  stay out of the index), so no label — name or street — can be placed across
+  a diamond, a number or a leader line; label offsets are therefore measured
+  to the pin's collision box (image rect + the engine's default 2 px icon-
+  and text-padding), not its drawn shape, or the pin's own box rejects its
+  own name. A displaced venue's name rides its lane — offset to the drawn
+  diamond and anchored on the lane's outward side, the middle lane of an odd
+  group naming itself below — because a name at the true coordinate labels
+  the empty paper beside the leader line, and an exactly coincident pair's
+  names would want the identical box and collide down to one.
+
   Vendor pins are removed from the map entirely (vendors moved to the
   `#/vendors` list view — see UI contract). Sponsor pins exist **only** for
   tiers `emerald`–`topaz` **and only** when that sponsor has a `location`;

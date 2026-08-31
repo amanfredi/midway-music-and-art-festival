@@ -738,11 +738,21 @@ img {
   gap: 0.35rem;
 }
 
+/* Uniform tile rather than natural size. Sponsor logos arrive at whatever
+   aspect ratio the sponsor has (1.66:1 to 4.17:1 today), and the wide ones hit
+   `img { max-width: 100% }` before the height cap — so aspect ratio, not tier,
+   decided how prominent a sponsor looked. The plate also lets a logo that
+   carries its own dark background (Ideal Printers publishes no light variant)
+   read as that sponsor's artwork rather than as a layout mistake. White, not
+   --color-surface, because sponsor artwork is drawn against white. */
 .sponsor-card__logo {
-  max-height: 48px;
-  width: auto;
+  box-sizing: border-box;
+  width: 100%;
+  height: 56px;
   object-fit: contain;
-  align-self: flex-start;
+  padding: 6px 8px;
+  background: #ffffff;
+  border-radius: 4px;
 }
 
 .sponsor-card__name {
@@ -1408,10 +1418,16 @@ a:focus-visible, button:focus-visible {
   gap: 0.5rem;
 }
 
+/* Same tile treatment as .sponsor-card__logo above, at spotlight size, so an
+   emerald sponsor isn't the one logo on the page without a plate. */
 .sponsor-spotlight__logo {
-  max-height: 140px;
-  width: auto;
+  box-sizing: border-box;
+  width: 100%;
+  height: 140px;
   object-fit: contain;
+  padding: 10px 14px;
+  background: #ffffff;
+  border-radius: 4px;
 }
 
 .sponsor-spotlight__name {

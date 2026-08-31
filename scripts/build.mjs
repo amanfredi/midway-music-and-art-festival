@@ -804,8 +804,7 @@ function addCalendarDays(dateStr, days) {
   if (!parsed) return dateStr; // defensive only: reached solely on already-invalid input, which fails the build regardless
   const dt = new Date(parsed.ms);
   dt.setUTCDate(dt.getUTCDate() + days);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
 }
 
 // ---------------------------------------------------------------------------

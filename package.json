@@ -16,6 +16,6 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.49.0",
-    "maplibre-gl": "6.5.0"
+    "maplibre-gl": "6.6.0"
   }
 }

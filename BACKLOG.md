@@ -24,9 +24,7 @@ Items are not prioritized against each other. The festival is October 2–4,
   day. Remaining, in order: Anthony pushes; run the checklist; then
   Anthony removes the invariant's "currently not met" clause in CLAUDE.md.
   The review's allowlist inversion was ruled and landed 2026-08-22, with a
-  fail-closed test. Mind the sequencing note on the
-  live sheet incident under Content and data: until the sheet is fixed,
-  each failed cron after the push emails both recipient lists. Operator config exists since 2026-08-12:
+  fail-closed test. Operator config exists since 2026-08-12:
   `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,
   `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER` variables (recipient lists
   may be comma-separated).
@@ -112,11 +110,47 @@ OSM account and editing by hand — Anthony's call whether it's worth it.
 
 **Sponsor pins never get a displacement lane** (added 2026-08-23). Cross-type
 displacement covers transit stops only; sponsor pins participate in the
-clearance checks but are assumed static. Today the nearest sponsor–venue pair
-is 368 m apart (clear by ~z12.2, wider than the home view), so nothing needs a
-lane — but sponsor content is still placeholder fixtures. When the live
-sponsor sheet lands, re-check the spacing; extending `displacedStopOffsets` to
-sponsors is mechanical (small-pin lanes, no letters to offset).
+clearance checks but are assumed static. The live sponsor sheet landed 2026-08-31 with every
+`location` empty, so no sponsor pin renders at all and there is currently
+nothing to space. The trigger is now the item below on filling that column:
+when real sponsor coordinates exist, re-check the spacing. The old 368 m
+nearest sponsor–venue pair (clear by ~z12.2, wider than the home view) measured
+the placeholder fixtures and no longer describes what ships. Extending
+`displacedStopOffsets` to sponsors is mechanical (small-pin lanes, no letters to
+offset).
+
+**Venue label and lane collision handling could be more deliberate** (added
+2026-08-31, from Anthony's read of the deployed map). Two symptoms, each
+tracing to a mechanism that is defensible but arbitrary.
+
+Names disappear in an order nobody chose. `venue-name-label` sets no
+`symbol-sort-key` — there is none anywhere in `map.js` — so when the collision
+pass drops a name that will not fit, MapLibre resolves by feature order in the
+source, which is sheet row order. Which venue keeps its name while zooming out
+is an accident of where the organizers happened to type it. A sort key would
+make the sacrifice order a decision instead: by event count, by whatever ranks
+a venue's importance to an attendee.
+
+Lanes always run east–west. `coincidentGroups` (`map.js:296`) sorts each
+coincident group by longitude and lays its members along a horizontal axis in
+`LEADER_LANE_PX` steps. The stated reason is sound — a displaced diamond stays
+on the side of the group its venue is really on — but it only holds when the
+group's members actually differ in longitude. A group stacked north–south gets
+sorted on a near-meaningless key and then displaced along the axis it did not
+vary in, which is what reads as a pin sliding sideways where it should have
+moved up or down. Choosing the axis from the group's own spread — its principal
+axis, or simply whichever of lat/lng varies more — would keep the existing
+rationale and fix the degenerate case.
+
+Adjacent, and the same bias: both name layers use `text-variable-anchor:
+['left', 'right', 'top', 'bottom']`, so a label tries both horizontal sides
+before it tries above or below. Worth re-examining alongside the lane axis,
+because the two compound — a horizontally displaced pin carrying a horizontally
+anchored name reaches further sideways than either does alone.
+
+The mechanisms are confirmed in the code; the mapping from each to what was
+seen on the deployed map is not, so reproducing against named venues is the
+first step.
 
 **Map presentation is CI-validated against fixtures only** (added 2026-08-23).
 The venues sheet is live, and pin-collision outcomes (group membership, the
@@ -214,22 +248,6 @@ using Claude for Chrome.
 
 ## Content and data
 
-**Live content pipeline failing — venue content frozen since 2026-08-11.**
-The organizers added four venues (sheet rows 16–19: Hive Collaborative,
-Celtic Junction Arts Center, Black Hart of Saint Paul, Can Can Wonderland)
-with eight required cells still empty across description/location/address,
-so every build since the last success (2026-08-11T19:31Z) fails validation:
-roughly forty consecutive 6-hour cron runs have failed and the live site
-still shows the old 14 venues. The fix is filling the eight cells in the
-sheet. Sequencing: once the deploy-robustness work is pushed, every failed
-cron emails both recipient lists naming exactly these rows — four times a
-day until the sheet is fixed — which is either the system doing its job or
-mail the organizers weren't warned about, depending on what they've been
-told. Since 2026-08-22 there is a way to ship without waiting for the sheet:
-`gh workflow run deploy.yml -f skip_invalid_rows=true` publishes the valid
-rows and leaves these four out. It does not fix the cron, which still fails
-on them by design, and it does not update the snapshot.
-
 Two venue-location facts are **valid data, not sheet errors** (ruled by
 Anthony 2026-08-10, after repeated sessions flagged them; also recorded in
 CLAUDE.md): **Mosaic on a Stick sits inside Hamline Park** and correctly
@@ -239,6 +257,40 @@ near-identical coordinates were a rendering limitation of the retired SVG map
 (overlapping pins, one pointer-unreachable). The MapLibre migration fixed it
 with clustering plus a picker sheet for pins no zoom can separate — not data
 changes or build validation.
+
+**Decide what to do about Google serving several versions of a tab at once**
+(measured 2026-08-31; the evidence is in that day's PROGRESS.md entry). The
+build has no way to tell which version it fetched, and three things follow.
+Two builds minutes apart can produce different `content.json` and therefore
+different service-worker versions, pushing an update to every cached phone for
+no content change — the determinism invariant broken from outside the build,
+where none of its own guarantees reach. A deploy can silently revert content
+the organizers already fixed, since the oldest version on offer was a full
+edit cycle behind, not minutes stale. And `--write-snapshot` can record that
+version as "last known good", which is the one artifact that has to be
+trustworthy.
+
+Exposure is probably worst right after a sheet edit, though how long the edges
+stay in disagreement was not measured — the 2026-08-31 deploy picked up the
+current version, which says the window closes but not how fast. The free
+mitigation is procedural: wait a few minutes after editing before deploying. A
+quorum fetch — two or three fetches of each source, accepted only when they
+agree — would cost a few seconds per build. **Undecided:** living with it, the
+procedural rule, and the quorum fetch are all still open.
+
+**The sponsors tab has a `location` column but every row is empty**, so no
+sponsor gets a map pin. Pins exist for `emerald`–`topaz` only when the sponsor
+has a location, and all five current sponsors (Cadenza Music, Platform, Ideal
+Printers, Old National Bank, Bewick Cafe) are local Midway businesses — so this
+is unrealized value rather than a defect, and filling the column in the sheet is
+the whole fix.
+
+**The events tab carries a `url` column the build ignores**, holding artist links
+for 24 of the 34 events. Whether it was added expecting the site to render event links is an open
+question with the organizers, and support for it is unscoped until they answer.
+Row 20 (Keep For Cheap) currently repeats `https://danrumseymusic.com/` from row
+9 (Dan Rumsey Trio), which looks like a leftover misalignment rather than a
+deliberate link; it only matters if event links are ever rendered.
 
 **Detect changed or removed content ids at build time** (accepted with the
 web-share ruling, 2026-08-23). A venue or event `id` edited in the live sheet
@@ -254,9 +306,10 @@ Two live venue `url` cells are schemeless (`hamline.edu/sundin-music-hall`,
 rewrite, so this is cosmetic — worth adding the scheme in the sheet whenever
 it's next touched.
 
-Events, vendors, sponsors and settings are still placeholder fixtures. Each
-becomes real with a one-line change in `content/config.json` pointing at a
-published sheet tab.
+`settings` is the last placeholder fixture. It becomes real with a one-line
+change in `content/config.json` pointing at a published sheet tab — and when it
+does, `banner_text` has to be carried over, or the banner reverts to whatever
+the sheet holds.
 
 - Should we try to translate the content to multiple languages? Limited English Proficiency languages in Saint Paul are Spanish, Hmong, Karen, and Somali.
 

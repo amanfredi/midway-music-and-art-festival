@@ -16,20 +16,17 @@ stated in those terms. It requires WebGL2, an accepted floor (decided
 2026-08-10): a device without it gets a short explanation plus the venue key
 list instead of the map.
 
-**Only the venues tab is real content.** It is live from the organizers' Google
-Sheet (URL in `content/config.json`) — 14 venues on the live site, frozen
-since 2026-08-11: the sheet has since gained four incomplete venue rows
-that fail validation and block every rebuild (see the 2026-08-21 log
-entry) — a deploy dispatched with `skip_invalid_rows` can now publish
-around them without waiting for the sheet fix.
-`content/fixtures/venues.csv` is a hand-committed copy that feeds the
-offline tests (refreshed 2026-08-09); the emergency-build copy
-(`content/snapshot/sources/venues.csv`) starts existing with the first
-successful build after the deploy-robustness work is pushed. Events,
-vendors, sponsors and settings are still **placeholder
-fixtures** — invented names, invented schedule. The dismissible banner on the
-site says so. Swapping each to a sheet tab is a one-line change in
-`content/config.json` once real content exists.
+**Venues, events and sponsors are live from the organizers' Google Sheet**
+(URLs in `content/config.json`); `settings` is the only remaining fixture. As of
+the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
+11 venues, and 5 sponsors (2 sapphire, 3 topaz) carrying their real logos. No
+sponsor renders on the map: a pin needs a `location` and every sponsor's is
+empty. Vendors is deliberately empty (`"vendors": null`), so that tab reads
+"Vendor list coming soon."; the organizers have not named vendors yet.
+`content/fixtures/venues.csv` remains a hand-committed copy feeding the offline
+tests (refreshed 2026-08-09), and the emergency-build copies under
+`content/snapshot/sources/` — one per remote source, so three of them now — are
+written by successful builds.
 
 The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
 service worker and CI all landed and were audited in earlier rounds.
@@ -37,6 +34,74 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-08-31 — the sheet's real events and sponsors, and a build that bends to meet them
+
+Pointing `events` and `sponsors` at the live sheet failed the build with two
+header errors hiding 165 row errors across 39 rows. Almost none were content mistakes: they
+were Google Sheets emitting `10/2/2026`, `6:30:00 PM`, `all ages` and `Topaz
+(Community Partner)` where the build demanded `2026-10-02`, `18:30`, blank and
+`topaz`. The ruling was that the build absorbs what the spreadsheet naturally
+produces, extending what `normalizeIds` and `normalizeUrls` already did for ids
+and links — a volunteer coordinator should not have to fight their own tool
+into machine shapes. Dates are the one rewrite logged per row, because
+`2/10/2026` is February or October depending on locale and nothing downstream
+can tell a misentered date from a correct one; the log is the only place a
+misread becomes visible. Times are rewritten silently — a 12-hour clock carries
+no such ambiguity, and 34 more lines would bury the ones that matter.
+
+`end_time` became optional, defaulting to one hour. That hour comes from the data, not from
+convention: Midway Saloon, Turf Club, Sundin and Ginkgo
+all run exact 1-hour slots, and the only four events that run longer are the
+only four carrying an explicit `end_time`.
+
+Sponsor logos now resolve by convention — `content/logos/<slugified id>.<ext>`
+— instead of a filename in the CSV. All nine placeholder sponsor logos were
+already named exactly `<id>.svg`, so that column had never carried anything but
+the extension. The `https://` remote-logo form went with it, deleting the
+snapshot's entire logo half, and `content/fixtures/logos/` moved to
+`content/logos/` since real sponsor logos are not fixtures.
+
+A source can now be declared intentionally empty with `null` in
+`content/config.json`, which is how vendors ships as an empty list. The guard
+against an *accidentally* emptied tab — a header with no data rows — stays
+strict. The difference is intent recorded in config, and only a literal `null`
+counts: an empty string or a missing key is still a missing-source error, so a
+typo that clears a path cannot be mistaken for a decision.
+
+Two sponsor logos needed work before they could sit on a light card. Ideal
+Printers publishes no light-background variant: its "PRINTERS" wordmark and the
+registration target inside the "d" are both white, measuring 1.08:1 against the
+card and rendering the "d" as a broken glyph. It now sits on the same `#333`
+plate the sponsor uses on their own site, at 12.6:1. Old National Bank arrived
+as a JPEG with a baked-in white rectangle that showed as a box on the card; it
+is now a transparent PNG, converted by min-channel unpremultiply so antialiased
+edges keep their smoothness instead of gaining a white fringe.
+
+Logos also stopped rendering at natural size. Aspect ratios across the five real
+ones run 1.66:1 to 4.17:1, and the wide ones hit `img { max-width: 100% }`
+before the 48 px height cap, drawing 34–38 px tall while the others got 48 — so
+aspect ratio, not tier, decided how prominent a sponsor looked. Every logo now
+occupies the same 56 px tile over a white plate, which also lets Ideal Printers'
+dark artwork read as that sponsor's mark rather than as a layout mistake.
+
+The organizers cleared the two content errors this work depended on: the `kind`
+column, which a broken formula had made a verbatim copy of `venue_id` on all 34
+rows, and the `#REF!` in row 23.
+
+Confirming that took three tries and turned up something worth knowing:
+Google's published-CSV endpoint serves several versions of a tab at once. Eight
+consecutive fetches of the same URL returned three distinct files — one with
+`kind` still broken and the `#REF!` present, one with `kind` fixed and the
+`#REF!` still there, one with both fixed — and the oldest came back on three of
+the eight. Only fetching repeatedly and comparing showed which version was
+current; a single fetch looks authoritative and is not. The redirect target
+carries `cache-control: private, max-age=300`, but the disagreement is between
+edges rather than within one cache, so a retry can move backwards as well as
+forwards. What that means for build determinism, for deploys and for the
+snapshot is open work in BACKLOG.md.
+
+The banner no longer says the schedule is placeholder, because it no longer is.
 
 ### 2026-08-23 — venue and sponsor names label their pins at close zoom
 

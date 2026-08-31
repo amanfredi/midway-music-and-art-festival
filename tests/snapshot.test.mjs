@@ -387,7 +387,7 @@ describe("failure report", () => {
   });
 
   test("a bad row is a validation failure and a dead host is a network failure", async () => {
-    const badRow = makeFixtureSet(TMP_ROOT, "bad-row", [setCell("events.csv", 2, "date", "10/02/2026")]);
+    const badRow = makeFixtureSet(TMP_ROOT, "bad-row", [setCell("events.csv", 2, "date", "October 2, 2026")]);
     const rowResult = await runBuild(badRow);
     assert.notEqual(rowResult.status, 0);
     assert.deepEqual(rowResult.report.failureClasses, ["validation"]);

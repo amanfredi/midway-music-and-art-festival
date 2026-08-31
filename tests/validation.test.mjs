@@ -289,6 +289,137 @@ describe("id normalization", () => {
   });
 });
 
+describe("sheet-native formats", () => {
+  // Everything in this block is a value the organizers' Google Sheet produces on
+  // its own. Rejecting them would have meant asking volunteers to fight their
+  // spreadsheet's formatting; the build absorbs them instead, the same way it
+  // absorbs a punctuated id or a bare domain.
+  const strays = (fields) => fields.id === "midway-strays";
+
+  test("a M/D/YYYY date is rewritten to YYYY-MM-DD, and the rewrite is logged", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sheet-date", [
+      setCell("events.csv", strays, "date", "10/2/2026"),
+      setCell("events.csv", 3, "date", "10/2/2026"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+
+    // The log line is the only place a misentered date ("2/10/2026" read as
+    // February 10 rather than October 2) can be caught, so its exact text is
+    // part of what this test is for.
+    assert.match(result.stdout, /Rewrote 2 event date\(s\) to YYYY-MM-DD:/);
+    assert.ok(
+      result.stdout.includes('events.csv row 2 (The Midway Strays): date "10/2/2026" -> "2026-10-02"'),
+      `expected a per-row rewrite note\n${result.stdout}`
+    );
+
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.start, "2026-10-02T17:00");
+  });
+
+  test("an already-canonical date is left alone and unlogged", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    assert.doesNotMatch(result.stdout, /Rewrote \d+ event date/);
+  });
+
+  test("12-hour clock times are converted to 24h HH:MM", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sheet-times", [
+      setCell("events.csv", strays, "start_time", "6:30:00 PM"),
+      setCell("events.csv", strays, "end_time", "7:45 PM"),
+      setCell("events.csv", 3, "start_time", "12:00:00 AM"),
+      setCell("events.csv", 3, "end_time", "12:30:00 PM"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.start, "2026-10-02T18:30");
+    assert.equal(event.end, "2026-10-02T19:45");
+    // Noon and midnight are where a 12-hour clock is easiest to get wrong.
+    const midnight = content.events.find((e) => e.id === "neon-decay");
+    assert.equal(midnight.start, "2026-10-02T00:00");
+    assert.equal(midnight.end, "2026-10-02T12:30");
+  });
+
+  test("a blank end_time means the event runs one hour", () => {
+    const config = makeFixtureSet(TMP_ROOT, "no-end-time", [setCell("events.csv", strays, "end_time", "")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.start, "2026-10-02T17:00");
+    assert.equal(event.end, "2026-10-02T18:00");
+  });
+
+  test("a blank end_time on a late start rolls to the next calendar day", () => {
+    // The default goes through the same day-rolling a written end_time does, or
+    // a 23:30 set would end before it began.
+    const config = makeFixtureSet(TMP_ROOT, "no-end-time-late", [
+      setCell("events.csv", (fields) => fields.id === "cedar-and-sage", "end_time", ""),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "cedar-and-sage");
+    assert.equal(event.start, "2026-10-03T23:30");
+    assert.equal(event.end, "2026-10-04T00:30");
+  });
+
+  test("an end_time equal to start_time is still an error", () => {
+    // Blank is how you ask for the default; equal is still the ambiguity it
+    // always was.
+    const config = makeFixtureSet(TMP_ROOT, "equal-times", [setCell("events.csv", strays, "end_time", "17:00")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "equal start and end times should still fail");
+    assert.match(result.stderr, /must differ from start_time/);
+  });
+
+  test('the header may spell age_limit "age", and "all ages" means blank', () => {
+    const config = makeFixtureSet(TMP_ROOT, "age-alias", [
+      renameHeader("events.csv", "age_limit", "age"),
+      setCell("events.csv", strays, "age", "all ages"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.age_limit, "", '"all ages" is the default spelled out, and is stored as blank');
+    // The set values still mean what they meant.
+    assert.ok(
+      content.events.some((e) => e.age_limit === "18+"),
+      "the other rows' age limits should survive the renamed header"
+    );
+  });
+
+  test("a header carrying both age and age_limit fails rather than guessing", () => {
+    const config = makeFixtureSet(TMP_ROOT, "age-both", [addColumn("events.csv", "age", "21+")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "two names for one column should fail the build");
+    assert.match(result.stderr, /two names for the same column/);
+    assert.ok(result.stderr.includes('"age_limit"') && result.stderr.includes('"age"'), result.stderr);
+  });
+
+  test("a sponsor tier may be written as its dropdown label, in any case", () => {
+    const config = makeFixtureSet(TMP_ROOT, "tier-labels", [
+      // The label as this contract writes it, and the shorter one the live
+      // sheet's dropdown offers.
+      setCell("sponsors.csv", 2, "tier", "Emerald Tier (Presenting Partner)"),
+      setCell("sponsors.csv", 3, "tier", "ruby (leading partner)"),
+      setCell("sponsors.csv", 5, "tier", "Sapphire (Supporting Partner)"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const bySlug = (slug) => content.sponsors.filter((s) => s.tier_slug === slug);
+    assert.equal(bySlug("emerald").length, 1);
+    assert.equal(bySlug("emerald")[0].tier, "Emerald Tier (Presenting Partner)");
+    assert.ok(bySlug("ruby").length >= 1);
+    assert.ok(bySlug("sapphire").length >= 1);
+  });
+});
+
 describe("bad fixtures", () => {
   // Each case is the good fixtures with one cell changed, named for the mistake
   // a coordinator would have made in the spreadsheet.
@@ -299,9 +430,21 @@ describe("bad fixtures", () => {
       mustInclude: ["events.csv", "row 2", "blue-moon-lounge", "venue_id"],
     },
     {
-      name: "US-style date instead of YYYY-MM-DD",
-      mutations: [setCell("events.csv", 2, "date", "10/02/2026")],
-      mustInclude: ["events.csv", "row 2", "10/02/2026"],
+      name: "a date in neither accepted format",
+      mutations: [setCell("events.csv", 2, "date", "October 2, 2026")],
+      mustInclude: ["events.csv", "row 2", "October 2, 2026", "2026-10-02", "10/2/2026"],
+    },
+    {
+      // Shape-correct, impossible date: the message must quote the cell rather
+      // than a rewrite of it.
+      name: "a M/D/YYYY date that isn't a real day",
+      mutations: [setCell("events.csv", 2, "date", "2/30/2026")],
+      mustInclude: ["events.csv", "row 2", "2/30/2026"],
+    },
+    {
+      name: "a start_time in neither accepted format",
+      mutations: [setCell("events.csv", 2, "start_time", "half past five")],
+      mustInclude: ["events.csv", "row 2", "half past five", "6:30 PM"],
     },
     {
       name: "blank required field",

@@ -142,6 +142,12 @@ build error naming both spellings — otherwise a rename is indistinguishable
 from a notes column and silently blanks that field for every row. All CSV
 parsing is RFC 4180 (quoted fields, embedded commas/newlines/quotes).
 
+A column may also arrive under an **accepted alternative spelling**, noted with
+the column below (`age` for `events.age_limit` is currently the only one).
+Either name is read identically. Carrying **both** names in one header is a
+build error: the build would otherwise have to guess which of them the
+coordinator is keeping up to date.
+
 A source that yields no data rows is a build error too: an emptied tab must not
 publish an empty guide over a working one.
 
@@ -175,15 +181,30 @@ neither is a build error.
   site itself never sees plus codes.
 
 **events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, age_limit, description`
-- `date`: `YYYY-MM-DD`. `start_time`/`end_time`: 24h `HH:MM`, festival-local
-  wall time (America/Chicago). No timezone math anywhere — devices at the
-  festival are in that timezone. An event lives on one calendar `date`; a
-  second date column doesn't exist because multi-day events aren't supported.
+- `date`: `YYYY-MM-DD`, **or** the `M/D/YYYY` a Google Sheets date cell exports,
+  which is rewritten to `YYYY-MM-DD`. Every rewrite is printed, one line per row
+  (`events.csv row 2 (Miss Georgia Peach): date "10/2/2026" -> "2026-10-02"`).
+  That log is a guard, not decoration: `2/10/2026` is February 10 or October 2
+  depending on who typed it, and nothing else in the pipeline can tell a
+  misentered date from a correct one.
+- `start_time`/`end_time`: 24h `HH:MM`, **or** the 12-hour `h:mm AM/PM` /
+  `h:mm:ss AM/PM` a Sheets time cell exports, rewritten to `HH:MM`. Those
+  rewrites are not logged — a 12-hour clock time has no second reading for a
+  note to guard against. Times are festival-local wall time (America/Chicago).
+  No timezone math anywhere — devices at the festival are in that timezone. An
+  event lives on one calendar `date`; a second date column doesn't exist because
+  multi-day events aren't supported.
+- `end_time` is **optional**. Blank means the event ends one hour after it
+  starts, rolled to the next calendar date when that crosses midnight, by the
+  same path a written `end_time` takes. The live schedule runs on exact
+  one-hour slots and the events that run longer are the ones that carry an
+  `end_time` of their own.
 - Convention: `end_time` **earlier than** `start_time` means the event runs
   past midnight and ends on the following calendar date — valid, not an
   error (e.g. `date=2026-10-03, start_time=23:30, end_time=00:15` ends
-  2026-10-04 at 00:15). `end_time` **equal to** `start_time` is a build error
-  (ambiguous: zero-length, or a full 24 hours).
+  2026-10-04 at 00:15). An `end_time` that is present and **equal to**
+  `start_time` is a build error (ambiguous: zero-length, or a full 24 hours);
+  the ambiguity is why blank rather than equal is how you say "the default".
 - `venue_id` must exist in venues.
 - `kind`: one of `music|art|performance|literary|vendor|other` (optional,
   default `music`).
@@ -191,9 +212,12 @@ neither is a build error.
   dropdown enforces): `General Admission` (default when blank) · `General
   Admission (limited capacity)` · `Free Ticket Required` · `Paid Ticket
   Required`. Any other value is a build error.
-- `age_limit`: optional, blank (the default — all ages) or exactly `18+` or
-  `21+`. Any other value is a build error. Blank stays blank in content.json;
-  the two set values render a badge in every event row.
+- `age_limit` (accepted alternative spelling: `age`, which is what the live
+  sheet uses): optional, blank (the default — all ages) or exactly `18+` or
+  `21+`. The sheet's dropdown also offers `all ages`, which means exactly what
+  blank means and is stored as blank. Any other value is a build error. Blank
+  stays blank in content.json; the two set values render a badge in every event
+  row.
 - `description` optional.
 
 **vendors.csv** — `id, name, type, description, location`
@@ -203,7 +227,12 @@ neither is a build error.
 **sponsors.csv** — `id, name, tier, blurb, logo, url, location`
 - `tier`: fixed slug enum — `emerald | ruby | sapphire | topaz | quartz`.
   Display label and intrinsic rank are derived from the slug in `build.mjs`
-  (not stored in the CSV); there is no `tier_order` column. Rank/limits:
+  (not stored in the CSV); there is no `tier_order` column. A cell may hold the
+  slug **or** the display label, in any capitalization, because which one a
+  coordinator sees depends only on which dropdown they picked from. Two label
+  spellings are accepted per tier: the one in the table below, and the same
+  label without the word "Tier" (`Topaz (Community Partner)`), which is what
+  the live sheet's dropdown offers. Rank/limits:
 
   | slug | display label | rank | build cap |
   |---|---|---|---|
@@ -246,10 +275,10 @@ it; `you_are_here_enabled` must be exactly `true` or `false`:
 Any violation **fails the build (exit 1)** with messages a non-programmer can
 act on. Format: `events.csv row 14 ("Sunset Set"): venue_id "blue-moon" doesn't
 match any venue in the venues tab.` Row numbers are spreadsheet rows (header =
-row 1). Structural problems — a source that wouldn't load, a header missing or
-misspelling a known column, a tab with no data rows — are reported together and
-stop the build before row checks run, because every row message downstream of
-them is a misreading of the file. Row checks: required fields, duplicate ids, unknown venue_id references,
+row 1). Structural problems — a source that wouldn't load, a header missing,
+misspelling, or double-naming a known column, a tab with no data rows — are
+reported together and stop the build before row checks run, because every row
+message downstream of them is a misreading of the file. Row checks: required fields, duplicate ids, unknown venue_id references,
 date/time format and calendar validity, `end_time` equal to `start_time`,
 `location` parseable (decimal pair or plus code) and resolving inside bbox
 [44.94..44.98, -93.20..-93.13] (catches swapped lat/lng), unknown
@@ -341,7 +370,8 @@ snapshot directory was modified.
 `version` = first 12 hex chars of sha256 over the concatenated source CSV
 bytes. Events sorted by `start` then `title`; sponsors by `tier_order` then
 `name`. `start`/`end` are always `YYYY-MM-DDTHH:MM`, with `end`'s date rolled
-forward one day when the source `end_time` was earlier than `start_time`.
+forward one day when the source `end_time` was earlier than `start_time`, or
+when a blank `end_time`'s one-hour default crosses midnight.
 
 Optional missing fields become `""` (never absent keys, never null) — with
 one exception: a sponsor's `lat`/`lng` are `null` (never `""` or absent) when

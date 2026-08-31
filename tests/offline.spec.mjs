@@ -24,6 +24,25 @@ async function expectFirstSponsorLogoLoaded(target) {
     .toBe(true);
 }
 
+// Nothing in the sheet names a logo file: the build looks for
+// content/logos/<sponsor id>.<ext> and bundles it under the same id. That
+// convention is what the precache list is generated from, so if a logo were
+// ever bundled under some other name the file offline would be the wrong one —
+// or absent. Checked against the cached content.json rather than the DOM,
+// because the id never reaches the markup.
+async function expectLogosNamedForSponsorIds(target) {
+  const sponsors = await target.evaluate(async () => (await (await fetch('data/content.json')).json()).sponsors);
+  const withLogos = sponsors.filter((s) => s.logo);
+  expect(withLogos.length, 'no sponsor carries a logo, so this proves nothing').toBeGreaterThan(0);
+  for (const sponsor of withLogos) {
+    expect(sponsor.logo, `sponsor ${sponsor.id} logo is not named for its id`).toMatch(
+      new RegExp(`^assets/sponsors/${sponsor.id}\\.(svg|png|jpg|webp)$`),
+    );
+    const ok = await target.evaluate(async (src) => (await fetch(src)).ok, sponsor.logo);
+    expect(ok, `${sponsor.logo} was not in the offline cache`).toBe(true);
+  }
+}
+
 async function waitForServiceWorker(page) {
   await page.waitForFunction(
     () => navigator.serviceWorker && navigator.serviceWorker.controller !== null,
@@ -102,6 +121,7 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   await expect(page.locator('[data-testid="sponsor-list"]')).toBeVisible();
   await expect(page.locator('[data-testid="donate-link"]')).toBeVisible();
   await expectFirstSponsorLogoLoaded(page);
+  await expectLogosNamedForSponsorIds(page);
 
   // the star persisted through the offline reload
   await page.goto('/' + T + '#/starred');
@@ -164,6 +184,7 @@ test('cold start offline: a page that was never online boots from cache', async 
   await cold.goto('/' + T + '#/sponsors');
   await expect(cold.locator('[data-testid="sponsor-list"]')).toBeVisible();
   await expectFirstSponsorLogoLoaded(cold);
+  await expectLogosNamedForSponsorIds(cold);
 
   expect(failures, 'a cold offline start should need nothing from the network').toEqual([]);
 });

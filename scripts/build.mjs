@@ -32,7 +32,11 @@ import { pathToFileURL } from "node:url";
 import { parseLocation } from "./location.mjs";
 
 const CWD = process.cwd();
-const LOGOS_DIR = path.join(CWD, "content/fixtures/logos");
+// Real sponsor logos, not fixtures: a sponsor's file is named for its id, and
+// that is the whole of the lookup. Still CWD-relative, and therefore shared by
+// every config the build is pointed at, including the tests' generated ones.
+const LOGOS_DIR = path.join(CWD, "content/logos");
+const LOGOS_DIR_LABEL = "content/logos";
 const DEFAULT_CONFIG = "content/config.json";
 const DEFAULT_OUT_DIR = "site";
 const DEFAULT_SNAPSHOT_DIR = "content/snapshot";
@@ -124,7 +128,7 @@ const EXPECTED_COLUMNS = {
   venues: ["id", "name", "address", "location", "description", "url"],
   events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description"],
   vendors: ["id", "name", "type", "description", "location"],
-  sponsors: ["id", "name", "tier", "blurb", "logo", "url", "location"],
+  sponsors: ["id", "name", "tier", "blurb", "url", "location"],
   settings: ["key", "value"],
 };
 // Other header spellings this build accepts for a column, because the live
@@ -285,8 +289,8 @@ function sourceSchemeError(key, value) {
 }
 
 /**
- * Fetches one remote resource — a content CSV or a sponsor logo, the two things
- * this build pulls over the network — and records its bytes for the snapshot.
+ * Fetches one remote resource — a content CSV is the only kind this build pulls
+ * over the network — and records its bytes for the snapshot.
  *
  * The distinction that runs through the whole fallback design is made here:
  * *unreachable* (connection refused, DNS, timeout, 5xx/429 on every attempt) is
@@ -1028,6 +1032,24 @@ function validateSponsorFields(records) {
   const seenByTier = new Map(); // tier slug -> row numbers seen so far, in order
   for (const rec of records) {
     const ident = identifierFor(rec, "name");
+
+    // The sheet may keep a `logo` column as a notes column, but anything typed
+    // in one is a filename somebody expected the build to use. Ignoring it
+    // silently would strand that sponsor's logo with nothing to show for it.
+    const logoCell = String(rec.fields.logo ?? "").trim();
+    if (logoCell !== "") {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `the logo column holds "${logoCell}", but logos are no longer named in the sheet. Put the image in ` +
+            `${LOGOS_DIR_LABEL}/ named for this sponsor's id (${LOGOS_DIR_LABEL}/${rec.fields.id || "<id>"}.svg, ` +
+            `.png, .jpg or .webp) and clear this cell.`
+        )
+      );
+    }
+
     const tierRaw = rec.fields.tier;
     if (!tierRaw || String(tierRaw).trim() === "") continue; // reported by required-field check
 
@@ -1043,14 +1065,6 @@ function validateSponsorFields(records) {
         )
       );
       continue;
-    }
-
-    const logo = rec.fields.logo;
-    const hasLogo = logo && String(logo).trim() !== "";
-    if (tierDef.logoRequired && !hasLogo) {
-      errors.push(
-        errorMsg(fileLabel, rec.rowNum, ident, `missing required field "logo" (required for tier "${tierDef.slug}").`)
-      );
     }
 
     if (tierDef.maxCount != null) {
@@ -1124,18 +1138,19 @@ function validateSettings(records) {
 }
 
 // ---------------------------------------------------------------------------
-// Sponsor logo resolution (copies bundled/downloaded bytes for later writing)
+// Sponsor logo resolution (reads the bundled file for later writing)
+//
+// A sponsor's logo is the file in content/logos/ named for its id. The sheet
+// names no filenames: the nine placeholder sponsors already had files called
+// exactly <id>.svg, so the column never carried anything but an extension, and
+// convention is cheaper to keep right than a column is.
 // ---------------------------------------------------------------------------
 
 // A logo is served from the festival's own origin and precached onto every
 // attendee's phone, so both what it may contain and how big it may be are
-// constrained here rather than trusted from the sheet.
-const LOGO_TYPE_EXTENSIONS = {
-  "image/svg+xml": "svg",
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
+// constrained here rather than trusted from whatever was dropped in the folder.
+// Extensions are listed in the order they are searched; jpeg and jpg are the
+// same picture and bundle under the same name.
 const LOGO_FILE_EXTENSIONS = { svg: "svg", png: "png", jpg: "jpg", jpeg: "jpg", webp: "webp" };
 // 512 KB: comfortably above any real vector or bitmap wordmark (the placeholder
 // logos are ~1 KB), and small enough that a sponsor list of them stays inside
@@ -1179,105 +1194,82 @@ function logoSizeError(buffer) {
   );
 }
 
-/**
- * A local `logo` is a bare filename inside content/fixtures/logos/. path.join
- * resolves "..", so an unchecked value could read any file the build can — the
- * runner's checkout and its credentials included.
- */
-function localLogoPath(logoValue) {
-  if (/[\\/]/.test(logoValue) || logoValue.includes("..")) {
-    return { error: `must be a plain filename inside content/fixtures/logos/ (no folders, no "..").` };
-  }
-  const resolved = path.resolve(LOGOS_DIR, logoValue);
-  if (!resolved.startsWith(LOGOS_DIR + path.sep)) {
-    return { error: `resolves outside content/fixtures/logos/.` };
-  }
-  return { resolved };
+/** The files in content/logos/ that could be this sponsor's, in search order. */
+function logoCandidates(sponsorId) {
+  return Object.keys(LOGO_FILE_EXTENSIONS).map((suffix) => ({
+    suffix,
+    ext: LOGO_FILE_EXTENSIONS[suffix],
+    name: `${sponsorId}.${suffix}`,
+    file: path.join(LOGOS_DIR, `${sponsorId}.${suffix}`),
+  }));
 }
 
-async function resolveSponsorLogos(records, ctx) {
+/**
+ * Finds each sponsor's logo by its id and reads the bytes for later writing.
+ *
+ * Ids are slugified and uniqueness-checked before this runs, so the same key
+ * that identifies a sponsor everywhere else identifies its file, and no two
+ * sponsors can claim one. A tier that requires a logo and has no file is an
+ * error naming the path that was looked for; two files differing only in
+ * extension is an error too, because picking one of them would be a guess.
+ */
+function resolveSponsorLogos(records) {
   const failures = [];
   const resolved = new Map(); // rowNum -> { filename, buffer }
   for (const rec of records) {
-    const logoValue = (rec.fields.logo ?? "").trim();
-    // A blank logo is expected for quartz sponsors (optional there); a blank
-    // logo on any other tier is caught as a missing-required-field error by
-    // validateSponsorFields, not here.
-    if (!logoValue) continue;
     const ident = identifierFor(rec, "name");
-    // Ids are slugified and uniqueness-checked, so naming the bundled file after
-    // the sponsor keeps two sponsors whose URLs both end /logo.svg apart.
-    const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
-    const fail = (message, failureClass = "validation") => {
+    const sponsorId = rec.fields.id;
+    const tierDef = resolveSponsorTier(rec.fields.tier);
+    // A row with no usable id or tier is already failing validation with a
+    // better message than anything about logos.
+    if (!sponsorId || !tierDef) continue;
+    const fail = (message) => {
       const err = errorMsg("sponsors.csv", rec.rowNum, ident, message);
-      failures.push({ class: failureClass, source: "sponsors", rowNum: err.rowNum, message: err.message });
+      failures.push({ class: "validation", source: "sponsors", rowNum: err.rowNum, message: err.message });
     };
 
-    let ext;
-    let buffer;
-    let origin; // how the message refers to the file
+    const candidates = logoCandidates(sponsorId);
+    const found = candidates.filter((candidate) => existsSync(candidate.file));
 
-    if (/^https?:\/\//i.test(logoValue)) {
-      // A sponsor's logo host is one more thing that can be down on festival
-      // Saturday, so logos go through the same retries and the same snapshot as
-      // the CSV sources rather than dying on the first refused connection.
-      origin = `logo URL "${logoValue}"`;
-      const got = await fetchRemote(ctx, {
-        id: logoResourceId(logoValue),
-        kind: "logo",
-        label: origin,
-        key: `${sponsorId} logo`,
-        url: logoValue,
-      });
-      if (got.error) {
-        fail(got.error, got.class);
-        continue;
-      }
-      const contentType = got.contentType;
-      ext = LOGO_TYPE_EXTENSIONS[contentType];
-      if (!ext) {
+    if (found.length === 0) {
+      // Optional for quartz, which never renders one.
+      if (tierDef.logoRequired) {
         fail(
-          `${origin} returned content-type "${contentType || "(none)"}" — a logo must be an SVG, PNG, JPEG, or WebP image.`
+          `no logo file. Tier "${tierDef.slug}" needs one: save the image as ` +
+            `${LOGOS_DIR_LABEL}/${sponsorId}.svg (or .png, .jpg, .webp).`
         );
-        continue;
       }
-      buffer = got.buffer;
-    } else {
-      origin = `logo file "${logoValue}"`;
-      const local = localLogoPath(logoValue);
-      if (local.error) {
-        fail(`${origin} ${local.error}`);
-        continue;
-      }
-      if (!existsSync(local.resolved)) {
-        fail(`${origin} not found in content/fixtures/logos/.`);
-        continue;
-      }
-      ext = LOGO_FILE_EXTENSIONS[path.extname(logoValue).slice(1).toLowerCase()];
-      if (!ext) {
-        fail(`${origin} must be an .svg, .png, .jpg, or .webp file.`);
-        continue;
-      }
-      buffer = readFileSync(local.resolved);
+      continue;
     }
+    if (found.length > 1) {
+      fail(
+        `has ${found.length} logo files — ${found.map((candidate) => candidate.name).join(", ")}. ` +
+          `Keep the one that should ship and delete the rest from ${LOGOS_DIR_LABEL}/.`
+      );
+      continue;
+    }
+
+    const [logo] = found;
+    const origin = `logo file ${LOGOS_DIR_LABEL}/${logo.name}`;
+    const buffer = readFileSync(logo.file);
 
     const sizeError = logoSizeError(buffer);
     if (sizeError) {
       fail(`${origin} ${sizeError}`);
       continue;
     }
-    if (ext === "svg") {
-      const found = svgScriptError(buffer.toString("utf8"));
-      if (found) {
+    if (logo.ext === "svg") {
+      const scriptFound = svgScriptError(buffer.toString("utf8"));
+      if (scriptFound) {
         fail(
-          `${origin} contains ${found}. An SVG served from the festival's own site can run code there, ` +
+          `${origin} contains ${scriptFound}. An SVG served from the festival's own site can run code there, ` +
             `so logos carrying script are rejected — ask the sponsor for a plain vector or PNG logo.`
         );
         continue;
       }
     }
 
-    resolved.set(rec.rowNum, { filename: `${sponsorId}.${ext}`, buffer });
+    resolved.set(rec.rowNum, { filename: `${sponsorId}.${logo.ext}`, buffer });
   }
   return { failures, resolved };
 }
@@ -1301,15 +1293,10 @@ const SNAPSHOT_SCHEMA = 1;
 const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
 const todayUTC = () => new Date().toISOString().slice(0, 10);
 const sourceResourceId = (key) => `source:${key}`;
-// Logos are keyed by URL, not by sponsor id: the id can be re-typed in the
-// sheet without the logo changing, and two sponsors can share a host.
-const logoResourceId = (url) => `logo:${sha256(Buffer.from(url, "utf8")).slice(0, 16)}`;
 
-function snapshotFileFor(resource) {
-  if (resource.kind === "source") return `sources/${resource.key}.csv`;
-  const ext = LOGO_TYPE_EXTENSIONS[resource.contentType] ?? "bin";
-  return `logos/${resource.id.slice("logo:".length)}.${ext}`;
-}
+// Content CSVs are the only remote resource; sponsor logos are committed files
+// named for the sponsor's id, so there is nothing about them to save here.
+const snapshotFileFor = (resource) => `sources/${resource.key}.csv`;
 
 /** Reads the snapshot's meta file into a Map keyed by resource id. */
 function readSnapshotMeta(snapshotDir) {
@@ -1402,7 +1389,7 @@ function snapshotUsedEntries(ctx) {
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((entry) => ({
       id: entry.id,
-      label: entry.kind === "source" ? SOURCE_LABEL[entry.id.slice("source:".length)] ?? entry.file : entry.file,
+      label: SOURCE_LABEL[entry.id.slice("source:".length)] ?? entry.file,
       url: entry.url,
       lastChanged: entry.lastChanged ?? null,
     }));
@@ -1731,7 +1718,7 @@ async function main() {
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
   const eventsResult = runValidator("events", parsed.events.records, (records) => validateEvents(records, venueIds));
 
-  const { failures: logoFailures, resolved: logoFiles } = await resolveSponsorLogos(sponsorsResult.records, ctx);
+  const { failures: logoFailures, resolved: logoFiles } = resolveSponsorLogos(sponsorsResult.records);
 
   // A logo that fails validation costs the sponsor its logo, not its place on
   // the page (ruled 2026-08-22): the row itself is sound, and a sponsor is
@@ -1740,18 +1727,13 @@ async function main() {
   // already handles because it is legal for the lowest tier — including where
   // the tier would have required one, the one place this mode ships a row the
   // strict build would have refused.
-  //
-  // A logo host being down is not a bad row and stays fatal: --use-snapshot is
-  // the answer to an outage, and skipping rows must not quietly become a way
-  // to publish through one.
-  const droppedLogos = skipInvalidRows ? logoFailures.filter((f) => f.class === "validation") : [];
+  const droppedLogos = skipInvalidRows ? [...logoFailures] : [];
   for (const failure of droppedLogos) {
     dropped.push({ source: "sponsors", rowNum: failure.rowNum, message: failure.message, logoOnly: true });
   }
 
-  // Everything below this line is a spreadsheet cell somebody can fix, so it is
-  // all the validation class; the logo fetches classify themselves, because a
-  // sponsor's host being down is an outage rather than an edit.
+  // Everything below this line is a spreadsheet cell or a file somebody can
+  // fix, so it is all the validation class.
   const byType = [
     ["venues", venuesResult.errors],
     ["vendors", vendorsResult.errors],

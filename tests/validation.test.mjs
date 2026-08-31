@@ -7,10 +7,10 @@
 //    see tests/fixture-sets.mjs) makes the build fail (non-zero exit) with a
 //    human-readable message that names the offending file, row, and value.
 
-import { after, describe, test } from "node:test";
+import { after, afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -477,9 +477,15 @@ describe("bad fixtures", () => {
       mustInclude: ["events.csv", "row 2", "dance", "unknown kind"],
     },
     {
-      name: "logo filename that isn't in the logos folder",
+      name: "a filename typed into the logo notes column",
       mutations: [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")],
-      mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg"],
+      mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg", "content/logos/shortline-credit-union.svg"],
+    },
+    {
+      // The one way a sponsor can now be missing a logo: no file named for it.
+      name: "a required logo with no file named for the sponsor",
+      mutations: [setCell("sponsors.csv", 2, "id", "shortline-credit-onion")],
+      mustInclude: ["sponsors.csv", "row 2", "content/logos/shortline-credit-onion.svg"],
     },
     {
       name: "tickets value outside the enum",
@@ -662,43 +668,110 @@ describe("source shape and headers", () => {
 describe("sponsor logos", () => {
   const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
   const EMERALD_SPONSOR = "Shortline Credit Union"; // sponsors.csv row 2
+  const EMERALD_ID = "shortline-credit-union";
 
-  // Every fetched-logo case points the same sponsor row at the local server.
-  function logoConfig(name, routes, urlPath) {
-    return withLocalServer(routes, async (origin) => {
-      const config = makeFixtureSet(TMP_ROOT, name, [setCell("sponsors.csv", 2, "logo", `${origin}${urlPath}`)]);
-      return { result: await runBuildAsync(config) };
-    });
-  }
+  // content/logos/ is CWD-relative and shared with the generated fixture sets,
+  // so a case that needs a particular file on disk puts it there and takes it
+  // away again. Names are unique per case, so nothing collides.
+  const LOGOS_DIR = path.join(REPO_ROOT, "content/logos");
+  const planted = [];
+  const plantLogo = (filename, body) => {
+    const file = path.join(LOGOS_DIR, filename);
+    writeFileSync(file, body);
+    planted.push(file);
+    return file;
+  };
+  // Taken away after every case, not at the end of the file: content/logos/ is
+  // the real directory, and a leftover file would change what the next build
+  // resolves.
+  afterEach(() => {
+    for (const file of planted.splice(0)) rmSync(file, { force: true });
+  });
 
-  test("a fetched logo is bundled under the sponsor's id, not the URL's filename", async () => {
-    const { result } = await logoConfig("logo-ok", { "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG } }, "/logo.svg");
+  test("a sponsor's logo is the file named for its id, and bundles under that id", () => {
+    const result = runBuild(GOOD_CONFIG);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
     const sponsor = content.sponsors.find((s) => s.name === EMERALD_SPONSOR);
-    // Two sponsors whose URLs both end /logo.svg would otherwise overwrite each
-    // other's file.
-    assert.equal(sponsor.logo, "assets/sponsors/shortline-credit-union.svg");
+    assert.equal(sponsor.logo, `assets/sponsors/${EMERALD_ID}.svg`);
     assert.ok(existsSync(path.join(result.outDir, sponsor.logo)));
   });
 
-  test("a logo served as HTML is rejected by content type", async () => {
-    const { result } = await logoConfig(
-      "logo-html",
-      { "/logo.svg": { type: "text/html", body: "<!doctype html><script>alert(1)</script>" } },
-      "/logo.svg"
+  test("a tier that requires a logo and has no file names the path it looked for", () => {
+    // Renaming the sponsor is how a fixture set can have an id with no file:
+    // the logos directory is shared and must not be emptied by a test.
+    const config = makeFixtureSet(TMP_ROOT, "logo-missing", [
+      setCell("sponsors.csv", 2, "id", "shortline-credit-onion"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a required logo with no file should fail the build");
+    assert.ok(
+      result.stderr.includes("content/logos/shortline-credit-onion.svg"),
+      `the message must name the expected path\n${result.stderr}`
     );
-    assert.notEqual(result.status, 0, "an HTML logo body should fail the build");
-    assert.match(result.stderr, /content-type "text\/html"/);
     assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
   });
 
-  test("an oversized logo is rejected with the limit in the message", async () => {
-    const { result } = await logoConfig(
-      "logo-huge",
-      { "/logo.png": { type: "image/png", body: Buffer.alloc(600 * 1024, 7) } },
-      "/logo.png"
+  test("a quartz sponsor with no logo file is fine, and publishes without one", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const quartz = content.sponsors.filter((s) => s.tier_slug === "quartz");
+    assert.ok(quartz.length > 0, "the fixtures should carry a quartz sponsor");
+    for (const s of quartz) assert.equal(s.logo, "");
+  });
+
+  test("two files for one id is an error rather than a coin flip", () => {
+    // Planted under an id no real sponsor uses: content/logos/ is the live
+    // directory, and a file named for a committed sponsor would break every
+    // other build running at the same time.
+    const config = makeFixtureSet(TMP_ROOT, "logo-ambiguous", [setCell("sponsors.csv", 2, "id", "logo-case-both")]);
+    plantLogo("logo-case-both.svg", CLEAN_SVG);
+    plantLogo("logo-case-both.png", Buffer.from("not really a png"));
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an ambiguous logo should fail the build");
+    assert.match(result.stderr, /2 logo files/);
+    assert.ok(
+      result.stderr.includes("logo-case-both.svg") && result.stderr.includes("logo-case-both.png"),
+      `both candidates should be named\n${result.stderr}`
     );
+  });
+
+  test("a raster logo is found by its own extension and keeps it", () => {
+    const config = makeFixtureSet(TMP_ROOT, "logo-webp", [setCell("sponsors.csv", 2, "id", "logo-case-webp")]);
+    plantLogo("logo-case-webp.webp", Buffer.from("RIFF----WEBP"));
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const sponsor = content.sponsors.find((s) => s.id === "logo-case-webp");
+    assert.equal(sponsor.logo, "assets/sponsors/logo-case-webp.webp");
+    assert.ok(existsSync(path.join(result.outDir, sponsor.logo)));
+  });
+
+  test(".jpeg and .jpg are the same picture and bundle under one name", () => {
+    const config = makeFixtureSet(TMP_ROOT, "logo-jpeg", [setCell("sponsors.csv", 2, "id", "logo-case-jpeg")]);
+    plantLogo("logo-case-jpeg.jpeg", Buffer.from("\xff\xd8\xff", "binary"));
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.sponsors.find((s) => s.id === "logo-case-jpeg").logo, "assets/sponsors/logo-case-jpeg.jpg");
+  });
+
+  test("a non-blank logo cell points at the file convention instead of being ignored", () => {
+    // The live sheet keeps a logo column as a notes column. Somebody typing a
+    // filename into it means it to be used, and silence would strand the logo.
+    const config = makeFixtureSet(TMP_ROOT, "logo-cell", [setCell("sponsors.csv", 2, "logo", "our-wordmark.svg")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a filename in the logo column should fail the build");
+    assert.match(result.stderr, /sponsors\.csv row 2/);
+    assert.ok(result.stderr.includes("our-wordmark.svg"), result.stderr);
+    assert.ok(result.stderr.includes(`content/logos/${EMERALD_ID}.svg`), result.stderr);
+  });
+
+  test("an oversized logo is rejected with the limit in the message", () => {
+    const config = makeFixtureSet(TMP_ROOT, "logo-huge", [setCell("sponsors.csv", 2, "id", "logo-case-huge")]);
+    plantLogo("logo-case-huge.png", Buffer.alloc(600 * 1024, 7));
+    const result = runBuild(config);
     assert.notEqual(result.status, 0, "an oversized logo should fail the build");
     assert.match(result.stderr, /512 KB/);
     assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
@@ -720,24 +793,25 @@ describe("sponsor logos", () => {
       `<svg xmlns="http://www.w3.org/2000/svg"><a href="data:text/html,<script>alert(1)</script>"><rect/></a></svg>`,
     ],
   ]) {
-    test(`an SVG logo carrying ${label} is rejected`, async () => {
-      const { result } = await logoConfig(
-        `logo-svg-${slug(label)}`,
-        { "/logo.svg": { type: "image/svg+xml", body } },
-        "/logo.svg"
-      );
+    test(`an SVG logo carrying ${label} is rejected`, () => {
+      const id = `logo-svg-${slug(label)}`;
+      const config = makeFixtureSet(TMP_ROOT, id, [setCell("sponsors.csv", 2, "id", id)]);
+      plantLogo(`${id}.svg`, body);
+      const result = runBuild(config);
       assert.notEqual(result.status, 0, `an SVG with ${label} should fail the build`);
       assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
       assert.match(result.stderr, /can run code/);
     });
   }
 
-  test("an SVG logo embedding a raster image still builds", async () => {
+  test("an SVG logo embedding a raster image still builds", () => {
     // Real wordmarks do this; only script-capable payloads are rejected.
     const body =
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">` +
       `<image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="10" height="10"/></svg>`;
-    const { result } = await logoConfig("logo-svg-raster", { "/logo.svg": { type: "image/svg+xml", body } }, "/logo.svg");
+    const config = makeFixtureSet(TMP_ROOT, "logo-svg-raster", [setCell("sponsors.csv", 2, "id", "logo-svg-raster")]);
+    plantLogo("logo-svg-raster.svg", body);
+    const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
   });
 
@@ -747,14 +821,23 @@ describe("sponsor logos", () => {
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
   });
 
-  for (const escape of ["../../../../etc/hostname", "..%2Fsecrets", "subdir/logo.svg"]) {
-    test(`a local logo path of ${JSON.stringify(escape)} is refused`, () => {
-      const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [setCell("sponsors.csv", 2, "logo", escape)]);
+  test("an id can only ever name a file inside content/logos/", () => {
+    // The lookup is <logos dir>/<id>.<ext> and ids are slugified to
+    // [a-z0-9-] first, so there is no separator or ".." left to escape with —
+    // this asserts that property rather than the old path check it replaced.
+    const escapes = ["../../../../etc/hostname", "..%2Fsecrets", "subdir/logo.svg"];
+    for (const escape of escapes) {
+      const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [
+        setCell("sponsors.csv", 2, "id", escape),
+      ]);
       const result = runBuild(config);
-      assert.notEqual(result.status, 0, "a logo path outside the logos folder should fail the build");
-      assert.match(result.stderr, /plain filename inside content\/fixtures\/logos/);
-    });
-  }
+      assert.notEqual(result.status, 0, `${escape} should fail the build`);
+      // The build looked inside content/logos/ for a slugified name, and never
+      // outside it.
+      assert.doesNotMatch(result.stderr, /\.\./);
+      assert.doesNotMatch(result.stderr, /etc\/hostname/);
+    }
+  });
 });
 
 describe("settings", () => {
@@ -888,7 +971,10 @@ describe("--skip-invalid-rows", () => {
   });
 
   test("keeps a sponsor whose logo is the only thing wrong, minus the logo", () => {
-    const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")]);
+    // No file is named for this id, and the tier requires one.
+    const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [
+      setCell("sponsors.csv", 2, "id", "shortline-credit-onion"),
+    ]);
     assert.notEqual(runBuild(config).status, 0, "a missing logo must still fail a normal build");
 
     const result = runBuild(config, ["--skip-invalid-rows"]);

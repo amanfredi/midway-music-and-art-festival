@@ -24,7 +24,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 const BUILD_SCRIPT = path.join(REPO_ROOT, "scripts/build.mjs");
 const VENUES_CSV = readFileSync(path.join(REPO_ROOT, "content/fixtures/venues.csv"), "utf8");
-const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
 
 const TMP_ROOT = mkdtempSync(path.join(os.tmpdir(), "mmaf-snapshot-"));
 after(() => rmSync(TMP_ROOT, { recursive: true, force: true }));
@@ -180,21 +179,22 @@ describe("snapshot writer", () => {
   });
 
   test("a resource the config no longer fetches is pruned, and meta survives", async () => {
+    const eventsCsv = readFileSync(path.join(REPO_ROOT, "content/fixtures/events.csv"), "utf8");
     const server = await startServer({
       "/venues.csv": { type: "text/csv", body: VENUES_CSV },
-      "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG },
+      "/events.csv": { type: "text/csv", body: eventsCsv },
     });
     const snapshotDir = caseDir("prune");
     const remote = { venues: `${server.origin}/venues.csv` };
-    const withLogo = makeFixtureSet(TMP_ROOT, "prune", [setCell("sponsors.csv", 2, "logo", `${server.origin}/logo.svg`)], remote);
-    const seeded = await runBuild(withLogo, { snapshotDir, flags: ["--write-snapshot"] });
+    const bothRemote = makeFixtureSet(TMP_ROOT, "prune", [], { ...remote, events: `${server.origin}/events.csv` });
+    const seeded = await runBuild(bothRemote, { snapshotDir, flags: ["--write-snapshot"] });
     assert.equal(seeded.status, 0, `expected exit 0\n${seeded.stderr}`);
     assert.equal(JSON.parse(readFileSync(path.join(snapshotDir, "meta.json"), "utf8")).resources.length, 2);
 
-    // The sponsor goes back to a bundled logo: nothing fetches that URL now, so
+    // The events tab goes back to a local file: nothing fetches that URL now, so
     // the snapshot should stop carrying it rather than accumulating orphans.
-    const withoutLogo = makeFixtureSet(TMP_ROOT, "prune-after", [], remote);
-    const pruned = await runBuild(withoutLogo, { snapshotDir, flags: ["--write-snapshot"] });
+    const oneRemote = makeFixtureSet(TMP_ROOT, "prune-after", [], remote);
+    const pruned = await runBuild(oneRemote, { snapshotDir, flags: ["--write-snapshot"] });
     await server.close();
     assert.equal(pruned.status, 0, `expected exit 0\n${pruned.stderr}`);
 
@@ -349,28 +349,22 @@ describe("snapshot fallback", () => {
     }
   });
 
-  test("a sponsor logo that cannot be fetched falls back to its saved bytes", async () => {
-    // Sponsor logos are the other thing this build pulls over the network, and
-    // once that tab is live a flaky sponsor host is one more way a deploy dies.
-    const server = await startServer({ "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG } });
-    const snapshotDir = caseDir("logo");
-    const config = makeFixtureSet(TMP_ROOT, "logo", [setCell("sponsors.csv", 2, "logo", `${server.origin}/logo.svg`)]);
-    const seed = await runBuild(config, { snapshotDir, flags: ["--write-snapshot"] });
-    assert.equal(seed.status, 0, `expected exit 0\n${seed.stderr}`);
-    await server.close();
+  test("a sponsor's logo needs no network, so an outage cannot cost it one", async () => {
+    // Logos used to be fetched, which made every sponsor's web host one more
+    // way a festival-weekend deploy could die. They are committed files named
+    // for the sponsor's id now, so a build that serves every CSV from the
+    // snapshot still ships every logo.
+    const { config, snapshotDir } = await seedSnapshot("logo-offline");
+    const fallback = await runBuild(config, { snapshotDir, flags: ["--use-snapshot"] });
+    assert.equal(fallback.status, 0, `expected the snapshot fallback to succeed\n${fallback.stderr}`);
 
     const meta = JSON.parse(readFileSync(path.join(snapshotDir, "meta.json"), "utf8"));
-    const logoEntry = meta.resources.find((r) => r.id.startsWith("logo:"));
-    assert.ok(logoEntry, "the fetched logo should have been saved");
-    assert.equal(logoEntry.contentType, "image/svg+xml");
-    assert.equal(readFileSync(path.join(snapshotDir, logoEntry.file), "utf8"), CLEAN_SVG);
+    assert.deepEqual(meta.resources.map((r) => r.id), ["source:venues"], "only CSVs are ever saved");
 
-    const fallback = await runBuild(config, { snapshotDir, flags: ["--use-snapshot"] });
-    assert.equal(fallback.status, 0, `expected the logo fallback to succeed\n${fallback.stderr}`);
     const content = JSON.parse(readFileSync(fallback.contentPath, "utf8"));
-    const sponsor = content.sponsors.find((s) => s.logo.endsWith(".svg") && s.logo.includes("shortline"));
-    assert.ok(sponsor, "the sponsor should still carry a bundled logo");
-    assert.equal(readFileSync(path.join(fallback.outDir, sponsor.logo), "utf8"), CLEAN_SVG);
+    const sponsor = content.sponsors.find((s) => s.id === "shortline-credit-union");
+    assert.equal(sponsor.logo, "assets/sponsors/shortline-credit-union.svg");
+    assert.ok(existsSync(path.join(fallback.outDir, sponsor.logo)), "the logo should have been bundled anyway");
   });
 });
 
@@ -387,7 +381,7 @@ describe("failure report", () => {
   });
 
   test("a bad row is a validation failure and a dead host is a network failure", async () => {
-    const badRow = makeFixtureSet(TMP_ROOT, "bad-row", [setCell("events.csv", 2, "date", "10/02/2026")]);
+    const badRow = makeFixtureSet(TMP_ROOT, "bad-row", [setCell("events.csv", 2, "date", "October 2, 2026")]);
     const rowResult = await runBuild(badRow);
     assert.notEqual(rowResult.status, 0);
     assert.deepEqual(rowResult.report.failureClasses, ["validation"]);

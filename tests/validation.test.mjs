@@ -7,10 +7,10 @@
 //    see tests/fixture-sets.mjs) makes the build fail (non-zero exit) with a
 //    human-readable message that names the offending file, row, and value.
 
-import { after, describe, test } from "node:test";
+import { after, afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -289,6 +289,137 @@ describe("id normalization", () => {
   });
 });
 
+describe("sheet-native formats", () => {
+  // Everything in this block is a value the organizers' Google Sheet produces on
+  // its own. Rejecting them would have meant asking volunteers to fight their
+  // spreadsheet's formatting; the build absorbs them instead, the same way it
+  // absorbs a punctuated id or a bare domain.
+  const strays = (fields) => fields.id === "midway-strays";
+
+  test("a M/D/YYYY date is rewritten to YYYY-MM-DD, and the rewrite is logged", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sheet-date", [
+      setCell("events.csv", strays, "date", "10/2/2026"),
+      setCell("events.csv", 3, "date", "10/2/2026"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+
+    // The log line is the only place a misentered date ("2/10/2026" read as
+    // February 10 rather than October 2) can be caught, so its exact text is
+    // part of what this test is for.
+    assert.match(result.stdout, /Rewrote 2 event date\(s\) to YYYY-MM-DD:/);
+    assert.ok(
+      result.stdout.includes('events.csv row 2 (The Midway Strays): date "10/2/2026" -> "2026-10-02"'),
+      `expected a per-row rewrite note\n${result.stdout}`
+    );
+
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.start, "2026-10-02T17:00");
+  });
+
+  test("an already-canonical date is left alone and unlogged", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    assert.doesNotMatch(result.stdout, /Rewrote \d+ event date/);
+  });
+
+  test("12-hour clock times are converted to 24h HH:MM", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sheet-times", [
+      setCell("events.csv", strays, "start_time", "6:30:00 PM"),
+      setCell("events.csv", strays, "end_time", "7:45 PM"),
+      setCell("events.csv", 3, "start_time", "12:00:00 AM"),
+      setCell("events.csv", 3, "end_time", "12:30:00 PM"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.start, "2026-10-02T18:30");
+    assert.equal(event.end, "2026-10-02T19:45");
+    // Noon and midnight are where a 12-hour clock is easiest to get wrong.
+    const midnight = content.events.find((e) => e.id === "neon-decay");
+    assert.equal(midnight.start, "2026-10-02T00:00");
+    assert.equal(midnight.end, "2026-10-02T12:30");
+  });
+
+  test("a blank end_time means the event runs one hour", () => {
+    const config = makeFixtureSet(TMP_ROOT, "no-end-time", [setCell("events.csv", strays, "end_time", "")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.start, "2026-10-02T17:00");
+    assert.equal(event.end, "2026-10-02T18:00");
+  });
+
+  test("a blank end_time on a late start rolls to the next calendar day", () => {
+    // The default goes through the same day-rolling a written end_time does, or
+    // a 23:30 set would end before it began.
+    const config = makeFixtureSet(TMP_ROOT, "no-end-time-late", [
+      setCell("events.csv", (fields) => fields.id === "cedar-and-sage", "end_time", ""),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "cedar-and-sage");
+    assert.equal(event.start, "2026-10-03T23:30");
+    assert.equal(event.end, "2026-10-04T00:30");
+  });
+
+  test("an end_time equal to start_time is still an error", () => {
+    // Blank is how you ask for the default; equal is still the ambiguity it
+    // always was.
+    const config = makeFixtureSet(TMP_ROOT, "equal-times", [setCell("events.csv", strays, "end_time", "17:00")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "equal start and end times should still fail");
+    assert.match(result.stderr, /must differ from start_time/);
+  });
+
+  test('the header may spell age_limit "age", and "all ages" means blank', () => {
+    const config = makeFixtureSet(TMP_ROOT, "age-alias", [
+      renameHeader("events.csv", "age_limit", "age"),
+      setCell("events.csv", strays, "age", "all ages"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.age_limit, "", '"all ages" is the default spelled out, and is stored as blank');
+    // The set values still mean what they meant.
+    assert.ok(
+      content.events.some((e) => e.age_limit === "18+"),
+      "the other rows' age limits should survive the renamed header"
+    );
+  });
+
+  test("a header carrying both age and age_limit fails rather than guessing", () => {
+    const config = makeFixtureSet(TMP_ROOT, "age-both", [addColumn("events.csv", "age", "21+")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "two names for one column should fail the build");
+    assert.match(result.stderr, /two names for the same column/);
+    assert.ok(result.stderr.includes('"age_limit"') && result.stderr.includes('"age"'), result.stderr);
+  });
+
+  test("a sponsor tier may be written as its dropdown label, in any case", () => {
+    const config = makeFixtureSet(TMP_ROOT, "tier-labels", [
+      // The label as this contract writes it, and the shorter one the live
+      // sheet's dropdown offers.
+      setCell("sponsors.csv", 2, "tier", "Emerald Tier (Presenting Partner)"),
+      setCell("sponsors.csv", 3, "tier", "ruby (leading partner)"),
+      setCell("sponsors.csv", 5, "tier", "Sapphire (Supporting Partner)"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const bySlug = (slug) => content.sponsors.filter((s) => s.tier_slug === slug);
+    assert.equal(bySlug("emerald").length, 1);
+    assert.equal(bySlug("emerald")[0].tier, "Emerald Tier (Presenting Partner)");
+    assert.ok(bySlug("ruby").length >= 1);
+    assert.ok(bySlug("sapphire").length >= 1);
+  });
+});
+
 describe("bad fixtures", () => {
   // Each case is the good fixtures with one cell changed, named for the mistake
   // a coordinator would have made in the spreadsheet.
@@ -299,9 +430,21 @@ describe("bad fixtures", () => {
       mustInclude: ["events.csv", "row 2", "blue-moon-lounge", "venue_id"],
     },
     {
-      name: "US-style date instead of YYYY-MM-DD",
-      mutations: [setCell("events.csv", 2, "date", "10/02/2026")],
-      mustInclude: ["events.csv", "row 2", "10/02/2026"],
+      name: "a date in neither accepted format",
+      mutations: [setCell("events.csv", 2, "date", "October 2, 2026")],
+      mustInclude: ["events.csv", "row 2", "October 2, 2026", "2026-10-02", "10/2/2026"],
+    },
+    {
+      // Shape-correct, impossible date: the message must quote the cell rather
+      // than a rewrite of it.
+      name: "a M/D/YYYY date that isn't a real day",
+      mutations: [setCell("events.csv", 2, "date", "2/30/2026")],
+      mustInclude: ["events.csv", "row 2", "2/30/2026"],
+    },
+    {
+      name: "a start_time in neither accepted format",
+      mutations: [setCell("events.csv", 2, "start_time", "half past five")],
+      mustInclude: ["events.csv", "row 2", "half past five", "6:30 PM"],
     },
     {
       name: "blank required field",
@@ -334,9 +477,15 @@ describe("bad fixtures", () => {
       mustInclude: ["events.csv", "row 2", "dance", "unknown kind"],
     },
     {
-      name: "logo filename that isn't in the logos folder",
+      name: "a filename typed into the logo notes column",
       mutations: [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")],
-      mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg"],
+      mustInclude: ["sponsors.csv", "row 2", "nonexistent-logo.svg", "content/logos/shortline-credit-union.svg"],
+    },
+    {
+      // The one way a sponsor can now be missing a logo: no file named for it.
+      name: "a required logo with no file named for the sponsor",
+      mutations: [setCell("sponsors.csv", 2, "id", "shortline-credit-onion")],
+      mustInclude: ["sponsors.csv", "row 2", "content/logos/shortline-credit-onion.svg"],
     },
     {
       name: "tickets value outside the enum",
@@ -519,43 +668,110 @@ describe("source shape and headers", () => {
 describe("sponsor logos", () => {
   const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
   const EMERALD_SPONSOR = "Shortline Credit Union"; // sponsors.csv row 2
+  const EMERALD_ID = "shortline-credit-union";
 
-  // Every fetched-logo case points the same sponsor row at the local server.
-  function logoConfig(name, routes, urlPath) {
-    return withLocalServer(routes, async (origin) => {
-      const config = makeFixtureSet(TMP_ROOT, name, [setCell("sponsors.csv", 2, "logo", `${origin}${urlPath}`)]);
-      return { result: await runBuildAsync(config) };
-    });
-  }
+  // content/logos/ is CWD-relative and shared with the generated fixture sets,
+  // so a case that needs a particular file on disk puts it there and takes it
+  // away again. Names are unique per case, so nothing collides.
+  const LOGOS_DIR = path.join(REPO_ROOT, "content/logos");
+  const planted = [];
+  const plantLogo = (filename, body) => {
+    const file = path.join(LOGOS_DIR, filename);
+    writeFileSync(file, body);
+    planted.push(file);
+    return file;
+  };
+  // Taken away after every case, not at the end of the file: content/logos/ is
+  // the real directory, and a leftover file would change what the next build
+  // resolves.
+  afterEach(() => {
+    for (const file of planted.splice(0)) rmSync(file, { force: true });
+  });
 
-  test("a fetched logo is bundled under the sponsor's id, not the URL's filename", async () => {
-    const { result } = await logoConfig("logo-ok", { "/logo.svg": { type: "image/svg+xml", body: CLEAN_SVG } }, "/logo.svg");
+  test("a sponsor's logo is the file named for its id, and bundles under that id", () => {
+    const result = runBuild(GOOD_CONFIG);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
     const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
     const sponsor = content.sponsors.find((s) => s.name === EMERALD_SPONSOR);
-    // Two sponsors whose URLs both end /logo.svg would otherwise overwrite each
-    // other's file.
-    assert.equal(sponsor.logo, "assets/sponsors/shortline-credit-union.svg");
+    assert.equal(sponsor.logo, `assets/sponsors/${EMERALD_ID}.svg`);
     assert.ok(existsSync(path.join(result.outDir, sponsor.logo)));
   });
 
-  test("a logo served as HTML is rejected by content type", async () => {
-    const { result } = await logoConfig(
-      "logo-html",
-      { "/logo.svg": { type: "text/html", body: "<!doctype html><script>alert(1)</script>" } },
-      "/logo.svg"
+  test("a tier that requires a logo and has no file names the path it looked for", () => {
+    // Renaming the sponsor is how a fixture set can have an id with no file:
+    // the logos directory is shared and must not be emptied by a test.
+    const config = makeFixtureSet(TMP_ROOT, "logo-missing", [
+      setCell("sponsors.csv", 2, "id", "shortline-credit-onion"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a required logo with no file should fail the build");
+    assert.ok(
+      result.stderr.includes("content/logos/shortline-credit-onion.svg"),
+      `the message must name the expected path\n${result.stderr}`
     );
-    assert.notEqual(result.status, 0, "an HTML logo body should fail the build");
-    assert.match(result.stderr, /content-type "text\/html"/);
     assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
   });
 
-  test("an oversized logo is rejected with the limit in the message", async () => {
-    const { result } = await logoConfig(
-      "logo-huge",
-      { "/logo.png": { type: "image/png", body: Buffer.alloc(600 * 1024, 7) } },
-      "/logo.png"
+  test("a quartz sponsor with no logo file is fine, and publishes without one", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const quartz = content.sponsors.filter((s) => s.tier_slug === "quartz");
+    assert.ok(quartz.length > 0, "the fixtures should carry a quartz sponsor");
+    for (const s of quartz) assert.equal(s.logo, "");
+  });
+
+  test("two files for one id is an error rather than a coin flip", () => {
+    // Planted under an id no real sponsor uses: content/logos/ is the live
+    // directory, and a file named for a committed sponsor would break every
+    // other build running at the same time.
+    const config = makeFixtureSet(TMP_ROOT, "logo-ambiguous", [setCell("sponsors.csv", 2, "id", "logo-case-both")]);
+    plantLogo("logo-case-both.svg", CLEAN_SVG);
+    plantLogo("logo-case-both.png", Buffer.from("not really a png"));
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an ambiguous logo should fail the build");
+    assert.match(result.stderr, /2 logo files/);
+    assert.ok(
+      result.stderr.includes("logo-case-both.svg") && result.stderr.includes("logo-case-both.png"),
+      `both candidates should be named\n${result.stderr}`
     );
+  });
+
+  test("a raster logo is found by its own extension and keeps it", () => {
+    const config = makeFixtureSet(TMP_ROOT, "logo-webp", [setCell("sponsors.csv", 2, "id", "logo-case-webp")]);
+    plantLogo("logo-case-webp.webp", Buffer.from("RIFF----WEBP"));
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const sponsor = content.sponsors.find((s) => s.id === "logo-case-webp");
+    assert.equal(sponsor.logo, "assets/sponsors/logo-case-webp.webp");
+    assert.ok(existsSync(path.join(result.outDir, sponsor.logo)));
+  });
+
+  test(".jpeg and .jpg are the same picture and bundle under one name", () => {
+    const config = makeFixtureSet(TMP_ROOT, "logo-jpeg", [setCell("sponsors.csv", 2, "id", "logo-case-jpeg")]);
+    plantLogo("logo-case-jpeg.jpeg", Buffer.from("\xff\xd8\xff", "binary"));
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.sponsors.find((s) => s.id === "logo-case-jpeg").logo, "assets/sponsors/logo-case-jpeg.jpg");
+  });
+
+  test("a non-blank logo cell points at the file convention instead of being ignored", () => {
+    // The live sheet keeps a logo column as a notes column. Somebody typing a
+    // filename into it means it to be used, and silence would strand the logo.
+    const config = makeFixtureSet(TMP_ROOT, "logo-cell", [setCell("sponsors.csv", 2, "logo", "our-wordmark.svg")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a filename in the logo column should fail the build");
+    assert.match(result.stderr, /sponsors\.csv row 2/);
+    assert.ok(result.stderr.includes("our-wordmark.svg"), result.stderr);
+    assert.ok(result.stderr.includes(`content/logos/${EMERALD_ID}.svg`), result.stderr);
+  });
+
+  test("an oversized logo is rejected with the limit in the message", () => {
+    const config = makeFixtureSet(TMP_ROOT, "logo-huge", [setCell("sponsors.csv", 2, "id", "logo-case-huge")]);
+    plantLogo("logo-case-huge.png", Buffer.alloc(600 * 1024, 7));
+    const result = runBuild(config);
     assert.notEqual(result.status, 0, "an oversized logo should fail the build");
     assert.match(result.stderr, /512 KB/);
     assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
@@ -577,24 +793,25 @@ describe("sponsor logos", () => {
       `<svg xmlns="http://www.w3.org/2000/svg"><a href="data:text/html,<script>alert(1)</script>"><rect/></a></svg>`,
     ],
   ]) {
-    test(`an SVG logo carrying ${label} is rejected`, async () => {
-      const { result } = await logoConfig(
-        `logo-svg-${slug(label)}`,
-        { "/logo.svg": { type: "image/svg+xml", body } },
-        "/logo.svg"
-      );
+    test(`an SVG logo carrying ${label} is rejected`, () => {
+      const id = `logo-svg-${slug(label)}`;
+      const config = makeFixtureSet(TMP_ROOT, id, [setCell("sponsors.csv", 2, "id", id)]);
+      plantLogo(`${id}.svg`, body);
+      const result = runBuild(config);
       assert.notEqual(result.status, 0, `an SVG with ${label} should fail the build`);
       assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
       assert.match(result.stderr, /can run code/);
     });
   }
 
-  test("an SVG logo embedding a raster image still builds", async () => {
+  test("an SVG logo embedding a raster image still builds", () => {
     // Real wordmarks do this; only script-capable payloads are rejected.
     const body =
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">` +
       `<image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="10" height="10"/></svg>`;
-    const { result } = await logoConfig("logo-svg-raster", { "/logo.svg": { type: "image/svg+xml", body } }, "/logo.svg");
+    const config = makeFixtureSet(TMP_ROOT, "logo-svg-raster", [setCell("sponsors.csv", 2, "id", "logo-svg-raster")]);
+    plantLogo("logo-svg-raster.svg", body);
+    const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
   });
 
@@ -604,14 +821,23 @@ describe("sponsor logos", () => {
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
   });
 
-  for (const escape of ["../../../../etc/hostname", "..%2Fsecrets", "subdir/logo.svg"]) {
-    test(`a local logo path of ${JSON.stringify(escape)} is refused`, () => {
-      const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [setCell("sponsors.csv", 2, "logo", escape)]);
+  test("an id can only ever name a file inside content/logos/", () => {
+    // The lookup is <logos dir>/<id>.<ext> and ids are slugified to
+    // [a-z0-9-] first, so there is no separator or ".." left to escape with —
+    // this asserts that property rather than the old path check it replaced.
+    const escapes = ["../../../../etc/hostname", "..%2Fsecrets", "subdir/logo.svg"];
+    for (const escape of escapes) {
+      const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [
+        setCell("sponsors.csv", 2, "id", escape),
+      ]);
       const result = runBuild(config);
-      assert.notEqual(result.status, 0, "a logo path outside the logos folder should fail the build");
-      assert.match(result.stderr, /plain filename inside content\/fixtures\/logos/);
-    });
-  }
+      assert.notEqual(result.status, 0, `${escape} should fail the build`);
+      // The build looked inside content/logos/ for a slugified name, and never
+      // outside it.
+      assert.doesNotMatch(result.stderr, /\.\./);
+      assert.doesNotMatch(result.stderr, /etc\/hostname/);
+    }
+  });
 });
 
 describe("settings", () => {
@@ -745,7 +971,10 @@ describe("--skip-invalid-rows", () => {
   });
 
   test("keeps a sponsor whose logo is the only thing wrong, minus the logo", () => {
-    const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [setCell("sponsors.csv", 2, "logo", "nonexistent-logo.svg")]);
+    // No file is named for this id, and the tier requires one.
+    const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [
+      setCell("sponsors.csv", 2, "id", "shortline-credit-onion"),
+    ]);
     assert.notEqual(runBuild(config).status, 0, "a missing logo must still fail a normal build");
 
     const result = runBuild(config, ["--skip-invalid-rows"]);

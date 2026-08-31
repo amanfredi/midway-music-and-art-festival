@@ -32,7 +32,11 @@ import { pathToFileURL } from "node:url";
 import { parseLocation } from "./location.mjs";
 
 const CWD = process.cwd();
-const LOGOS_DIR = path.join(CWD, "content/fixtures/logos");
+// Real sponsor logos, not fixtures: a sponsor's file is named for its id, and
+// that is the whole of the lookup. Still CWD-relative, and therefore shared by
+// every config the build is pointed at, including the tests' generated ones.
+const LOGOS_DIR = path.join(CWD, "content/logos");
+const LOGOS_DIR_LABEL = "content/logos";
 const DEFAULT_CONFIG = "content/config.json";
 const DEFAULT_OUT_DIR = "site";
 const DEFAULT_SNAPSHOT_DIR = "content/snapshot";
@@ -70,6 +74,19 @@ const ALLOWED_URL_SCHEMES = new Set(["https:", "http:", "mailto:"]);
 const ID_RE = /^[a-z0-9-]+$/;
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_ONLY_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+// What a Google Sheets date cell and time cell export as, which is what the
+// live events tab is full of. Accepted and rewritten rather than rejected, on
+// the same reasoning ids and links follow: a coordinator should not have to
+// fight the spreadsheet's own formatting into a machine shape.
+const SHEET_DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+const SHEET_TIME_RE = /^(\d{1,2}):([0-5]\d)(?::[0-5]\d)?\s*([AaPp])\.?[Mm]\.?$/;
+// The sheet's age dropdown spells the contract's default out loud; blank and
+// "all ages" mean the same thing, and blank is what content.json carries.
+const ALL_AGES_TEXT = "all ages";
+// An event with no end_time runs one hour. Not a guess: the live schedule is
+// built on exact one-hour slots, and the only events that run longer are the
+// only ones that carry an end_time of their own.
+const DEFAULT_EVENT_MINUTES = 60;
 
 // Sponsor tier enum: slug is the CSV value, label is the display string
 // emitted as content.json's `tier`, order is the intrinsic rank (1 = most
@@ -82,7 +99,20 @@ const SPONSOR_TIERS = [
   { slug: "topaz", label: "Topaz Tier (Community Partner)", order: 4, maxCount: null, logoRequired: true },
   { slug: "quartz", label: "Quartz Tier (Neighborhood Supporter)", order: 5, maxCount: null, logoRequired: false },
 ];
-const SPONSOR_TIER_BY_SLUG = new Map(SPONSOR_TIERS.map((t) => [t.slug, t]));
+
+// A tier may be written as its slug or as the label the sheet's dropdown shows,
+// in any capitalization. Two label spellings are in circulation — this file's
+// own ("Topaz Tier (Community Partner)") and the sheet's ("Topaz (Community
+// Partner)") — and both are accepted, because which one a coordinator sees
+// depends only on which list they picked from.
+const tierSpellingKey = (raw) => String(raw ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+const SPONSOR_TIER_BY_SPELLING = new Map();
+for (const tier of SPONSOR_TIERS) {
+  for (const spelling of [tier.slug, tier.label, tier.label.replace(" Tier ", " ")]) {
+    SPONSOR_TIER_BY_SPELLING.set(tierSpellingKey(spelling), tier);
+  }
+}
+const resolveSponsorTier = (raw) => SPONSOR_TIER_BY_SPELLING.get(tierSpellingKey(raw)) ?? null;
 
 const SOURCE_ORDER = ["venues", "events", "vendors", "sponsors", "settings"];
 const SOURCE_LABEL = {
@@ -98,9 +128,17 @@ const EXPECTED_COLUMNS = {
   venues: ["id", "name", "address", "location", "description", "url"],
   events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description"],
   vendors: ["id", "name", "type", "description", "location"],
-  sponsors: ["id", "name", "tier", "blurb", "logo", "url", "location"],
+  sponsors: ["id", "name", "tier", "blurb", "url", "location"],
   settings: ["key", "value"],
 };
+// Other header spellings this build accepts for a column, because the live
+// sheet already uses them. A column may arrive under any one of its spellings;
+// two at once is an error, since the build would have to guess which one the
+// coordinator is maintaining.
+const COLUMN_ALIASES = {
+  events: { age_limit: ["age"] },
+};
+const columnSpellings = (key, column) => [column, ...(COLUMN_ALIASES[key]?.[column] ?? [])];
 
 // ---------------------------------------------------------------------------
 // RFC 4180 CSV parsing
@@ -251,8 +289,8 @@ function sourceSchemeError(key, value) {
 }
 
 /**
- * Fetches one remote resource — a content CSV or a sponsor logo, the two things
- * this build pulls over the network — and records its bytes for the snapshot.
+ * Fetches one remote resource — a content CSV is the only kind this build pulls
+ * over the network — and records its bytes for the snapshot.
  *
  * The distinction that runs through the whole fallback design is made here:
  * *unreachable* (connection refused, DNS, timeout, 5xx/429 on every attempt) is
@@ -358,29 +396,62 @@ function validateHeader(key, header) {
   const errors = [];
   const present = new Set(header);
   const normalize = (cell) => String(cell).toLowerCase().replace(/\s+/g, "");
-  const byNormalized = new Map(expected.map((column) => [normalize(column), column]));
+  // Every spelling this build accepts, mapped to the column it stands for.
+  const accepted = new Map();
+  for (const column of expected) {
+    for (const spelling of columnSpellings(key, column)) accepted.set(spelling, column);
+  }
+  const byNormalized = new Map([...accepted.keys()].map((spelling) => [normalize(spelling), spelling]));
 
   // A near-miss explains the column it was meant to be, so that column isn't
   // also reported as missing.
   const explained = new Set();
   for (const cell of header) {
-    if (present.has(cell) && expected.includes(cell)) continue;
+    if (accepted.has(cell)) continue;
     const intended = byNormalized.get(normalize(cell));
     if (!intended || present.has(intended)) continue;
     errors.push(
       `${fileLabel}: header column "${cell}" differs from the expected "${intended}" only in capitalization or spacing. ` +
         `Column names must match exactly, so "${cell}" is read as an extra notes column and "${intended}" would come out blank on every row.`
     );
-    explained.add(intended);
+    explained.add(accepted.get(intended));
   }
 
   for (const column of expected) {
-    if (present.has(column) || explained.has(column)) continue;
+    const spellings = columnSpellings(key, column);
+    const found = spellings.filter((spelling) => present.has(spelling));
+    if (found.length > 1) {
+      errors.push(
+        `${fileLabel}: the header row carries ${found.map((spelling) => `"${spelling}"`).join(" and ")}, which are two names ` +
+          `for the same column. Keep one of them and delete the other, so it is clear which one holds the real values.`
+      );
+      continue;
+    }
+    if (found.length === 1 || explained.has(column)) continue;
+    const wanted = spellings.map((spelling) => `"${spelling}"`).join(" or ");
     errors.push(
-      `${fileLabel}: expected column "${column}" is missing from the header row (found: ${header.join(", ")}).`
+      `${fileLabel}: expected column ${wanted} is missing from the header row (found: ${header.join(", ")}).`
     );
   }
   return errors;
+}
+
+/**
+ * Copies an aliased column's cells onto the name the rest of the build reads,
+ * once the header has been accepted. Runs before every validator, so nothing
+ * downstream has to know which spelling the sheet used.
+ */
+function applyColumnAliases(parsed) {
+  for (const [key, aliases] of Object.entries(COLUMN_ALIASES)) {
+    const source = parsed[key];
+    if (!source) continue;
+    for (const [column, spellings] of Object.entries(aliases)) {
+      if (source.header.includes(column)) continue;
+      const used = spellings.find((spelling) => source.header.includes(spelling));
+      if (!used) continue;
+      for (const rec of source.records) rec.fields[column] = rec.fields[used] ?? "";
+    }
+  }
 }
 
 /**
@@ -574,6 +645,42 @@ function normalizeUrls(parsed) {
   return notes;
 }
 
+/**
+ * Google Sheets exports a date cell as "10/2/2026" and a time cell as
+ * "6:30:00 PM", and the live events tab is written entirely in both. The build
+ * absorbs them the way it absorbs a punctuated id or a bare domain: the
+ * coordinators' job is the schedule, not the storage format.
+ *
+ * Only the date rewrites are reported, and that asymmetry is deliberate.
+ * "2/10/2026" is February 10 to a US spreadsheet and October 2 almost
+ * everywhere else, and nothing further down this pipeline can tell a misentered
+ * date from a correct one — the log line is the only place such a misreading
+ * becomes visible. A 12-hour clock time carries no comparable ambiguity, and a
+ * note per row of it would bury the ones that matter.
+ */
+function normalizeEventDateTimes(records) {
+  const notes = [];
+  for (const rec of records) {
+    const rawDate = String(rec.fields.date ?? "").trim();
+    const iso = sheetDateToIso(rawDate);
+    if (iso && iso !== rawDate) {
+      notes.push(`events.csv row ${rec.rowNum} (${identifierFor(rec, "title")}): date "${rawDate}" -> "${iso}"`);
+      rec.fields.date = iso;
+    }
+
+    for (const field of ["start_time", "end_time"]) {
+      const clock = sheetTimeToClock(rec.fields[field]);
+      if (clock) rec.fields[field] = clock;
+    }
+
+    // "all ages" is the sheet dropdown saying out loud what the contract stores
+    // as blank, so it is recorded as blank rather than reported as a bad value.
+    const age = String(rec.fields.age_limit ?? "").trim();
+    if (age !== "" && age.toLowerCase().replace(/\s+/g, " ") === ALL_AGES_TEXT) rec.fields.age_limit = "";
+  }
+  return notes;
+}
+
 // Runs after normalizeIds, so anything still failing ID_RE had no letters or
 // numbers to build an id from at all.
 function validateIdFormat(fileLabel, records, identifierField, idField = "id") {
@@ -657,14 +764,47 @@ function parseClockTime(value) {
   return { h, mi, minutes: h * 60 + mi };
 }
 
+const pad2 = (n) => String(n).padStart(2, "0");
+
+/**
+ * Rewrites a spreadsheet's "M/D/YYYY" date to "YYYY-MM-DD", or returns null if
+ * the cell isn't in that shape. A shape-correct but impossible date (2/30/2026)
+ * also returns null, so the build's complaint quotes what is really in the cell
+ * rather than a rewrite of it.
+ */
+function sheetDateToIso(value) {
+  const match = SHEET_DATE_RE.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const [, mo, d, y] = match;
+  const iso = `${y}-${pad2(Number(mo))}-${pad2(Number(d))}`;
+  return parseCalendarDate(iso) ? iso : null;
+}
+
+/** Rewrites a 12-hour clock time ("6:30 PM", "6:30:00 PM") to 24h "HH:MM", or null. */
+function sheetTimeToClock(value) {
+  const match = SHEET_TIME_RE.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const [, hStr, mi, meridiem] = match;
+  const h = Number(hStr);
+  if (h < 1 || h > 12) return null;
+  const isPm = meridiem.toLowerCase() === "p";
+  const hour24 = isPm ? (h === 12 ? 12 : h + 12) : h === 12 ? 0 : h;
+  return `${pad2(hour24)}:${mi}`;
+}
+
+/** "HH:MM" for a minute-of-day, wrapping past midnight (1470 -> "00:30"). */
+function clockFromMinutes(minutes) {
+  const wrapped = ((minutes % 1440) + 1440) % 1440;
+  return `${pad2(Math.floor(wrapped / 60))}:${pad2(wrapped % 60)}`;
+}
+
 /** Adds `days` calendar days to a valid "YYYY-MM-DD" string. */
 function addCalendarDays(dateStr, days) {
   const parsed = parseCalendarDate(dateStr);
   if (!parsed) return dateStr; // defensive only: reached solely on already-invalid input, which fails the build regardless
   const dt = new Date(parsed.ms);
   dt.setUTCDate(dt.getUTCDate() + days);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -727,7 +867,7 @@ function validateVendors(records) {
 function validateEvents(records, venueIds) {
   const fileLabel = "events.csv";
   const errors = [
-    ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "date", "start_time", "end_time"], "title"),
+    ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "date", "start_time"], "title"),
     ...validateDuplicateIds(fileLabel, records, "title"),
     ...validateIdFormat(fileLabel, records, "title"),
   ];
@@ -772,21 +912,47 @@ function validateEvents(records, venueIds) {
       );
     }
 
+    // The sheet's own spellings were rewritten before this ran, so a value
+    // still failing here is one neither format explains — say both, since the
+    // coordinator may have been aiming at either.
     const dateRaw = rec.fields.date;
     if (dateRaw && String(dateRaw).trim() !== "" && !parseCalendarDate(dateRaw)) {
-      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `date "${dateRaw}" isn't a valid "YYYY-MM-DD" date.`));
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `date "${dateRaw}" isn't a date the build can read. Write it as 2026-10-02 or 10/2/2026.`
+        )
+      );
     }
 
     const startRaw = rec.fields.start_time;
     const startOk = startRaw && String(startRaw).trim() !== "" ? parseClockTime(startRaw) : null;
     if (startRaw && String(startRaw).trim() !== "" && !startOk) {
-      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `start_time "${startRaw}" isn't a valid 24h "HH:MM" time.`));
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `start_time "${startRaw}" isn't a time the build can read. Write it as 18:30 or 6:30 PM.`
+        )
+      );
     }
 
+    // end_time is optional: blank means the event runs one hour.
     const endRaw = rec.fields.end_time;
     const endOk = endRaw && String(endRaw).trim() !== "" ? parseClockTime(endRaw) : null;
     if (endRaw && String(endRaw).trim() !== "" && !endOk) {
-      errors.push(errorMsg(fileLabel, rec.rowNum, ident, `end_time "${endRaw}" isn't a valid 24h "HH:MM" time.`));
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `end_time "${endRaw}" isn't a time the build can read. Write it as 19:30 or 7:30 PM, or leave it blank ` +
+            `for an event that runs one hour.`
+        )
+      );
     }
 
     // Convention: end_time earlier than start_time means the event runs past
@@ -819,6 +985,13 @@ function validateEvents(records, venueIds) {
       const rollsToNextDay = Boolean(startOk) && endOk.minutes < startOk.minutes;
       const endDate = rollsToNextDay ? addCalendarDays(dateRaw, 1) : dateRaw;
       end = `${endDate}T${endRaw}`;
+    } else if (dateOk && startOk && endRaw.trim() === "") {
+      // A blank end_time is an hour-long event. It goes through the same
+      // day-rolling as a written one, so a 23:30 start ends 00:30 on the next
+      // calendar date rather than at a time earlier than it began.
+      const endMinutes = startOk.minutes + DEFAULT_EVENT_MINUTES;
+      const endDate = endMinutes >= 1440 ? addCalendarDays(dateRaw, 1) : dateRaw;
+      end = `${endDate}T${clockFromMinutes(endMinutes)}`;
     }
 
     const ticketsRaw = rec.fields.tickets;
@@ -858,28 +1031,39 @@ function validateSponsorFields(records) {
   const seenByTier = new Map(); // tier slug -> row numbers seen so far, in order
   for (const rec of records) {
     const ident = identifierFor(rec, "name");
-    const tierSlug = rec.fields.tier;
-    if (!tierSlug || String(tierSlug).trim() === "") continue; // reported by required-field check
 
-    const tierDef = SPONSOR_TIER_BY_SLUG.get(tierSlug);
+    // The sheet may keep a `logo` column as a notes column, but anything typed
+    // in one is a filename somebody expected the build to use. Ignoring it
+    // silently would strand that sponsor's logo with nothing to show for it.
+    const logoCell = String(rec.fields.logo ?? "").trim();
+    if (logoCell !== "") {
+      errors.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `the logo column holds "${logoCell}", but logos are no longer named in the sheet. Put the image in ` +
+            `${LOGOS_DIR_LABEL}/ named for this sponsor's id (${LOGOS_DIR_LABEL}/${rec.fields.id || "<id>"}.svg, ` +
+            `.png, .jpg or .webp) and clear this cell.`
+        )
+      );
+    }
+
+    const tierRaw = rec.fields.tier;
+    if (!tierRaw || String(tierRaw).trim() === "") continue; // reported by required-field check
+
+    const tierDef = resolveSponsorTier(tierRaw);
     if (!tierDef) {
       errors.push(
         errorMsg(
           fileLabel,
           rec.rowNum,
           ident,
-          `unknown tier "${tierSlug}" (expected one of: ${SPONSOR_TIERS.map((t) => t.slug).join("|")}).`
+          `unknown tier "${tierRaw}" (expected one of: ${SPONSOR_TIERS.map((t) => t.slug).join("|")}, ` +
+            `or the tier's full name as the dropdown shows it, e.g. "${SPONSOR_TIERS[3].label}").`
         )
       );
       continue;
-    }
-
-    const logo = rec.fields.logo;
-    const hasLogo = logo && String(logo).trim() !== "";
-    if (tierDef.logoRequired && !hasLogo) {
-      errors.push(
-        errorMsg(fileLabel, rec.rowNum, ident, `missing required field "logo" (required for tier "${tierDef.slug}").`)
-      );
     }
 
     if (tierDef.maxCount != null) {
@@ -953,18 +1137,19 @@ function validateSettings(records) {
 }
 
 // ---------------------------------------------------------------------------
-// Sponsor logo resolution (copies bundled/downloaded bytes for later writing)
+// Sponsor logo resolution (reads the bundled file for later writing)
+//
+// A sponsor's logo is the file in content/logos/ named for its id. The sheet
+// names no filenames: the nine placeholder sponsors already had files called
+// exactly <id>.svg, so the column never carried anything but an extension, and
+// convention is cheaper to keep right than a column is.
 // ---------------------------------------------------------------------------
 
 // A logo is served from the festival's own origin and precached onto every
 // attendee's phone, so both what it may contain and how big it may be are
-// constrained here rather than trusted from the sheet.
-const LOGO_TYPE_EXTENSIONS = {
-  "image/svg+xml": "svg",
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
+// constrained here rather than trusted from whatever was dropped in the folder.
+// Extensions are listed in the order they are searched; jpeg and jpg are the
+// same picture and bundle under the same name.
 const LOGO_FILE_EXTENSIONS = { svg: "svg", png: "png", jpg: "jpg", jpeg: "jpg", webp: "webp" };
 // 512 KB: comfortably above any real vector or bitmap wordmark (the placeholder
 // logos are ~1 KB), and small enough that a sponsor list of them stays inside
@@ -1008,105 +1193,82 @@ function logoSizeError(buffer) {
   );
 }
 
-/**
- * A local `logo` is a bare filename inside content/fixtures/logos/. path.join
- * resolves "..", so an unchecked value could read any file the build can — the
- * runner's checkout and its credentials included.
- */
-function localLogoPath(logoValue) {
-  if (/[\\/]/.test(logoValue) || logoValue.includes("..")) {
-    return { error: `must be a plain filename inside content/fixtures/logos/ (no folders, no "..").` };
-  }
-  const resolved = path.resolve(LOGOS_DIR, logoValue);
-  if (!resolved.startsWith(LOGOS_DIR + path.sep)) {
-    return { error: `resolves outside content/fixtures/logos/.` };
-  }
-  return { resolved };
+/** The files in content/logos/ that could be this sponsor's, in search order. */
+function logoCandidates(sponsorId) {
+  return Object.keys(LOGO_FILE_EXTENSIONS).map((suffix) => ({
+    suffix,
+    ext: LOGO_FILE_EXTENSIONS[suffix],
+    name: `${sponsorId}.${suffix}`,
+    file: path.join(LOGOS_DIR, `${sponsorId}.${suffix}`),
+  }));
 }
 
-async function resolveSponsorLogos(records, ctx) {
+/**
+ * Finds each sponsor's logo by its id and reads the bytes for later writing.
+ *
+ * Ids are slugified and uniqueness-checked before this runs, so the same key
+ * that identifies a sponsor everywhere else identifies its file, and no two
+ * sponsors can claim one. A tier that requires a logo and has no file is an
+ * error naming the path that was looked for; two files differing only in
+ * extension is an error too, because picking one of them would be a guess.
+ */
+function resolveSponsorLogos(records) {
   const failures = [];
   const resolved = new Map(); // rowNum -> { filename, buffer }
   for (const rec of records) {
-    const logoValue = (rec.fields.logo ?? "").trim();
-    // A blank logo is expected for quartz sponsors (optional there); a blank
-    // logo on any other tier is caught as a missing-required-field error by
-    // validateSponsorFields, not here.
-    if (!logoValue) continue;
     const ident = identifierFor(rec, "name");
-    // Ids are slugified and uniqueness-checked, so naming the bundled file after
-    // the sponsor keeps two sponsors whose URLs both end /logo.svg apart.
-    const sponsorId = rec.fields.id || `sponsor-row-${rec.rowNum}`;
-    const fail = (message, failureClass = "validation") => {
+    const sponsorId = rec.fields.id;
+    const tierDef = resolveSponsorTier(rec.fields.tier);
+    // A row with no usable id or tier is already failing validation with a
+    // better message than anything about logos.
+    if (!sponsorId || !tierDef) continue;
+    const fail = (message) => {
       const err = errorMsg("sponsors.csv", rec.rowNum, ident, message);
-      failures.push({ class: failureClass, source: "sponsors", rowNum: err.rowNum, message: err.message });
+      failures.push({ class: "validation", source: "sponsors", rowNum: err.rowNum, message: err.message });
     };
 
-    let ext;
-    let buffer;
-    let origin; // how the message refers to the file
+    const candidates = logoCandidates(sponsorId);
+    const found = candidates.filter((candidate) => existsSync(candidate.file));
 
-    if (/^https?:\/\//i.test(logoValue)) {
-      // A sponsor's logo host is one more thing that can be down on festival
-      // Saturday, so logos go through the same retries and the same snapshot as
-      // the CSV sources rather than dying on the first refused connection.
-      origin = `logo URL "${logoValue}"`;
-      const got = await fetchRemote(ctx, {
-        id: logoResourceId(logoValue),
-        kind: "logo",
-        label: origin,
-        key: `${sponsorId} logo`,
-        url: logoValue,
-      });
-      if (got.error) {
-        fail(got.error, got.class);
-        continue;
-      }
-      const contentType = got.contentType;
-      ext = LOGO_TYPE_EXTENSIONS[contentType];
-      if (!ext) {
+    if (found.length === 0) {
+      // Optional for quartz, which never renders one.
+      if (tierDef.logoRequired) {
         fail(
-          `${origin} returned content-type "${contentType || "(none)"}" — a logo must be an SVG, PNG, JPEG, or WebP image.`
+          `no logo file. Tier "${tierDef.slug}" needs one: save the image as ` +
+            `${LOGOS_DIR_LABEL}/${sponsorId}.svg (or .png, .jpg, .webp).`
         );
-        continue;
       }
-      buffer = got.buffer;
-    } else {
-      origin = `logo file "${logoValue}"`;
-      const local = localLogoPath(logoValue);
-      if (local.error) {
-        fail(`${origin} ${local.error}`);
-        continue;
-      }
-      if (!existsSync(local.resolved)) {
-        fail(`${origin} not found in content/fixtures/logos/.`);
-        continue;
-      }
-      ext = LOGO_FILE_EXTENSIONS[path.extname(logoValue).slice(1).toLowerCase()];
-      if (!ext) {
-        fail(`${origin} must be an .svg, .png, .jpg, or .webp file.`);
-        continue;
-      }
-      buffer = readFileSync(local.resolved);
+      continue;
     }
+    if (found.length > 1) {
+      fail(
+        `has ${found.length} logo files — ${found.map((candidate) => candidate.name).join(", ")}. ` +
+          `Keep the one that should ship and delete the rest from ${LOGOS_DIR_LABEL}/.`
+      );
+      continue;
+    }
+
+    const [logo] = found;
+    const origin = `logo file ${LOGOS_DIR_LABEL}/${logo.name}`;
+    const buffer = readFileSync(logo.file);
 
     const sizeError = logoSizeError(buffer);
     if (sizeError) {
       fail(`${origin} ${sizeError}`);
       continue;
     }
-    if (ext === "svg") {
-      const found = svgScriptError(buffer.toString("utf8"));
-      if (found) {
+    if (logo.ext === "svg") {
+      const scriptFound = svgScriptError(buffer.toString("utf8"));
+      if (scriptFound) {
         fail(
-          `${origin} contains ${found}. An SVG served from the festival's own site can run code there, ` +
+          `${origin} contains ${scriptFound}. An SVG served from the festival's own site can run code there, ` +
             `so logos carrying script are rejected — ask the sponsor for a plain vector or PNG logo.`
         );
         continue;
       }
     }
 
-    resolved.set(rec.rowNum, { filename: `${sponsorId}.${ext}`, buffer });
+    resolved.set(rec.rowNum, { filename: `${sponsorId}.${logo.ext}`, buffer });
   }
   return { failures, resolved };
 }
@@ -1130,15 +1292,10 @@ const SNAPSHOT_SCHEMA = 1;
 const sha256 = (buffer) => crypto.createHash("sha256").update(buffer).digest("hex");
 const todayUTC = () => new Date().toISOString().slice(0, 10);
 const sourceResourceId = (key) => `source:${key}`;
-// Logos are keyed by URL, not by sponsor id: the id can be re-typed in the
-// sheet without the logo changing, and two sponsors can share a host.
-const logoResourceId = (url) => `logo:${sha256(Buffer.from(url, "utf8")).slice(0, 16)}`;
 
-function snapshotFileFor(resource) {
-  if (resource.kind === "source") return `sources/${resource.key}.csv`;
-  const ext = LOGO_TYPE_EXTENSIONS[resource.contentType] ?? "bin";
-  return `logos/${resource.id.slice("logo:".length)}.${ext}`;
-}
+// Content CSVs are the only remote resource; sponsor logos are committed files
+// named for the sponsor's id, so there is nothing about them to save here.
+const snapshotFileFor = (resource) => `sources/${resource.key}.csv`;
 
 /** Reads the snapshot's meta file into a Map keyed by resource id. */
 function readSnapshotMeta(snapshotDir) {
@@ -1231,7 +1388,7 @@ function snapshotUsedEntries(ctx) {
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((entry) => ({
       id: entry.id,
-      label: entry.kind === "source" ? SOURCE_LABEL[entry.id.slice("source:".length)] ?? entry.file : entry.file,
+      label: SOURCE_LABEL[entry.id.slice("source:".length)] ?? entry.file,
       url: entry.url,
       lastChanged: entry.lastChanged ?? null,
     }));
@@ -1475,6 +1632,11 @@ async function main() {
     reportErrorsAndExit(errors, { failures, reportPath, snapshot: { used: snapshotUsedEntries(ctx), written: false, changed: [] } });
   }
 
+  // A column the sheet spells differently (events.age for age_limit) is copied
+  // onto the schema's own name here, so no validator below has to know which
+  // spelling arrived.
+  applyColumnAliases(parsed);
+
   // Before any validation: ids and venue_id references become slugs, so
   // duplicate detection and the foreign-key check below compare like with like.
   const idNotes = normalizeIds(parsed);
@@ -1487,6 +1649,12 @@ async function main() {
   if (urlNotes.length) {
     console.log(`Completed ${urlNotes.length} link(s) to https://:`);
     for (const n of urlNotes) console.log(`  - ${oneLine(n)}`);
+  }
+
+  const dateNotes = normalizeEventDateTimes(parsed.events.records);
+  if (dateNotes.length) {
+    console.log(`Rewrote ${dateNotes.length} event date(s) to YYYY-MM-DD:`);
+    for (const n of dateNotes) console.log(`  - ${oneLine(n)}`);
   }
 
   // Rows dropped by --skip-invalid-rows, for the log, the step summary, and
@@ -1549,7 +1717,7 @@ async function main() {
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
   const eventsResult = runValidator("events", parsed.events.records, (records) => validateEvents(records, venueIds));
 
-  const { failures: logoFailures, resolved: logoFiles } = await resolveSponsorLogos(sponsorsResult.records, ctx);
+  const { failures: logoFailures, resolved: logoFiles } = resolveSponsorLogos(sponsorsResult.records);
 
   // A logo that fails validation costs the sponsor its logo, not its place on
   // the page (ruled 2026-08-22): the row itself is sound, and a sponsor is
@@ -1558,18 +1726,13 @@ async function main() {
   // already handles because it is legal for the lowest tier — including where
   // the tier would have required one, the one place this mode ships a row the
   // strict build would have refused.
-  //
-  // A logo host being down is not a bad row and stays fatal: --use-snapshot is
-  // the answer to an outage, and skipping rows must not quietly become a way
-  // to publish through one.
-  const droppedLogos = skipInvalidRows ? logoFailures.filter((f) => f.class === "validation") : [];
+  const droppedLogos = skipInvalidRows ? [...logoFailures] : [];
   for (const failure of droppedLogos) {
     dropped.push({ source: "sponsors", rowNum: failure.rowNum, message: failure.message, logoOnly: true });
   }
 
-  // Everything below this line is a spreadsheet cell somebody can fix, so it is
-  // all the validation class; the logo fetches classify themselves, because a
-  // sponsor's host being down is an outage rather than an edit.
+  // Everything below this line is a spreadsheet cell or a file somebody can
+  // fix, so it is all the validation class.
   const byType = [
     ["venues", venuesResult.errors],
     ["vendors", vendorsResult.errors],
@@ -1593,7 +1756,7 @@ async function main() {
   // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
   // tier rewritten from the CSV slug to its display label + intrinsic rank).
   const sponsorsClean = sponsorsResult.records.map((rec) => {
-    const tierDef = SPONSOR_TIER_BY_SLUG.get(rec.fields.tier);
+    const tierDef = resolveSponsorTier(rec.fields.tier);
     return {
       id: rec.fields.id ?? "",
       name: rec.fields.name ?? "",

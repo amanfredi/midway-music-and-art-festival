@@ -9,32 +9,22 @@ Items are not prioritized against each other. The festival is October 2–4,
 - Consider adopting svelte/sveltekit (see especially the static site adapter https://svelte.dev/docs/kit/adapter-static)
 - Consider moving deployment to Cloudflare Pages free plan and reverting github repo to private visibility (https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-kit-site/#deploy-with-cloudflare-pages)
 
-## Implemented locally — awaiting push and first-run verification
+## Pushed — first-run verification still owed
 
 - **Deploy robustness** (`definitions/deploy-robustness.md`) — implemented
-  2026-08-12 by the dispatched agent: six commits on local `main`
-  (a958ad3..221886d), never pushed. Snapshot write/fallback in `build.mjs`,
-  the zero-npm content publish with the two-part gate and
-  skip-if-unchanged, npm cache + `skip_tests`, the Fastmail failure
-  notifier, README playbook, CONTRACTS snapshot contract. The agent's
-  recovered report (2026-08-21) added as-implemented deviations, a ten-step
-  first-run inspection checklist, and residual risks to the definition —
-  the checklist is the post-push script. Reviewed 2026-08-22 (Fable,
-  inversion-framed); both blockers and four smaller findings fixed same
-  day. Remaining, in order: Anthony pushes; run the checklist; then
-  Anthony removes the invariant's "currently not met" clause in CLAUDE.md.
-  The review's allowlist inversion was ruled and landed 2026-08-22, with a
-  fail-closed test. Operator config exists since 2026-08-12:
-  `FASTMAIL_APP_PASSWORD` secret; `DEPLOY_NOTIFICATION_EMAIL`,
-  `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER` variables (recipient lists
-  may be comma-separated).
-
-- **White-on-gray color scheme + kind-tinted event tiles** — landed
-  2026-08-22 (f2f08c0..e3a5eca) on the same unpushed stack, so it rides the
-  deploy-robustness push. Page white, panels `#f6f6f6`, eight kind-tint
-  tokens tinting tiles via row-level classes, every chip outlined. All text
-  pairs ≥4.85:1 (muted ≥5.73:1 after Anthony's floor correction); axe gate
-  green; forced-colors improved (outlined chips keep a boundary).
+  2026-08-12, reviewed 2026-08-22 (Fable, inversion-framed; both blockers and
+  four smaller findings fixed the same day), pushed 2026-08-31 along with the
+  white-on-gray colour scheme that had been riding the same stack. It is
+  demonstrably running: `content/snapshot/` on `origin/main` now holds
+  `meta.json` plus venues, events and sponsors, written by a successful build.
+  What is still owed is the ten-step first-run inspection checklist in the
+  definition, written as the post-push script and not yet run. Once it passes,
+  the "currently not met" clause on the deploy-robustness invariant in
+  CLAUDE.md can come out — Anthony's call, since that clause states his
+  acceptance criterion rather than a fact about the code. Operator config
+  exists since 2026-08-12: `FASTMAIL_APP_PASSWORD` secret;
+  `DEPLOY_NOTIFICATION_EMAIL`, `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER`
+  variables (recipient lists may be comma-separated).
 
 ## Decisions that need Anthony
 
@@ -201,6 +191,26 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
       Re-measure on device to confirm, then close.
 
 ## App
+
+**The active tab in the bottom nav is nearly invisible** (added 2026-08-31,
+from Anthony's read of the deployed site). `.tab-bar a.is-active` changes
+exactly one thing: `--color-text-muted` (`#4b5962`) becomes `--color-primary`
+(`#10577b`). Both read well against the bar — 6.69:1 and 7.27:1 — which is why
+the August audit cleared them, but the audit measured each against the
+background and never measured them against *each other*. The two states differ
+by **1.09:1**. That is the number that decides "which tab am I on", and at that
+separation the answer is guesswork, more so outdoors or on a dimmed screen.
+
+The design already concedes the point in one place: the `forced-colors` block
+gives the active tab a 2 px underline, because colour alone survives no colour
+override. The same reasoning applies in normal rendering — WCAG 1.4.1 asks that
+colour not be the only visual means of conveying state, and 1.4.11 wants 3:1
+for a meaningful UI indicator. Candidates, cheapest first: promote that
+underline to always-on; put a filled or tinted pill behind the active tab; give
+the active cell a thick top border. Weight and size changes are riskier than
+they look — labels are already at 0.62rem to fit six tabs at 320 px, so
+anything that widens "Schedule" needs re-checking at that width.
+
 
 The **WCAG 2.2 AA review** ran on 2026-08-10. All 55 A/AA criteria are
 dispositioned in `reviews/2026-08-wcag-aa-audit.md`;

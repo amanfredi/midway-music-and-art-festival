@@ -33,20 +33,22 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
 
 ## Content
 
-- The venues tab is LIVE from the organizers' Google Sheet (URL in
-  `content/config.json`). Venue content fixes belong in the sheet — never in
-  either committed copy of it. Two copies exist, with distinct jobs:
-  `content/fixtures/venues.csv` is hand-committed and feeds the offline tests,
-  and `content/snapshot/sources/venues.csv` is machine-written by successful
-  builds and feeds only emergency builds (`--use-snapshot`). Neither is
-  generated from the other; the duplication is intended.
+- The venues, events and sponsors tabs are LIVE from the organizers' Google
+  Sheet (URLs in `content/config.json`). Content fixes belong in the sheet —
+  never in either committed copy of it. Two copies exist per live source, with
+  distinct jobs: `content/fixtures/<key>.csv` is hand-committed and feeds the
+  offline tests, and `content/snapshot/sources/<key>.csv` is machine-written by
+  successful builds and feeds only emergency builds (`--use-snapshot`). Neither
+  is generated from the other; the duplication is intended.
 - Venues may legitimately share a location: Mosaic on a Stick sits inside
   Hamline Park and correctly carries the park's address and plus code, and
   two more venues are ~14 m apart. **Valid data, not an error** (ruled
   2026-08-10) — don't flag it or propose validation against it. Overlapping
   pins are a map-rendering concern, addressed by the MapLibre migration.
-- Events/vendors/sponsors/settings are still placeholder fixtures; swapping
-  each to the sheet is a one-line change in `content/config.json`.
+- `settings` is the last placeholder fixture; swapping it to the sheet is a
+  one-line change in `content/config.json`. Vendors is deliberately empty
+  (`"vendors": null`) until the organizers name vendors — a decision recorded
+  in config, not an oversight.
 - Tests build from local fixtures only — keep them off the network. `npm test`
   builds `site/` from `tests/fixtures-good/config.json`; the broken cases are
   generated from the good fixtures by `tests/fixture-sets.mjs` into temp dirs.

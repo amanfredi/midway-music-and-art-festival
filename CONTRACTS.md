@@ -65,12 +65,24 @@ Nothing in `artwork/` ships or is precached.
 }
 ```
 
-Each value is a repo-relative file path **or** an `https://` URL (a Google Sheet
-tab "published to web" as CSV). `build.mjs` must treat both identically after
-loading. Swapping placeholder → real sheet changes only this file. `http://` is
-rejected, except on loopback hosts — the test suite serves fixtures that way.
-A fetched source whose content-type is `text/html` is rejected: that is a
-sign-in or error page, not the tab.
+Each value is a repo-relative file path, an `https://` URL (a Google Sheet tab
+"published to web" as CSV), or `null`. `build.mjs` must treat a file path and a
+URL identically after loading. Swapping placeholder → real sheet changes only
+this file. `http://` is rejected, except on loopback hosts — the test suite
+serves fixtures that way. A fetched source whose content-type is `text/html`
+is rejected: that is a sign-in or error page, not the tab.
+
+`null` means the section is intentionally empty: the build skips loading it,
+publishes `[]` for that key in content.json, and logs the skip every time,
+unconditionally — the log is the only thing that lets an operator notice,
+months later, that the config still says empty. `null` is deliberately not
+the same failure mode as a source that loads and comes back with a header but
+no data rows; that stays a build error (see "A source that yields no data
+rows is a build error too" below). The difference is intent: `null` is a
+decision recorded in this file, an emptied tab is an accident, and one must
+never be mistaken for the other. Omitting a key, or setting it to `""`, is
+still the pre-existing "missing required source" config error — only a
+literal `null` opts a section out.
 
 ## content/snapshot/ (build output, emergency build input)
 
@@ -149,7 +161,9 @@ build error: the build would otherwise have to guess which of them the
 coordinator is keeping up to date.
 
 A source that yields no data rows is a build error too: an emptied tab must not
-publish an empty guide over a working one.
+publish an empty guide over a working one. This applies only to a source that
+was actually loaded — a source configured as `null` (see content/config.json
+above) is a different, intentional case and never reaches this check.
 
 **Ids are normalized, not rejected.** Every `id` — and `events.venue_id` — is
 slugified at build time: lowercased, with everything outside `[a-z0-9-]`
@@ -375,10 +389,13 @@ snapshot directory was modified.
 ```
 
 `version` = first 12 hex chars of sha256 over the concatenated source CSV
-bytes. Events sorted by `start` then `title`; sponsors by `tier_order` then
-`name`. `start`/`end` are always `YYYY-MM-DDTHH:MM`, with `end`'s date rolled
-forward one day when the source `end_time` was earlier than `start_time`, or
-when a blank `end_time`'s one-hour default crosses midnight.
+bytes, in `sources` key order — a source configured as `null` contributes a
+fixed marker instead of file bytes, so the hash (and therefore `version`)
+still only depends on config.json, never on a timestamp or the run. Events
+sorted by `start` then `title`; sponsors by `tier_order` then `name`.
+`start`/`end` are always `YYYY-MM-DDTHH:MM`, with `end`'s date rolled forward
+one day when the source `end_time` was earlier than `start_time`, or when a
+blank `end_time`'s one-hour default crosses midnight.
 
 Optional missing fields become `""` (never absent keys, never null) — with
 one exception: a sponsor's `lat`/`lng` are `null` (never `""` or absent) when

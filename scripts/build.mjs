@@ -455,6 +455,32 @@ function applyColumnAliases(parsed) {
 }
 
 /**
+ * `sources.<key>: null` in config.json is the one config value that means
+ * "this section has no content on purpose" rather than "path or URL to load
+ * it from". It is deliberately distinct from a source that loads and comes
+ * back with a header but no data rows (validateSourceShape below, kept
+ * strict): that combination stays a build error because it is how an
+ * accidentally emptied tab looks. `null` is a decision recorded in
+ * config.json; an empty tab is an accident. Only `null` counts — an empty
+ * string or a missing key still falls through to the missingKeys check, so a
+ * typo that clears a real path can't be misread as "intentionally empty".
+ */
+function isIntentionallyEmptySource(value) {
+  return value === null;
+}
+
+/**
+ * Stands in for a skipped source's raw bytes in the `version` hash (see
+ * main()), so an intentionally-empty source still contributes something
+ * fixed and the hash step never has to special-case it. A source that
+ * reaches this point was never loaded, so this text can't collide with real
+ * CSV bytes from any source.
+ */
+function emptySourceMarker(key) {
+  return Buffer.from(` mmaf:intentionally-empty:${key} `, "utf8");
+}
+
+/**
  * An emptied tab used to build clean and deploy an empty guide over a working
  * one — the one case where "the last good version stays live" did not hold.
  */
@@ -1593,7 +1619,10 @@ async function main() {
   }
 
   const sources = config.sources || {};
-  const missingKeys = SOURCE_ORDER.filter((k) => !sources[k]);
+  // `null` is the one falsy value that means something other than "missing":
+  // it is how config.json says a section is intentionally empty (see
+  // isIntentionallyEmptySource below), so it must not join missingKeys.
+  const missingKeys = SOURCE_ORDER.filter((k) => sources[k] !== null && !sources[k]);
   if (missingKeys.length > 0) {
     bail(`config.json is missing required source(s): ${missingKeys.join(", ")}`, "config");
   }
@@ -1608,6 +1637,19 @@ async function main() {
 
   const loaded = {};
   for (const key of SOURCE_ORDER) {
+    if (isIntentionallyEmptySource(sources[key])) {
+      // Not loaded, not validated: an empty array is published for this key
+      // on purpose. Logged unconditionally (not folded into any --skip-*
+      // summary) because this is the one failure mode with no error to catch
+      // it — a tab left "intentionally empty" for months looks identical to
+      // one nobody noticed was still turned off, unless the build says so
+      // every single time.
+      console.log(
+        `Source "${key}" is configured as intentionally empty (sources.${key} is null in ${configArg}) — publishing an empty ${key} list.`
+      );
+      loaded[key] = { buffer: emptySourceMarker(key) };
+      continue;
+    }
     const result = await loadSource(key, sources[key], ctx);
     if (result.error) {
       fail(result.error, result.class ?? "validation", key);
@@ -1619,6 +1661,10 @@ async function main() {
 
   const parsed = {};
   for (const key of SOURCE_ORDER) {
+    if (isIntentionallyEmptySource(sources[key])) {
+      parsed[key] = { header: [], records: [] };
+      continue;
+    }
     parsed[key] = loaded[key] ? rowsToRecords(parseCSV(loaded[key].text)) : { header: [], records: [] };
     if (loaded[key]) {
       for (const message of validateSourceShape(key, sources[key], parsed[key])) fail(message, "validation", key);

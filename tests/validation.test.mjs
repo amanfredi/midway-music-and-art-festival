@@ -10,7 +10,7 @@
 import { after, afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -589,6 +589,53 @@ describe("source shape and headers", () => {
     assert.notEqual(result.status, 0, "an empty source should fail the build");
     assert.match(result.stderr, /settings\.csv/);
     assert.match(result.stderr, /empty/);
+  });
+
+  test("a source explicitly set to null publishes an empty list instead of failing", () => {
+    const config = makeFixtureSet(TMP_ROOT, "null-source", [], { vendors: null });
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.deepEqual(content.vendors, []);
+    assert.match(result.stdout, /vendors/);
+    assert.match(result.stdout, /intentionally empty/);
+  });
+
+  test("an intentionally-empty source and an accidentally-emptied one are opposite outcomes", () => {
+    // The whole point of `sources.<key>: null` is that it means something
+    // different from a tab that emptied itself by accident. Same starting
+    // fixtures, same key (vendors), only the config value differs — so this
+    // has to be checked side by side, not as two independent assertions that
+    // could each pass for unrelated reasons.
+    const emptied = runBuild(makeFixtureSet(TMP_ROOT, "vendors-emptied", [dropDataRows("vendors.csv")]));
+    assert.notEqual(emptied.status, 0, "an accidentally emptied tab must still fail the build");
+    assert.match(emptied.stderr, /no data rows/);
+
+    const intentional = runBuild(makeFixtureSet(TMP_ROOT, "vendors-null", [], { vendors: null }));
+    assert.equal(intentional.status, 0, `an explicit null must succeed\nstderr: ${intentional.stderr}`);
+    const content = JSON.parse(readFileSync(intentional.contentPath, "utf8"));
+    assert.deepEqual(content.vendors, []);
+  });
+
+  test("an intentionally-empty source is byte-identical on a rebuild", () => {
+    const config = makeFixtureSet(TMP_ROOT, "null-deterministic", [], { vendors: null });
+    const first = runBuild(config);
+    const second = runBuild(config);
+    assert.equal(first.status, 0, `expected exit 0, got ${first.status}\nstderr: ${first.stderr}`);
+    assert.equal(readFileSync(first.contentPath, "utf8"), readFileSync(second.contentPath, "utf8"));
+  });
+
+  test("a source key missing from config.json entirely still fails, unlike an explicit null", () => {
+    const dir = path.join(TMP_ROOT, "missing-key");
+    mkdirSync(dir, { recursive: true });
+    const goodSources = JSON.parse(readFileSync(path.join(REPO_ROOT, GOOD_CONFIG), "utf8")).sources;
+    delete goodSources.vendors;
+    const configPath = path.join(dir, "config.json");
+    writeFileSync(configPath, JSON.stringify({ sources: goodSources }, null, 2) + "\n");
+    const result = runBuild(configPath);
+    assert.notEqual(result.status, 0, "an omitted source key should fail the build");
+    assert.match(result.stderr, /missing required source/);
+    assert.match(result.stderr, /vendors/);
   });
 
   test("a source that answers with an HTML page is rejected as not-CSV", async () => {

@@ -118,7 +118,11 @@ function applyMutation(texts, mutation) {
  * Writes a full five-source content set into `<rootDir>/<name>/` and returns the
  * path of its config.json, ready to hand to build.mjs. `sourceOverrides` replaces
  * a source's config value outright, for the cases that need a URL rather than a
- * file.
+ * file — or, keyed with an explicit `null`, for the cases that need the
+ * "intentionally empty" source form. The fixture file is still written to disk
+ * either way (harmless when overridden — config.json is what the build reads),
+ * so an override can only be skipped by using `in`, not by `??`, which would
+ * treat a deliberate `null` the same as no override at all.
  */
 export function makeFixtureSet(rootDir, name, mutations = [], sourceOverrides = {}) {
   const dir = path.join(rootDir, name);
@@ -133,7 +137,7 @@ export function makeFixtureSet(rootDir, name, mutations = [], sourceOverrides = 
   const sources = {};
   for (const [key, filename] of Object.entries(SOURCE_FILES)) {
     writeFileSync(path.join(dir, filename), texts[filename]);
-    sources[key] = sourceOverrides[key] ?? path.join(dir, filename);
+    sources[key] = key in sourceOverrides ? sourceOverrides[key] : path.join(dir, filename);
   }
 
   const configPath = path.join(dir, "config.json");

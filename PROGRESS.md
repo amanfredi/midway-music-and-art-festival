@@ -487,8 +487,9 @@ lockfile-keyed npm cache, staleness marking and the snapshot commit step;
 README playbook, CONTRACTS snapshot contract, CLAUDE.md's two-copies
 venues wording (ruling 6). The merged tree's full suite was re-verified
 green on 2026-08-21: 129 unit (44 new) + 88 Playwright, exit 0. Push and
-the first-run inspection checklist remain — tracked in BACKLOG under
-"Implemented locally".
+the first-run inspection checklist remained — the push landed 2026-08-31; the
+checklist is tracked in BACKLOG under "Pushed — first-run verification still
+owed".
 
 Anthony ruled on `definitions/deploy-robustness.md` in session. The
 recommended package stands: committed `content/snapshot/` refreshed by every

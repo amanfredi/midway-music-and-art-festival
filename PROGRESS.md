@@ -19,7 +19,7 @@ list instead of the map.
 **Venues, events and sponsors are live from the organizers' Google Sheet**
 (URLs in `content/config.json`); `settings` is the only remaining fixture. As of
 the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
-11 venues, and 5 sponsors (2 sapphire, 3 topaz) carrying their real logos. No
+11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. No
 sponsor renders on the map: a pin needs a `location` and every sponsor's is
 empty. Vendors is deliberately empty (`"vendors": null`), so that tab reads
 "Vendor list coming soon."; the organizers have not named vendors yet.
@@ -40,6 +40,24 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-04 — restore the sponsor-tier logo ladder
+
+Sapphire and topaz sponsor logos rendered at the same visual size, defeating
+the point of tiered branding. The uniform-tile change (2026-08-31) fixed
+`height: 56px` on the base `.sponsor-card__logo`, but the per-tier overrides
+stayed `max-height` — and a max-height of 84px or 64px cannot raise a fixed
+56px, so the ruby and sapphire caps were silently inert and only topaz's 44px
+still bit. Even that 12px difference read as nothing, because the topaz logos
+are the widest (up to 4.17:1) and under `object-fit: contain` they drew as
+wide as or wider than the squarer sapphire marks.
+
+The per-tier rules now set `height` instead (with a comment on why
+`max-height` can't work there), restoring the descending ladder: emerald 140
+(spotlight) > ruby 84 > sapphire 64 > topaz 44 > quartz (no logo). Measured
+headless after the fix, drawn fixture logos step 118×59 > 104×52 > 64×32
+across ruby/sapphire/topaz, and each live sapphire logo now draws with more
+area than every topaz logo.
 
 ### 2026-09-04 — the venues list, and where to see each act
 

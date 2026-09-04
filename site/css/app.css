@@ -1448,17 +1448,20 @@ a:focus-visible, button:focus-visible {
 }
 
 /* Logo prominence descends by tier: ruby > sapphire > topaz (emerald is the
-   spotlight above; quartz never gets a logo at all — see below). */
+   spotlight above; quartz never gets a logo at all — see below). These must be
+   `height`, not `max-height`: the base tile above fixes `height: 56px`, which
+   a larger max-height cannot raise — as max-heights, ruby and sapphire
+   silently rendered at the base 56px. */
 .sponsor-card--ruby .sponsor-card__logo {
-  max-height: 84px;
+  height: 84px;
 }
 
 .sponsor-card--sapphire .sponsor-card__logo {
-  max-height: 64px;
+  height: 64px;
 }
 
 .sponsor-card--topaz .sponsor-card__logo {
-  max-height: 44px;
+  height: 44px;
 }
 
 /* -- quartz: name + link text only, never a card or a logo -- */

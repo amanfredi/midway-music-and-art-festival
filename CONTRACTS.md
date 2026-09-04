@@ -817,7 +817,14 @@ exactly what the organizers authored and the script logs
 `[performers] leaving the page as authored`.
 
 Styling is entirely Squarespace's: no stylesheet, no classes of its own, no
-markup beyond `<p>` and `<a>` inside the body.
+markup beyond `<p>` and `<a>` inside the body. One exception runs the other
+way — generated content is **static, never scroll-animated**: the site's
+reveal animation dresses authored elements in a pre-state class
+(`preFade`-family, opacity 0) plus inline transitions, and its engine only
+reveals elements it saw at page init, so the script strips that state (pre-
+classes, `…In` reveal partners, the inline transition) from everything it
+generates. Inherited pre-state rendered every bio invisible on the live page
+(caught and fixed 2026-09-04).
 
 Tests: `tests/performers-embed.spec.mjs` against `tests/data/performers/` — a
 trimmed copy of the real page's accordion markup with Squarespace's scripts

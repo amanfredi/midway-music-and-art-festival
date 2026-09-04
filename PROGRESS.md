@@ -35,6 +35,18 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-04 — first live paste, and the invisible-bio fix
+
+Anthony pasted the stub and the page rendered — settling the last open
+platform question (the plan does execute code-block JS) — but every bio
+paragraph was invisible while keeping its space. Cause, confirmed by probing
+the live page: Squarespace's scroll-reveal animation holds elements at
+opacity 0 under a `preFade` class until its engine reveals them, and the
+engine only tracks elements present at page init, so generated paragraphs
+inherited a pre-state that could never fire. The script now strips animation
+state from everything it generates (see the embed contract); verified visible
+on the live page after deploy.
+
 ### 2026-09-04 — the lineup, rendered on the organizers' own website
 
 `site/js/performers-embed.js` renders the performers list on

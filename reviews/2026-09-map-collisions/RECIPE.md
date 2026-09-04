@@ -54,6 +54,42 @@ The five states, at `phone` (393×852, touch) and `desktop` (1440×900):
   taken. Sort order sets who tries first, not who wins when the geometry
   differs.
 
+## `diag-` — why three venues stay unnamed (2026-09-04)
+
+A separate, later investigation, not part of the before/after set. Anthony read
+`before-labels-phone.png` against `after-labels-phone.png` and found three
+venues with visible free space around them and no name at the leader zoom:
+Ginkgo Coffeehouse (2), Mosaic on a Stick (10), Fluid Ink Tattoos (14).
+
+`shoot-label-diagnosis.mjs` turns on MapLibre's own `showCollisionBoxes` and
+shoots the overview plus a close-up on each of the three, at phone width:
+
+```
+diag-overview-phone.png   diag-ginkgo-phone.png
+diag-overview-desktop.png diag-mosaic-phone.png
+                          diag-fluidink-phone.png
+```
+
+Blue boxes are symbols that were placed, red are symbols the collision pass
+hid. What the pictures show is that **the free paper is not free**: a displaced
+pin's collision box is its whole composite image, dot to diamond, so a pin
+drawn 32 px off its coordinate reserves a 110 × 46 box where a plain pin
+reserves 46 × 46 — and a displaced *transit* stop reserves 116 × 30. Those
+boxes blanket the middle of a 361 px phone frame.
+
+Desktop is there for contrast only. The boxes are identical; the frame is
+wider, so more names fit. The diagnosis is about the phone.
+
+`diag-mosaic-phone.png` is byte-identical to `diag-overview-phone.png`, which
+is a coincidence rather than a duplicate: Mosaic on a Stick's coordinate is
+the map's `home_center` to within a pixel, so centring on it and centring on
+the home view are the same camera. Its diamond is the one 32 px west of the
+frame centre, not the one at it.
+
+Shot from `main` at the time (`02b9076`) against the current snapshot, which
+builds `40f85f499538` — a later content version than the before/after sets
+above, because this asks what the map does now rather than what changed.
+
 ## State at capture
 
 Build outputs are gitignored, so the commit alone does not pin the content.

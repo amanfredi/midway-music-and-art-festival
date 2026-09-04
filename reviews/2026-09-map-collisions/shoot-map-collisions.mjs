@@ -27,14 +27,33 @@ const arg = (name, fallback) => {
   return i === -1 ? fallback : process.argv[i + 1];
 };
 const PREFIX = arg('prefix', 'before');
+// --only <site> reshoots one site and leaves the rest of the set alone. The
+// three prefixes have to be built from identical content to be comparable, so
+// re-running everything to add one site would silently replace the committed
+// shots with a different build's.
+const ONLY = arg('only', '');
 
-// The two coincident groups the lane-axis change is judged on, named by venue
-// id so a sheet edit that moves them is a loud failure rather than a silently
-// different picture. Both are groups whose members vary in latitude far more
-// than in longitude — the case east-west lanes get wrong.
+// The places the change is judged at, named by venue id so a sheet edit that
+// moves them is a loud failure rather than a silently different picture.
+//
+// `zoom: 'leader'` means the zoom the displaced treatment switches on at, read
+// from the map rather than written down, because that is where pins are at
+// their most crowded and so where a lane arrangement is worth looking at.
 const SITES = [
+  // Two groups that vary in latitude far more than in longitude — the case
+  // east–west lanes get wrong.
   { name: 'vig-fluid', ids: ['vigguitars', 'fluidinktattoos'], zoom: 16.5 },
   { name: 'sundin-soeffker', ids: ['sundinmusichall', 'soeffkergallery'], zoom: 16.5 },
+  // The three-venue group that gives up its own east–west axis, plus the plain
+  // venue that made it give way: Black Hart's east lane drew within 36 px of
+  // Black Garnet Books, under the 38 px two diamonds need to clear each other.
+  // Both facts only exist at the leader zoom — one level in, the pair has
+  // spread far enough apart that there was never anything to see.
+  {
+    name: 'urban-lights',
+    ids: ['urbanlights', 'elsashouseofsleep', 'blackhartofsaintpaul', 'blackgarnetbooks'],
+    zoom: 'leader',
+  },
 ];
 
 const VIEWPORTS = [
@@ -82,6 +101,7 @@ try {
     await page.waitForFunction(() => window.__mmafMap && window.__mmafMap.loaded(), null, { timeout: 30_000 });
     await settle(page);
 
+    const wanted = (label) => !ONLY || ONLY === label;
     const shot = async (label) => {
       const file = join(HERE, `${PREFIX}-${label}-${viewport}.png`);
       await page.screenshot({ path: file });
@@ -90,7 +110,7 @@ try {
 
     // The view as a visitor meets it, and the same page scrolled to prove the
     // legend and venue key are still reachable (the 560 px cap's whole reason).
-    await shot('home');
+    if (wanted('home')) await shot('home');
     const home = await page.evaluate(() => ({
       center: window.__mmafMap.getCenter().toArray(),
       zoom: window.__mmafMap.getZoom(),
@@ -99,30 +119,48 @@ try {
 
     // Where venue names compete for room: the leader zoom is where they switch
     // on, so it is the widest view at which any name is sacrificed at all.
-    await page.evaluate(([c, z]) => window.__mmafMap.jumpTo({ center: c, zoom: z }), [home.center, home.leaderZoom]);
-    await settle(page);
-    await shot('labels');
+    if (wanted('labels')) {
+      await page.evaluate(([c, z]) => window.__mmafMap.jumpTo({ center: c, zoom: z }), [home.center, home.leaderZoom]);
+      await settle(page);
+      await shot('labels');
+    }
 
     for (const site of SITES) {
+      if (!wanted(site.name)) continue;
       const found = await page.evaluate(
         ([ids, zoom]) => {
           const map = window.__mmafMap;
-          const source = map.getSource('venue-groups')._data ?? {};
-          const features = (source.geojson ?? source).features ?? [];
-          const members = ids.map((id) => features.find((f) => f.properties.id === id)).filter(Boolean);
+          const featuresOf = (id) => {
+            const raw = map.getSource(id)._data ?? {};
+            return (raw.geojson ?? raw).features ?? [];
+          };
+          // Displaced venues first: a venue in a coincident group appears in
+          // both sources, and the displaced feature is the one on screen.
+          const displaced = featuresOf('venue-groups');
+          const pool = [...displaced, ...featuresOf('venues')];
+          const members = ids.map((id) => pool.find((f) => f.properties.id === id)).filter(Boolean);
           if (members.length !== ids.length) return null;
           const centre = members
             .reduce((a, f) => [a[0] + f.geometry.coordinates[0], a[1] + f.geometry.coordinates[1]], [0, 0])
             .map((v) => v / members.length);
-          map.jumpTo({ center: centre, zoom });
-          return members.map((f) => f.properties.name);
+          map.jumpTo({
+            center: centre,
+            zoom: zoom === 'leader' ? map.getLayer('venue-leader-pin').minzoom : zoom,
+          });
+          return {
+            zoom: map.getZoom(),
+            displaced: ids.filter((id) => displaced.some((f) => f.properties.id === id)).length,
+          };
         },
         [site.ids, site.zoom],
       );
       if (!found) {
-        console.log(`!! ${site.name}: ${site.ids.join(', ')} are not a displaced group any more — shot skipped`);
+        console.log(`!! ${site.name}: not every one of ${site.ids.join(', ')} is a venue any more — shot skipped`);
         continue;
       }
+      console.log(
+        `   ${site.name} @ z${found.zoom.toFixed(2)}: ${found.displaced} of ${site.ids.length} venues displaced`,
+      );
       await settle(page);
       await shot(site.name);
     }

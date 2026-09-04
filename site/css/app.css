@@ -970,6 +970,56 @@ html:has(dialog.sheet[open]) {
   }
 }
 
+/* -- embed presentation (body.is-embed, see js/embed.js) --
+
+   The same views, without the app's own chrome, for an iframe on the
+   organizers' Squarespace site. Only the shell is suppressed: the map, its
+   controls, the legend and the venue key keep app styling, because the embed
+   deliberately inherits nothing from the host page's theme (no parity
+   liability when the organizers restyle).
+
+   Nothing here is scoped to the map view. The suppression is about the shell,
+   and a second embed later should not need a second copy of it. */
+body.is-embed .app-header,
+body.is-embed .tab-bar {
+  display: none;
+}
+
+body.is-embed {
+  /* The tab bar is what this reserves room for, in #view's bottom padding and
+     in html's scroll-padding. With no bar there is nothing to clear, and the
+     reserve would otherwise read as a band of dead space at the end of the
+     venue key list. */
+  --tab-bar-height: 0px;
+}
+
+/* The host page scrolls, and the map sits in the middle of it. touch-action:
+   none on the frame means a finger dragged up the map pans the map instead of
+   the page, which in an iframe is a trap with no way out. pan-y hands vertical
+   drags back to the page; MapLibre's cooperativeGestures (embed only, see
+   map.js) covers the same ground for the wheel and for pinch. */
+body.is-embed .map-svg-wrap {
+  touch-action: pan-y;
+}
+
+/* An iframe is a fixed height somebody typed into a Squarespace code block, and
+   whatever the embed draws taller than that scrolls INSIDE the iframe — the
+   nested-scroll trap this embed is supposed to avoid. A single-column venue key
+   is what makes the embed tall: at 21 venues it is two thirds of the page and
+   grows by a whole row per venue. In columns it is a few rows deep and grows by
+   a row per three or four venues, so the height the operator typed keeps
+   fitting. The app's own Map view keeps the single column: it has no iframe to
+   overflow, and a full-width page can just be scrolled.
+
+   No media query: auto-fill already drops to one column whenever the iframe is
+   too narrow for two, which is the same answer at every width a breakpoint
+   could have named. */
+body.is-embed .venue-key-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.4rem;
+}
+
 /* Shown in place of the map on a device without WebGL2. Centred in the square
    frame rather than sitting at the top of it, so the frame reads as carrying a
    deliberate message rather than as a map that failed to paint. */

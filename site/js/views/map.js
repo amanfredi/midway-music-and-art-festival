@@ -16,6 +16,7 @@
 // what it would need. tools/make-map-raster.mjs still produces the raster.
 
 import { esc, showToast } from '../util.js';
+import { isEmbed } from '../embed.js';
 import { makeProjector } from '../geo.js';
 import { openVenueSheet, openSponsorSheet, openTransitSheet, openPickerSheet } from './sheet.js';
 
@@ -1183,9 +1184,13 @@ export async function renderMap(container, content) {
     touchPitch: false,
     // The site renders settings.map_attribution itself, below the frame.
     attributionControl: false,
-    // Two-finger-only panning would fight a full-page-scroll layout; the map
-    // sits in a fixed-height frame, so one finger panning it is right.
-    cooperativeGestures: false,
+    // On the app's own page the map is the page, so one finger panning it and
+    // the wheel zooming it are right. In an iframe on somebody else's page
+    // they are a trap: the visitor scrolling past the map gets the map zoomed
+    // instead, with no way on. Cooperative gestures (ctrl+wheel to zoom, two
+    // fingers to pan) are the standard answer, and they cost the app nothing
+    // because they apply only to the embed.
+    cooperativeGestures: isEmbed(),
     fadeDuration: 0,
   });
   map.touchZoomRotate.disableRotation();

@@ -12,6 +12,7 @@ import { renderVendors } from './views/vendors.js';
 import { renderSponsors } from './views/sponsors.js';
 import { requestPersistentStorage } from './persist-storage.js';
 import { initInstallPrompt } from './pwa-install.js';
+import { embedRoute, fullAppUrl, isEmbed } from './embed.js';
 
 const viewEl = document.getElementById('view');
 const bannerRegion = document.getElementById('banner-region');
@@ -154,6 +155,47 @@ async function handleRoute(route) {
   viewEl.focus({ preventScroll: true });
 }
 
+/**
+ * Puts the page into embed presentation: no app header, no tab bar, pinned to
+ * the embedded view.
+ *
+ * The pin is what makes the embed URL a single thing to paste — `?embed=map`
+ * with no hash still opens the map — and it is only ever needed once, because
+ * nothing inside the embed changes the hash afterwards. Links that would have
+ * are caught below: with no tab bar, following one leaves the visitor on a
+ * chrome-less page with no way back, so they open the full app in a new tab
+ * instead. Today that is the venue sheet's per-event links, which is exactly
+ * the path a visitor takes (tap a pin, read the venue, tap one of its events).
+ *
+ * Capture phase, so this runs before the handlers that close the sheet or
+ * follow the link. Modified clicks are left alone: the browser's own
+ * open-in-new-tab already does the right thing with the href.
+ */
+function startEmbed() {
+  const route = embedRoute();
+  document.body.classList.add('is-embed');
+  // replaceState, not location.hash: an iframe's history entries land in the
+  // top-level history, so assigning the hash would put a step between the
+  // Squarespace page and wherever the visitor came from. The router reads
+  // location.hash when it starts, moments from now, so no event is needed.
+  if (!location.hash.startsWith(route)) history.replaceState(null, '', route);
+
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
+      const link = event.target.closest?.('a[href^="#/"]');
+      if (!link) return;
+      const hash = link.getAttribute('href');
+      if (hash.startsWith(route)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.open(fullAppUrl(hash), '_blank', 'noopener');
+    },
+    true
+  );
+}
+
 function renderSplash() {
   viewEl.innerHTML = '<p class="splash">Loading festival info&hellip;</p>';
 }
@@ -175,6 +217,7 @@ let bootComplete;
 const booted = new Promise((resolve) => { bootComplete = resolve; });
 
 async function boot() {
+  if (isEmbed()) startEmbed();
   renderSplash();
   try {
     const content = await store.loadContent();

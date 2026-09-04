@@ -19,10 +19,10 @@ list instead of the map.
 **Venues, events and sponsors are live from the organizers' Google Sheet**
 (URLs in `content/config.json`); `settings` is the only remaining fixture. As of
 the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
-11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. Sponsor
-pins appear as the organizers fill the sheet's `location` column (started
-2026-09-04): a sponsor may sit anywhere inside the map's calibration frame,
-not just the festival box (ruled 2026-09-04 — see the log). Vendors is deliberately empty (`"vendors": null`), so that tab reads
+11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. All six
+sponsors carry `location`s in the sheet as of 2026-09-04, so each gets a map
+pin: a sponsor may sit anywhere inside the map's calibration frame, not just
+the festival box (ruled 2026-09-04 — see the log). Vendors is deliberately empty (`"vendors": null`), so that tab reads
 "Vendor list coming soon."; the organizers have not named vendors yet.
 `content/fixtures/venues.csv` remains a hand-committed copy feeding the offline
 tests (refreshed 2026-08-09), and the emergency-build copies under
@@ -41,6 +41,19 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-04 — sapphire cards go two-up, outranking a ruby tier nobody holds
+
+The restored height ladder (below) wasn't enough: most sponsor logos are wide,
+so under `object-fit: contain` the card's width — shared across tiers by the
+common three-up grid — still decided their drawn size, and sapphire read
+barely bigger than topaz. Sapphire now gets its own two-cards-per-row grid
+with the logo tile scaled up to 96px to match the wider card; measured on the
+live logos, each sapphire mark now draws around four times the area of any
+topaz one. That deliberately jumps sapphire past ruby's 84px tile and
+crowds the emerald spotlight's 140px: accepted and deferred (Anthony,
+2026-09-04) because no ruby or emerald sponsor exists and none may sign —
+the re-ranking item rides the sponsor-presentation entry in BACKLOG.
 
 ### 2026-09-04 — sponsor pins may sit anywhere the map can show
 

@@ -72,7 +72,12 @@ constraints on whoever wires the artwork up, not on the artist.
 sponsor pin distinction wants a design review once someone can see it against
 real logos. Emerald tier's "special treatment / custom branding" is undefined
 because no emerald sponsor exists yet, and the ruby logo-pin map format is
-likewise unspecified.
+likewise unspecified. Added 2026-09-04: the Support tab's card ladder is now
+deliberately inverted above sapphire — sapphire renders two cards per row
+with a 96px logo tile, past ruby's 84px, because the two live tiers
+(sapphire/topaz) needed a visible step and no ruby or emerald sponsor exists
+(Anthony's call, problem deferred). If a ruby or emerald sponsor signs,
+re-rank the tiers above sapphire's new size before their logo publishes.
 
 **Transit pin green — needs a brand ack, then it lands.** White line letters
 on `--pin-transit` `#298d4e` compute 4.19:1. The CSS comment justifies that as
@@ -309,13 +314,6 @@ mitigation is procedural: wait a few minutes after editing before deploying. A
 quorum fetch — two or three fetches of each source, accepted only when they
 agree — would cost a few seconds per build. **Undecided:** living with it, the
 procedural rule, and the quorum fetch are all still open.
-
-**The sponsors tab has a `location` column but every row is empty**, so no
-sponsor gets a map pin. Pins exist for `emerald`–`topaz` only when the sponsor
-has a location, and all five current sponsors (Cadenza Music, Platform, Ideal
-Printers, Old National Bank, Bewick Cafe) are local Midway businesses — so this
-is unrealized value rather than a defect, and filling the column in the sheet is
-the whole fix.
 
 **The events tab's `url` column is schema now** (promoted 2026-09-04 after
 months as an ignored notes column): validated like every other link field and

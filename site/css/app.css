@@ -899,7 +899,10 @@ html:has(dialog.sheet[open]) {
    map grew as tall as the window was wide, pushing the legend and the venue
    key entirely below the fold (QA, 2026-08-08). The cap also keeps the map's
    on-screen scale within ~1.5x of a phone's, so one set of street widths, pin
-   sizes and label sizes reads correctly on both. */
+   sizes and label sizes reads correctly on both.
+
+   Both of those reasons are about HEIGHT, which is what the desktop rules
+   further down keep capped while letting the frame grow sideways. */
 .map-frame {
   position: relative;
   max-width: 560px;
@@ -934,6 +937,37 @@ html:has(dialog.sheet[open]) {
 .map-gl {
   width: 100%;
   height: 100%;
+}
+
+/* -- the map at desktop widths --
+
+   The map is the one view where width is information: every other tab is a list,
+   where a wide column is just a long line to read. So the frame stops being
+   square here and becomes wider than tall, and only the Map view does this.
+
+   The 560px cap above is not lifted, it is turned on its side. Both of its
+   reasons are about height — a square frame grew as tall as the window was
+   wide, and the frame's short side sets the map's on-screen scale — so the
+   height stays capped at the same 560px and the width is what grows. map.js
+   derives the view zooms from the frame's SHORTER side, so the scale a street,
+   a pin and a label draw at here is the same one they draw at in the square
+   frame, and none of the readability the cap bought has to be re-argued. What
+   the extra width buys is more map either side of the festival: the venues span
+   ~3.4 km east to west and the square home view only ever showed 3 km of it.
+
+   The height also gives way to the window when the window is short, so the
+   legend and the venue key underneath stay above the fold — the thing the
+   original cap was protecting. 340px is what the header, banner, legend,
+   attribution, "Venues" heading and tab bar need around it. */
+@media (min-width: 860px) {
+  .map-frame {
+    max-width: 1100px;
+  }
+
+  .map-svg-wrap {
+    aspect-ratio: auto;
+    height: clamp(320px, calc(100dvh - 340px), 560px);
+  }
 }
 
 /* Shown in place of the map on a device without WebGL2. Centred in the square
@@ -1447,17 +1481,29 @@ a:focus-visible, button:focus-visible {
   font-weight: 700;
 }
 
-/* Logo prominence descends by tier: ruby > sapphire > topaz (emerald is the
-   spotlight above; quartz never gets a logo at all — see below). These must be
-   `height`, not `max-height`: the base tile above fixes `height: 56px`, which
-   a larger max-height cannot raise — as max-heights, ruby and sapphire
-   silently rendered at the base 56px. */
+/* Logo prominence descends by tier (emerald is the spotlight above; quartz
+   never gets a logo at all — see below). Heights must be `height`, not
+   `max-height`: the base tile above fixes `height: 56px`, which a larger
+   max-height cannot raise — as max-heights, ruby and sapphire silently
+   rendered at the base 56px.
+
+   Sapphire gets two cards per row instead of the shared three-up grid, with
+   the tile scaled to the wider card: per-tier tile heights alone didn't read
+   as a hierarchy, because most logos are wide enough that the card's width,
+   shared across tiers, decided their drawn size (ruled 2026-09-04). This
+   deliberately puts sapphire's 96px tile above ruby's 84px — no ruby or
+   emerald sponsor exists and none may sign, so re-ranking the tiers above
+   sapphire is deferred (see BACKLOG). */
+.sponsor-tier--sapphire .sponsor-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .sponsor-card--ruby .sponsor-card__logo {
   height: 84px;
 }
 
 .sponsor-card--sapphire .sponsor-card__logo {
-  height: 64px;
+  height: 96px;
 }
 
 .sponsor-card--topaz .sponsor-card__logo {

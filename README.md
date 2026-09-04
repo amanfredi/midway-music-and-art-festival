@@ -229,15 +229,22 @@ The notice banner ("Main stage running 30 min late") is the `banner_text` /
 Attendees see it next time their device gets signal; dismissing it sticks
 until the id changes again.
 
-## The performers list on the main website
+## The performers and venues lists on the main website
 
-The organizers' Squarespace site can list the lineup without anyone re-typing
-it. `site/js/performers-embed.js` deploys with this site, reads the same
-`data/content.json` the app reads, and fills a Squarespace accordion with one
-item per non-vendor event, in alphabetical order — performer name, bio, and
-website link. A sheet edit reaches that page exactly as it reaches the app: on
-the 6-hour rebuild, or immediately with `gh workflow run rebuild-content.yml`.
-Squarespace itself is edited once, to set this up, and never again for content.
+The organizers' Squarespace site can list the lineup and the venues without
+anyone re-typing either. Two scripts deploy with this site, read the same
+`data/content.json` the app reads, and fill a Squarespace accordion:
+
+- `js/performers-embed.js` — one item per non-vendor event, alphabetically:
+  performer name, bio, where and when to see them, website link.
+- `js/venues-embed.js` — one item per venue, alphabetically: venue name,
+  address, description, website link.
+
+They are the same file under two names, and each renders the list its filename
+asks for. A sheet edit reaches both pages exactly as it reaches the app: on the
+6-hour rebuild, or immediately with `gh workflow run rebuild-content.yml`.
+Squarespace itself is edited once per page, to set this up, and never again for
+content.
 
 ### Setting it up
 
@@ -248,11 +255,18 @@ block holding one line:
 <script src="https://go.midwaymusicandart.org/js/performers-embed.js" defer></script>
 ```
 
+The venues page is set up the same way, with the other script:
+
+```html
+<script src="https://go.midwaymusicandart.org/js/venues-embed.js" defer></script>
+```
+
 That accordion item is not filler. It is the template every generated item is
 cloned from, and it is what visitors see if the data ever fails to load, so give
 it a real title and a real body — "Performers", with a sentence or two about the
-lineup underneath. Text styling applied to that body is what the generated bios
-copy.
+lineup underneath; "Venues" and a sentence about the grounds on the other page.
+Text styling applied to that body is what the generated bios and venue
+descriptions copy.
 
 If the page ends up with more than one accordion, name the right one.
 Squarespace gives every block an id, visible in the browser's element inspector:
@@ -264,19 +278,27 @@ Squarespace gives every block an id, visible in the browser's element inspector:
 
 With no `data-accordion`, the script takes the first accordion on the page.
 
+Which list a page gets follows from the script's filename, so nothing else
+distinguishes the two pastes. To say it outright instead — after a rename, or
+when a snippet was copied from the wrong page — add `data-embed="performers"`
+or `data-embed="venues"` to the script tag; it overrides the filename. A
+`data-embed` value that is neither leaves the page as authored rather than
+guessing.
+
 ### Styling stays in Squarespace
 
 Each generated item is a copy of the authored one, carrying its classes and so
 its fonts, colors, padding, icon, and dividers. Restyling the block in the
 Squarespace editor restyles the whole list — no code change, no deploy. This
-repo ships no CSS for that page and adds no classes of its own.
+repo ships no CSS for those pages and adds no classes of its own.
 
 The Squarespace editor doesn't run custom scripts, so an organizer editing the
-page sees the lone placeholder item rather than the lineup; that is the platform
-working as designed. Bios render as plain text with their paragraph breaks kept
-— never as HTML, because sheet content is untrusted on someone else's origin.
+page sees the lone placeholder item rather than the list; that is the platform
+working as designed. Bios and venue descriptions render as plain text with their
+paragraph breaks kept — never as HTML, because sheet content is untrusted on
+someone else's origin.
 
-### Linking to one performer
+### Linking to one performer or venue
 
 Any performer can be linked directly as `#performer-<event id>`, taking the id
 from the events tab: `…/performers#performer-artuduo` opens that item and
@@ -284,31 +306,57 @@ scrolls to it. Those ids stay meaningful only while one event means one
 performer — see the dedupe question in `definitions/performers-page.md` before
 publishing them anywhere.
 
+Venues work the same way as `#venue-<venue id>`, from the venues tab:
+`…/venues#venue-midwaysaloon`. Those are the same ids the app uses in
+`#/venue/<id>`, so the two sites can link to each other's copy of a venue.
+
 ### Verifying after a paste
 
 Load the published page in an ordinary tab, not the editor, and open the
-browser console.
+browser console. Both pages get the same walk-through; the log prefix is
+`[performers]` on one and `[venues]` on the other.
 
-1. The lineup should have replaced the placeholder item, alphabetically, one
-   entry per non-vendor event.
-2. The console should carry one `[performers] n performers rendered` line. A
-   `[performers] leaving the page as authored` warning instead means the fetch
-   or the markup failed, and names which; the page is showing the placeholder,
-   which is the intended failure.
-3. No `[performers]` line at all, and no request for `performers-embed.js` in
-   the Network tab, means Squarespace never ran the code block. Executing JS in
-   a code block needs a Business plan or higher — recalled, not verified, and
-   this is the check that settles it. A console error naming the script's URL
-   means the opposite: the block ran and something blocked the load, which
-   would be a content blocker or a Content-Security-Policy header the site
-   wasn't sending on 2026-09-04.
+1. The list should have replaced the placeholder item, alphabetically, one
+   entry per non-vendor event (or one per venue).
+2. The console should carry one `[performers] n performers rendered` line — or
+   `[venues] n venues rendered`. A `leaving the page as authored` warning
+   instead means the fetch or the markup failed, and names which; the page is
+   showing the placeholder, which is the intended failure. That warning under
+   the `[embed]` prefix means a `data-embed` value the script doesn't know.
+3. No such line at all, and no request for the script in the Network tab, means
+   Squarespace never ran the code block. Executing JS in a code block needs a
+   Business plan or higher — recalled, not verified, and this is the check that
+   settles it. A console error naming the script's URL means the opposite: the
+   block ran and something blocked the load, which would be a content blocker
+   or a Content-Security-Policy header the site wasn't sending on 2026-09-04.
 4. Click an item: it opens with the accordion's usual animation and the icon
    flips. Click again: it closes. Open a second: the first closes, unless the
    block's "allow multiple open" setting says otherwise.
-5. Load the page with `#performer-<id>` appended: that item opens and the page
-   scrolls to it. Change the hash without reloading and the new one opens.
+5. Load the page with `#performer-<id>` (or `#venue-<id>`) appended: that item
+   opens and the page scrolls to it. Change the hash without reloading and the
+   new one opens.
 6. The rule between items should be a single line, and the placeholder item
    should be nowhere in sight.
+7. On the performers page, each bio should end with a line naming the venue,
+   day and start time. An act whose venue has gone missing from the sheet is
+   the one case that line is absent.
+
+### Changing the script
+
+`site/js/performers-embed.js` is the canonical file and
+`site/js/venues-embed.js` is a byte-identical copy of it — one script under two
+names, so each Squarespace page can load a plain one-line `<script src>` and
+still get its own list. Nothing generates the copy, so after editing the
+canonical file:
+
+```sh
+cp site/js/performers-embed.js site/js/venues-embed.js
+```
+
+`npm test` fails if the two ever differ, with that command in the failure
+message, so a forgotten copy shows up as a red test rather than as a venues
+page quietly running last month's script. Neither page needs re-pasting when
+the script changes — they load it by URL.
 
 ## Swapping in the real map artwork (maybe)
 

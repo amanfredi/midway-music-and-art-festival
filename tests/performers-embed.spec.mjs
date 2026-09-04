@@ -131,6 +131,7 @@ test.describe('performers embed', () => {
     await expect(amber.locator('> *')).toHaveText([
       'First paragraph of the bio.',
       'Second paragraph of the bio.',
+      'See them at Velvet Room on Friday, October 2 at 8:00 PM.',
     ]);
 
     // Sheet text is untrusted on that origin: markup in a bio stays literal.
@@ -153,6 +154,38 @@ test.describe('performers embed', () => {
     ).toHaveCount(0);
   });
 
+  test('each bio ends with where and when to see the act', async ({ page }) => {
+    // The line joins the event's venue_id against the venues array in the same
+    // fetch, and reads `start` as festival-local wall-clock text field by
+    // field — so these strings must not move with the browser's timezone.
+    await serveFixture(page);
+    await page.goto(PAGE_URL);
+    await expect(items(page)).toHaveCount(EXPECTED.length);
+
+    const body = (id) => page.locator(`#${id} .accordion-item__description > *`);
+
+    // The whole body when the event has neither bio nor link. 12:00 is the
+    // hour that a naive `hour % 12` would print as "0:00 PM".
+    await expect(body('performer-beacon-street')).toHaveText([
+      'See them at Quarry Stage on Saturday, October 3 at 12:00 PM.',
+    ]);
+
+    // After the bio, before the Website link. 09:05 covers the morning half
+    // and the zero-padded minute.
+    await expect(body('performer-zeta-quartet')).toHaveText([
+      'Four players, one bow between them.',
+      'See them at Harbor Hall on Friday, October 2 at 9:05 AM.',
+      'Website',
+    ]);
+
+    // delta-ensemble's venue_id names no venue in this file — impossible in a
+    // built content.json, where the build enforces that foreign key. The item
+    // still renders; it just loses the line.
+    await expect(body('performer-delta-ensemble')).toHaveText([
+      'A bio containing <b>markup</b> that must stay literal text.',
+    ]);
+  });
+
   test('bios take the shape the organizers gave the placeholder body', async ({ page }) => {
     // Styling the accordion in the Squarespace editor must reach every
     // generated item, body text included — nothing here ships CSS. But the
@@ -170,7 +203,7 @@ test.describe('performers embed', () => {
     await expect(items(page)).toHaveCount(EXPECTED.length);
 
     const paragraphs = page.locator('#performer-amber-hollow .accordion-item__description > *');
-    await expect(paragraphs).toHaveCount(2);
+    await expect(paragraphs).toHaveCount(3); // two bio paragraphs and the schedule line
     expect(
       await paragraphs.evaluateAll((els) =>
         els.map((el) => ({
@@ -181,7 +214,7 @@ test.describe('performers embed', () => {
         })),
       ),
     ).toEqual(
-      Array(2).fill({
+      Array(3).fill({
         shape: 'P.sqsrte-large',
         whiteSpace: 'pre-wrap',
         transitionDuration: '',

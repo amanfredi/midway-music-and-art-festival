@@ -1,14 +1,51 @@
 {
   "version": "performersfx",
   "settings": {},
-  "venues": [],
+  "venues": [
+    {
+      "id": "harbor-hall",
+      "name": "Harbor Hall",
+      "address": "100 Fixture Avenue",
+      "lat": 44.9556,
+      "lng": -93.1663,
+      "description": "First paragraph about the hall.\nSecond paragraph about the hall.",
+      "url": ""
+    },
+    {
+      "id": "quarry-stage",
+      "name": "Quarry Stage",
+      "address": "300 Fixture Road",
+      "lat": 44.9561,
+      "lng": -93.1701,
+      "description": "A blurb containing <b>markup</b> that must stay literal text.",
+      "url": "javascript:alert(1)"
+    },
+    {
+      "id": "lantern-lot",
+      "name": "lantern lot",
+      "address": "200 Fixture Boulevard",
+      "lat": 44.9548,
+      "lng": -93.1688,
+      "description": "",
+      "url": "https://lantern-lot.example/"
+    },
+    {
+      "id": "velvet-room",
+      "name": "Velvet Room",
+      "address": "400 Fixture Lane",
+      "lat": 44.9572,
+      "lng": -93.1649,
+      "description": "One paragraph about the room.",
+      "url": "https://velvet-room.example/"
+    }
+  ],
   "vendors": [],
   "sponsors": [],
   "events": [
     {
       "id": "night-market",
       "title": "Aardvark Night Market",
-      "venue_id": "hamlinepark",
+      "venue_id": "lantern-lot",
       "start": "2026-10-03T12:00",
       "end": "2026-10-03T20:00",
       "kind": "vendor",
@@ -20,9 +57,9 @@
     {
       "id": "zeta-quartet",
       "title": "Zeta Quartet",
-      "venue_id": "sundinmusichall",
-      "start": "2026-10-02T18:00",
-      "end": "2026-10-02T19:00",
+      "venue_id": "harbor-hall",
+      "start": "2026-10-02T09:05",
+      "end": "2026-10-02T10:05",
       "kind": "music",
       "tickets": "General Admission",
       "age_limit": "",
@@ -32,7 +69,7 @@
     {
       "id": "amber-hollow",
       "title": "amber hollow",
-      "venue_id": "midwaysaloon",
+      "venue_id": "velvet-room",
       "start": "2026-10-02T20:00",
       "end": "2026-10-02T21:00",
       "kind": "music",
@@ -43,9 +80,9 @@
     {
       "id": "beacon-street",
       "title": "Beacon Street Choir",
-      "venue_id": "hamlinepark",
-      "start": "2026-10-03T14:00",
-      "end": "2026-10-03T15:00",
+      "venue_id": "quarry-stage",
+      "start": "2026-10-03T12:00",
+      "end": "2026-10-03T13:00",
       "kind": "literary",
       "tickets": "",
       "age_limit": "",
@@ -55,7 +92,7 @@
     {
       "id": "delta-ensemble",
       "title": "Delta Ensemble",
-      "venue_id": "hamlinepark",
+      "venue_id": "torn-down-venue",
       "start": "2026-10-04T13:00",
       "end": "2026-10-04T14:00",
       "kind": "performance",

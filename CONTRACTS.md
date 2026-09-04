@@ -281,9 +281,13 @@ neither is a build error.
   cell** in one is a build error pointing at the file convention. Someone typed
   a filename there expecting it to be used, and ignoring it silently would
   strand that sponsor's logo with no signal at all.
-- `location`: optional, same formats and bbox check as venues.csv, validated
-  only when present. A sponsor's map pin (see Map contract) depends on having
-  one.
+- `location`: optional, same formats as venues.csv, validated only when
+  present — but against the **map calibration frame** (the whole area the map
+  can pan to, derived from `site/assets/map-calibration.json`'s control
+  points), not the tight festival box. A sponsor across town is valid data
+  (ruled 2026-09-04: Ideal Printers, downtown St. Paul); outside the frame is
+  still an error, because the map's maxBounds mean a pin there could never be
+  seen. A sponsor's map pin (see Map contract) depends on having one.
 - `url`, `blurb` optional.
 
 **settings.csv** — two columns `key, value`, one setting per row. Keys and
@@ -308,8 +312,10 @@ misspelling, or double-naming a known column, a tab with no data rows — are
 reported together and stop the build before row checks run, because every row
 message downstream of them is a misreading of the file. Row checks: required fields, duplicate ids, unknown venue_id references,
 date/time format and calendar validity, `end_time` equal to `start_time`,
-`location` parseable (decimal pair or plus code) and resolving inside bbox
-[44.94..44.98, -93.20..-93.13] (catches swapped lat/lng), unknown
+`location` parseable (decimal pair or plus code) and resolving inside the
+source's bbox — venues/vendors: the festival box [44.94..44.98,
+-93.20..-93.13]; sponsors: the map calibration frame (see sponsors.csv above)
+— either way catching swapped lat/lng, unknown
 `kind`/`type`/`tickets`/`tier` values, unknown sponsor tier slug, tier caps
 (at most 1 emerald, at most 5 ruby), a missing or ambiguous logo file for a
 sponsor whose tier requires one, a non-blank `sponsors.logo` cell. Collect ALL

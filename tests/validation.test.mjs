@@ -518,6 +518,14 @@ describe("bad fixtures", () => {
       mustInclude: ["sponsors.csv", "row 2", "platinum", "unknown tier"],
     },
     {
+      // Sponsors validate against the map's calibration frame, not the tight
+      // festival box (see "sponsor locations" below) — but a swapped pair is
+      // outside any frame.
+      name: "sponsor location outside the mapped area",
+      mutations: [setCell("sponsors.csv", 2, "location", "-93.1668, 44.9557")],
+      mustInclude: ["sponsors.csv", "row 2", "swapped", "the area the map can show"],
+    },
+    {
       name: "a second emerald sponsor",
       mutations: [setCell("sponsors.csv", 3, "tier", "emerald")],
       mustInclude: ["sponsors.csv", "row 3", "emerald", "at most 1"],
@@ -543,6 +551,34 @@ describe("bad fixtures", () => {
       assert.ok(!result.stderr.includes("undefined"), `"${name}" stderr should not contain "undefined"`);
     });
   }
+});
+
+describe("sponsor locations", () => {
+  // A sponsor is a neighborhood business, not festival infrastructure: one
+  // across town is valid data (ruled 2026-09-04 — Ideal Printers, downtown
+  // St. Paul, was the case that decided it). Sponsors therefore validate
+  // against the map's calibration frame, outside which a pin could never be
+  // panned to — while a venue at the same spot stays an error.
+  test("a sponsor outside the festival box but inside the map frame builds, with its pin", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sponsor-across-town", [
+      setCell("sponsors.csv", 2, "location", "XW56+CH St Paul, Minnesota"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const sponsor = content.sponsors.find((s) => s.id === "shortline-credit-union");
+    assert.ok(Math.abs(sponsor.lat - 44.95856) < 0.001, `lat came out as ${sponsor.lat}`);
+    assert.ok(Math.abs(sponsor.lng - -93.08856) < 0.001, `lng came out as ${sponsor.lng}`);
+  });
+
+  test("a venue at the same across-town spot still fails the festival box", () => {
+    const config = makeFixtureSet(TMP_ROOT, "venue-across-town", [
+      setCell("venues.csv", 2, "location", "XW56+CH St Paul, Minnesota"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a venue across town should still fail the build");
+    assert.ok(result.stderr.includes("the festival area"), `stderr should name the festival box:\n${result.stderr}`);
+  });
 });
 
 describe("source shape and headers", () => {

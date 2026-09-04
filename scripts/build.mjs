@@ -41,7 +41,29 @@ const DEFAULT_CONFIG = "content/config.json";
 const DEFAULT_OUT_DIR = "site";
 const DEFAULT_SNAPSHOT_DIR = "content/snapshot";
 
-const BBOX = { latMin: 44.94, latMax: 44.98, lngMin: -93.2, lngMax: -93.13 };
+// What the festival itself places — venues and vendor booths — must be in
+// Midway, so a tight box around it catches a swapped lat/lng or a mistyped
+// digit before it publishes.
+const FESTIVAL_BBOX = { latMin: 44.94, latMax: 44.98, lngMin: -93.2, lngMax: -93.13 };
+
+// Sponsors are neighborhood businesses, not festival infrastructure: one
+// across town is valid data (ruled 2026-09-04 — Ideal Printers sits in
+// downtown St. Paul). Their pins are instead bounded by the map's own
+// calibration frame — beyond it a pin exists but can never be panned to.
+// Derived from the committed control points rather than restated, so a
+// recalibration stays a pure data change.
+const MAP_FRAME_BBOX = (() => {
+  const file = path.join(CWD, "site/assets/map-calibration.json");
+  const points = JSON.parse(readFileSync(file, "utf8")).control_points;
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
+  return {
+    latMin: Math.min(...lats),
+    latMax: Math.max(...lats),
+    lngMin: Math.min(...lngs),
+    lngMax: Math.max(...lngs),
+  };
+})();
 const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
 const VALID_VENDOR_TYPES = new Set(["food", "art", "retail"]);
 const VALID_TICKETS = new Set([
@@ -730,10 +752,26 @@ function validateIdFormat(fileLabel, records, identifierField, idField = "id") {
   return errors;
 }
 
+// The two areas a source's pins may be required to land in (see the bbox
+// constants above for why they differ).
+const FESTIVAL_AREA = {
+  box: FESTIVAL_BBOX,
+  describe: "the festival area",
+  hint: "if you pasted coordinates, check for a swapped lat/lng",
+};
+const MAPPED_AREA = {
+  box: MAP_FRAME_BBOX,
+  describe: "the area the map can show",
+  hint:
+    "a pin there could never be seen — leave location blank to list the sponsor without one, " +
+    "and check for a swapped lat/lng if you pasted coordinates",
+};
+
 // Parses each record's `location` (decimal pair or plus code) and stashes the
 // result on the record as rec.coords for the clean-mapping step.
-function validateLocation(fileLabel, records, identifierField) {
+function validateLocation(fileLabel, records, identifierField, area = FESTIVAL_AREA) {
   const errors = [];
+  const { box } = area;
   for (const rec of records) {
     const raw = rec.fields.location;
     if (raw === undefined || String(raw).trim() === "") continue; // reported by required-field check
@@ -744,18 +782,18 @@ function validateLocation(fileLabel, records, identifierField) {
       continue;
     }
     if (
-      parsed.lat < BBOX.latMin ||
-      parsed.lat > BBOX.latMax ||
-      parsed.lng < BBOX.lngMin ||
-      parsed.lng > BBOX.lngMax
+      parsed.lat < box.latMin ||
+      parsed.lat > box.latMax ||
+      parsed.lng < box.lngMin ||
+      parsed.lng > box.lngMax
     ) {
       errors.push(
         errorMsg(
           fileLabel,
           rec.rowNum,
           ident,
-          `location "${raw}" resolves to ${parsed.lat.toFixed(5)}, ${parsed.lng.toFixed(5)} — outside the festival area ` +
-            `(lat ${BBOX.latMin}..${BBOX.latMax}, lng ${BBOX.lngMin}..${BBOX.lngMax}; if you pasted coordinates, check for a swapped lat/lng).`
+          `location "${raw}" resolves to ${parsed.lat.toFixed(5)}, ${parsed.lng.toFixed(5)} — outside ${area.describe} ` +
+            `(lat ${box.latMin}..${box.latMax}, lng ${box.lngMin}..${box.lngMax}; ${area.hint}).`
         )
       );
       continue;
@@ -1053,7 +1091,7 @@ function validateSponsorFields(records) {
     ...validateRequiredFields(fileLabel, records, ["id", "name", "tier"], "name"),
     ...validateDuplicateIds(fileLabel, records, "name"),
     ...validateIdFormat(fileLabel, records, "name"),
-    ...validateLocation(fileLabel, records, "name"),
+    ...validateLocation(fileLabel, records, "name", MAPPED_AREA),
     ...validateUrlField(fileLabel, records, "name"),
   ];
 

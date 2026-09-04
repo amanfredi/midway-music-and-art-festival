@@ -19,9 +19,10 @@ list instead of the map.
 **Venues, events and sponsors are live from the organizers' Google Sheet**
 (URLs in `content/config.json`); `settings` is the only remaining fixture. As of
 the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
-11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. No
-sponsor renders on the map: a pin needs a `location` and every sponsor's is
-empty. Vendors is deliberately empty (`"vendors": null`), so that tab reads
+11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. Sponsor
+pins appear as the organizers fill the sheet's `location` column (started
+2026-09-04): a sponsor may sit anywhere inside the map's calibration frame,
+not just the festival box (ruled 2026-09-04 — see the log). Vendors is deliberately empty (`"vendors": null`), so that tab reads
 "Vendor list coming soon."; the organizers have not named vendors yet.
 `content/fixtures/venues.csv` remains a hand-committed copy feeding the offline
 tests (refreshed 2026-08-09), and the emergency-build copies under
@@ -40,6 +41,24 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-04 — sponsor pins may sit anywhere the map can show
+
+The organizers started filling the sheet's sponsor `location` column and the
+build failed on Ideal Printers, whose plus code resolves to downtown
+St. Paul — outside the tight festival box every location was checked
+against. Ruled valid data: a sponsor is a neighborhood business, not
+festival infrastructure. Sponsors now validate against the map's calibration
+frame instead, derived in `build.mjs` from
+`site/assets/map-calibration.json`'s control points so a recalibration stays
+a pure data change; Ideal Printers lands ~2 km inside its east edge, so its
+pin is reachable. Outside the frame is still a build error — the map's
+maxBounds mean such a pin could never be panned to — and the message says to
+leave `location` blank to list the sponsor without one. Venues and vendors
+keep the tight festival box: what the festival itself places must be in
+Midway, and the tight box is what catches a swapped lat/lng or a mistyped
+digit. CONTRACTS.md records both boxes, and the validation tests cover the
+asymmetry using the exact plus code that surfaced the ruling.
 
 ### 2026-09-04 — restore the sponsor-tier logo ladder
 

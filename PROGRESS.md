@@ -35,6 +35,53 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-04 — the lineup, rendered on the organizers' own website
+
+`site/js/performers-embed.js` renders the performers list on
+www.midwaymusicandart.org from this site's published `content.json`, so the
+events tab feeds both the app and the main website and neither drifts.
+Squarespace is edited once — an accordion block with one placeholder item and a
+one-line code block — and never again for content. README carries the paste
+procedure and the first-load checklist; the binding interface is the new
+"Performers embed contract" in CONTRACTS.md; the definition is
+`definitions/performers-page.md`.
+
+Two facts about the Squarespace side came from reading the live page and its
+accordion bundle rather than guessing. The bundle binds a click handler to each
+item at init and does not delegate, so items cloned from the authored one are
+inert under Squarespace's JS — which is why this script carries its own
+open/close, a copy of the bundle's `setItemOpen` down to the 250 ms curve and
+the offscreen height measurement, guarded with `stopImmediatePropagation` so a
+click cannot double-fire if that ever changes. And Squarespace emits the leading
+divider on the first item only, so cloning it onto every item would double the
+rule between them; the script strips it from all but the first.
+
+The constraint that shaped everything else is that the authored page must
+survive our failure. Every step that can fail happens before any DOM is touched
+and the swap is one synchronous batch, so a bad deploy shows the organizers'
+placeholder rather than half a lineup. A test asserts the block's `outerHTML` is
+identical with the script failing and with the script never loaded at all.
+
+The script sits in `site/`, so the service worker precaches ~15 KB of it (mostly
+comment) onto every attendee phone for a page the app never opens — accepted
+rather than special-cased; a second deploy path would cost more than the bytes.
+
+Verified in Chromium against the live page: items render with the organizers'
+own type, dividers and icons, open and close natively, and deep links work.
+Still unverified is whether the Squarespace plan executes code-block JS at all;
+that is settled the moment the stub is pasted.
+
+### 2026-09-04 — events.url promoted to the validated schema
+
+Promoted the events tab's existing `url` column (performer/act website) from an
+ignored notes column into the schema: required header, optional value,
+validated and bare-domain-completed by the same code path as
+venues.url/sponsors.url, emitted on every event in content.json ("" when
+blank). It feeds the performers page above; the festival app itself still
+ignores the field. Verified against the live sheet's actual url cells via the
+snapshot before landing: 24 of 34 events carry one, 9 needed bare-domain
+completion, 0 failures. site/js/ untouched by design.
+
 ### 2026-08-31 — the sheet's real events and sponsors, and a build that bends to meet them
 
 Pointing `events` and `sponsors` at the live sheet failed the build with two

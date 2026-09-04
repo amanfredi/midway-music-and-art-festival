@@ -97,9 +97,17 @@ iframe of a chrome-less map-only page (hidden route, or a query param that
 suppresses nav) versus conditional formatting of the existing page. Verified
 2026-09-04: go.midwaymusicandart.org serves neither `X-Frame-Options` nor
 `Content-Security-Policy`, so nothing blocks Squarespace framing it today.
-Related: the Performers page (`definitions/performers-page.md`, in flight
-2026-09-04) establishes the repo-hosted embed pattern on the same Squarespace
+Related: the Performers page (`definitions/performers-page.md`, landed
+2026-09-04) established the repo-hosted embed pattern on the same Squarespace
 site.
+
+**Performers embed follow-ups** (added 2026-09-04). The embed ignores the
+accordion block's "expand first item" setting (`data-is-expanded-first-item`) —
+the generated list always starts collapsed; implement it only against observed
+markup, since Squarespace's emitted form for that setting wasn't verifiable
+without editing the live site. And performer dedupe (one act, several sets)
+stays deferred per the definition — `#performer-<id>` deep links change meaning
+when it lands, so don't publicize per-performer links until it's settled.
 
 ## Map
 
@@ -309,12 +317,13 @@ Printers, Old National Bank, Bewick Cafe) are local Midway businesses — so thi
 is unrealized value rather than a defect, and filling the column in the sheet is
 the whole fix.
 
-**The events tab carries a `url` column the build ignores**, holding artist links
-for 24 of the 34 events. Whether it was added expecting the site to render event links is an open
-question with the organizers, and support for it is unscoped until they answer.
-Row 20 (Keep For Cheap) currently repeats `https://danrumseymusic.com/` from row
-9 (Dan Rumsey Trio), which looks like a leftover misalignment rather than a
-deliberate link; it only matters if event links are ever rendered.
+**The events tab's `url` column is schema now** (promoted 2026-09-04 after
+months as an ignored notes column): validated like every other link field and
+published on every event in content.json, feeding the Squarespace performers
+page (`definitions/performers-page.md`). The festival app still ignores it —
+whether event detail should render an act's website is a separate open call.
+(The row-20 link misalignment once flagged here — Keep For Cheap carrying Dan
+Rumsey Trio's URL — was fixed in the sheet 2026-09-04.)
 
 **Detect changed or removed content ids at build time** (accepted with the
 web-share ruling, 2026-08-23). A venue or event `id` edited in the live sheet

@@ -73,6 +73,20 @@ test.describe('performers embed', () => {
         els.map((el) => el.querySelectorAll('.accordion-divider--top').length),
       ),
     ).toEqual([1, 0, 0, 0]);
+
+    // The fixture's template title carries `preFade`, as a below-the-fold
+    // template would. Squarespace's animation engine never reveals generated
+    // elements, so any surviving pre-state class is invisible-forever text.
+    expect(
+      await items(page).evaluateAll((els) =>
+        els.flatMap((el) =>
+          [el, ...el.querySelectorAll('*')]
+            .flatMap((node) => [...node.classList])
+            .filter((name) => /^pre[A-Z]/.test(name)),
+        ),
+      ),
+      'animation pre-state classes on generated items',
+    ).toEqual([]);
   });
 
   test('each item carries its deep-link id and unique aria wiring', async ({ page }) => {
@@ -141,16 +155,39 @@ test.describe('performers embed', () => {
 
   test('bios take the shape the organizers gave the placeholder body', async ({ page }) => {
     // Styling the accordion in the Squarespace editor must reach every
-    // generated item, body text included — nothing here ships CSS.
-    await serveFixture(page, { body: '<p class="sqsrte-large">The lineup appears here.</p>' });
+    // generated item, body text included — nothing here ships CSS. But the
+    // placeholder arrives dressed by the site's animation engine (`preFade`
+    // at opacity 0 plus an inline transition, exactly as the live page
+    // serves it), and that state must not be inherited: the engine never
+    // reveals generated elements, so it reads as invisible bios.
+    await serveFixture(page, {
+      body:
+        '<p class="sqsrte-large preFade" style="white-space: pre-wrap; ' +
+        'transition-timing-function: ease; transition-duration: 0.9s; ' +
+        'transition-delay: 0.32s;">The lineup appears here.</p>',
+    });
     await page.goto(PAGE_URL);
     await expect(items(page)).toHaveCount(EXPECTED.length);
 
     const paragraphs = page.locator('#performer-amber-hollow .accordion-item__description > *');
     await expect(paragraphs).toHaveCount(2);
     expect(
-      await paragraphs.evaluateAll((els) => els.map((el) => el.tagName + '.' + el.className)),
-    ).toEqual(['P.sqsrte-large', 'P.sqsrte-large']);
+      await paragraphs.evaluateAll((els) =>
+        els.map((el) => ({
+          shape: el.tagName + '.' + el.className,
+          whiteSpace: el.style.whiteSpace,
+          transitionDuration: el.style.transitionDuration,
+          transitionDelay: el.style.transitionDelay,
+        })),
+      ),
+    ).toEqual(
+      Array(2).fill({
+        shape: 'P.sqsrte-large',
+        whiteSpace: 'pre-wrap',
+        transitionDuration: '',
+        transitionDelay: '',
+      }),
+    );
   });
 
   test('clicking opens and closes an item, one at a time', async ({ page }) => {

@@ -40,6 +40,11 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
   offline tests, and `content/snapshot/sources/<key>.csv` is machine-written by
   successful builds and feeds only emergency builds (`--use-snapshot`). Neither
   is generated from the other; the duplication is intended.
+- The events tab also feeds the **Performers page on the organizers'
+  Squarespace site**: `site/js/performers-embed.js` renders it there from the
+  published content.json (binding interface: the Performers embed contract in
+  CONTRACTS.md; operator procedure in README). Same rule as above — content
+  fixes belong in the sheet, and the app itself never loads that script.
 - Venues may legitimately share a location: Mosaic on a Stick sits inside
   Hamline Park and correctly carries the park's address and plus code, and
   two more venues are ~14 m apart. **Valid data, not an error** (ruled

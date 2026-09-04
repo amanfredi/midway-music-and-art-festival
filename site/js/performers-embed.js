@@ -155,6 +155,31 @@
     return node;
   }
 
+  /**
+   * Squarespace's scroll-reveal animation marks elements with a pre-state
+   * class (`preFade`, `preSlide`, …) that holds them at opacity 0 until its
+   * engine adds the matching reveal class — and that engine only tracks
+   * elements present at page init, so anything generated here would stay
+   * invisible forever (bit on the live page 2026-09-04: every bio paragraph
+   * inherited `preFade` and never faded in). Strip both halves and the
+   * engine's inline transition; generated content is simply visible,
+   * whatever the site's animation setting. The pre-class removal is the
+   * load-bearing half — opacity 0 lives there — so an unrecognized reveal
+   * variant costs nothing but a leftover class name.
+   */
+  const ANIMATION_PRE = /^pre[A-Z]/;
+  const ANIMATION_REVEAL = /^(fade|slide|scale|flex|clip)In$/;
+  function stripAnimationState(root) {
+    for (const node of [root, ...root.querySelectorAll('*')]) {
+      for (const name of [...node.classList]) {
+        if (ANIMATION_PRE.test(name) || ANIMATION_REVEAL.test(name)) node.classList.remove(name);
+      }
+      for (const prop of ['transition-timing-function', 'transition-duration', 'transition-delay']) {
+        node.style.removeProperty(prop);
+      }
+    }
+  }
+
   function fillBody(body, event, model) {
     body.textContent = '';
     for (const text of paragraphs(event.description)) body.appendChild(paragraph(model, text));
@@ -195,6 +220,8 @@
       const divider = first(item, TOP_DIVIDER);
       if (divider) divider.remove();
     }
+
+    stripAnimationState(item);
 
     parts.button.addEventListener('click', (clickEvent) => onClick(block, item, clickEvent));
     return item;

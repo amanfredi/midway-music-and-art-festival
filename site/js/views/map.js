@@ -1118,7 +1118,15 @@ export async function renderMap(container, content) {
   const north = Math.max(nw[1], ne[1]);
   const extentMeters = (north - south) * 111320;
 
-  const framePx = wrap.clientWidth || 360;
+  // View zooms come from the frame's SHORTER side, not its width. On a phone
+  // the frame is square and the two are the same thing; at desktop widths the
+  // frame is wider than tall (app.css), and measuring the long side would mean
+  // "3000 m across the home view" bought less map north to south than a phone
+  // gets -- cropping the venue set on the axis it was already tightest on.
+  // Taking the short side makes the extra width extra map instead, and holds
+  // the on-screen scale identical to the square frame's, which is what the
+  // 560 px cap's readability rationale rests on.
+  const framePx = Math.min(wrap.clientWidth || 360, wrap.clientHeight || 360);
   const lat = home[1];
   const minZoom = zoomForMeters(extentMeters, framePx, lat);
   const maxZoom = zoomForMeters(MIN_VIEW_M, framePx, lat);

@@ -194,12 +194,25 @@ const CLUSTER_TEXT_PX = 10;
 const NAME_TEXT_PX = 12;
 const SPONSOR_NAME_TEXT_PX = 11;
 const NAME_CLEAR_PX = 8;
+// The order `text-variable-anchor` tries for a name beside an undisplaced pin;
+// the engine keeps the first that fits. An anchor names the edge of the label
+// held at the offset point, so `bottom` puts the name ABOVE the pin and `top`
+// puts it below -- this order is above, below, then east, then west.
+//
+// Vertical first because of where this festival is: its venues are strung along
+// University Avenue, so a pin's nearest neighbour is almost always due east or
+// west of it, and a horizontal-first order aims every name straight down the
+// row at the next pin. It also stopped compounding with the lane axis, which
+// used to be east-west for every group however the group was really shaped.
+const NAME_ANCHOR_ORDER = ['bottom', 'top', 'left', 'right'];
 // The tap-highlight halo extends this far beyond the pin it rings.
 const HALO_PAD = 6;
-// Displaced-pin geometry. Members of a coincident group sit in east-west lanes
-// a pin wide plus a leader run either side, which is what makes adjacent
-// diamonds clear each other AND leaves each line long enough to be seen: at
-// the minimum 2 * VENUE_R spacing the diamond's inner tip lands on its own dot.
+// Displaced-pin geometry. Members of a coincident group sit in lanes a pin wide
+// plus a leader run either side, which is what makes adjacent diamonds clear
+// each other AND leaves each line long enough to be seen: at the minimum
+// 2 * VENUE_R spacing the diamond's inner tip lands on its own dot. The lane
+// step is the same whichever axis the group runs on -- coincidentGroups picks
+// that per group.
 const LEADER_RUN_PX = 13;
 const LEADER_LANE_PX = 2 * (VENUE_R + LEADER_RUN_PX);
 const LEADER_DOT_R = 3.5;
@@ -282,8 +295,8 @@ function metersPerPixel(zoom, lat) {
 }
 
 /**
- * Venues the split zoom cannot draw apart, and the east-west offset each one
- * is displaced by from there inward.
+ * Venues the split zoom cannot draw apart, and the pixel offset each one is
+ * displaced by from there inward.
  *
  * Two diamonds with half-diagonal R overlap when their centres are closer than
  * 2R measured |dx| + |dy| -- the measure VENUE_R itself was sized against.
@@ -292,8 +305,46 @@ function metersPerPixel(zoom, lat) {
  * in only spreads true positions apart, so one static offset per venue holds
  * for the whole range. Membership comes from the coordinates alone: the sheet's
  * coincident venues are a fact about the addresses, not a list of ids.
+ *
+ * **Each group picks its own lane axis**, from its own spread: a group strung
+ * out east to west lays its lanes east to west, a group stacked north to south
+ * lays them north to south. That is what makes "a displaced diamond stays on
+ * the side of the group its venue is really on" true rather than incidental.
+ * One fixed east-west axis for every group is what put Vig Guitars and Fluid
+ * Ink Tattoos -- identical longitudes, 14 m apart in latitude -- side by side
+ * along the one axis they do not differ in.
+ *
+ * The axis is whichever of latitude and longitude spreads further in meters,
+ * not the group's principal axis: an axis-aligned lane keeps the leader line
+ * horizontal or vertical, which is what lets it be baked into the pin image
+ * (see leaderImage) and read as a tether rather than as a stray diagonal.
+ *
+ * A group with **no spread at all** -- venues at one exact coordinate -- has no
+ * side to stay on, so nothing is owed to either axis; it prefers north-south,
+ * because names are set horizontally and an east-west lane grows each member's
+ * whole assembly (leader line, diamond, then the name running further outward
+ * still) along the same axis on both sides -- for a coincident pair that
+ * reaches ~320 px across, wider than a narrow phone's viewport, where stacking
+ * keeps it one name wide.
+ *
+ * **A blocked axis is given up.** If laying a group out on its own axis would
+ * put one of its diamonds on top of a pin outside the group, and the other axis
+ * would not, the group takes the other axis: two diamonds in one place is a
+ * worse failure than a diamond on the less expressive side of its group, and
+ * the dot and leader line still say exactly where each venue is either way.
+ * What is lost is that on the fallback axis the members' order carries little
+ * information -- it is still their true order along that axis, but a group that
+ * barely varies there is sorted by noise. If neither axis clears, the group
+ * keeps its own: the overlap then belongs to a crowded neighbourhood rather
+ * than to the axis, and being honest about the group's shape is the only thing
+ * still on offer.
+ *
+ * Which groups give way is decided for all of them at once (see the search
+ * below), from the coordinates and a fixed group order alone, so the answer is
+ * the same on every device -- the property the 2026-08-23 frame-width
+ * regression was about.
  */
-function coincidentGroups(venues, { splitZoom, lat }) {
+function coincidentGroups(venues, { splitZoom, maxZoom, lat }) {
   const mPerPx = metersPerPixel(splitZoom, lat);
   const mPerDegLat = 111320;
   const mPerDegLng = mPerDegLat * Math.cos((lat * Math.PI) / 180);
@@ -309,46 +360,146 @@ function coincidentGroups(venues, { splitZoom, lat }) {
 
   const members = new Map();
   venues.forEach((_, i) => members.set(root(i), [...(members.get(root(i)) ?? []), i]));
-  const offsets = new Map();
-  for (const group of members.values()) {
-    if (group.length < 2) continue;
-    // Lanes run west to east so a displaced diamond stays on the side of the
-    // group its venue is really on. An odd group's middle lane is offset 0 --
-    // that member draws at its own coordinate, needing no tether.
-    group.sort((a, b) => venues[a].lng - venues[b].lng || a - b);
-    group.forEach((index, lane) => {
-      offsets.set(index, (lane - (group.length - 1) / 2) * LEADER_LANE_PX);
+  const points = pxAtZoom(venues, splitZoom, lat);
+  const sMax = 2 ** (maxZoom - splitZoom);
+
+  /** Lanes for one group along one axis, in increasing screen order along it. */
+  const layOut = (group, axis) => {
+    // West to east, or north to south -- screen y grows southward, so latitude
+    // sorts the other way. An odd group's middle lane is offset 0: that member
+    // draws at its own coordinate, needing no tether.
+    const ordered = [...group].sort(
+      axis === 'ew' ? (a, b) => venues[a].lng - venues[b].lng || a - b : (a, b) => venues[b].lat - venues[a].lat || a - b
+    );
+    return ordered.map((index, lane) => {
+      const step = (lane - (group.length - 1) / 2) * LEADER_LANE_PX;
+      return [index, axis === 'ew' ? { x: step, y: 0, axis } : { x: 0, y: step, axis }];
     });
+  };
+
+  /** True where no displaced diamond in `lanes` lands on any other venue's pin. */
+  const clears = (lanes) => {
+    for (const [i, laneI] of lanes) {
+      for (let j = 0; j < venues.length; j++) {
+        if (j === i) continue;
+        const a = { ...points[i], off: laneI };
+        const b = { ...points[j], off: lanes.get(j) ?? NO_LANE };
+        if (leastDrawnL1(a, b, sMax) < 2 * VENUE_R) return false;
+      }
+    }
+    return true;
+  };
+
+  // Lowest member index first: a fixed order is what makes the search below
+  // answer the same on every device and every run.
+  const groups = [...members.values()].filter((g) => g.length > 1).sort((a, b) => Math.min(...a) - Math.min(...b));
+  const ownAxis = groups.map((group) => {
+    const lats = group.map((i) => venues[i].lat);
+    const lngs = group.map((i) => venues[i].lng);
+    const spreadNS = (Math.max(...lats) - Math.min(...lats)) * mPerDegLat;
+    const spreadEW = (Math.max(...lngs) - Math.min(...lngs)) * mPerDegLng;
+    return spreadEW > spreadNS ? 'ew' : 'ns';
+  });
+  const layoutFor = (flipped) => {
+    const lanes = new Map();
+    groups.forEach((group, g) => {
+      const axis = flipped & (1 << g) ? (ownAxis[g] === 'ew' ? 'ns' : 'ew') : ownAxis[g];
+      for (const [index, lane] of layOut(group, axis)) lanes.set(index, lane);
+    });
+    return lanes;
+  };
+
+  // Which groups give up their own axis is a joint choice, not a series of
+  // independent ones: in the committed fixtures the Hamline Park pair's
+  // east-west lanes are blocked by the Vig Guitars pair's north-south ones and
+  // vice versa, so deciding either first and keeping it locks in an overlap.
+  // With one bit per group the whole space is a few dozen layouts, walked in
+  // preference order -- fewest groups moved off their own axis first, and among
+  // equals the ones that keep the earliest groups honest -- so the first that
+  // clears is the answer. Nothing clearing means the neighbourhood is simply
+  // full, and every group keeps its own axis.
+  const MAX_SEARCHED_GROUPS = 8;
+  if (groups.length <= MAX_SEARCHED_GROUPS) {
+    const bits = (n) => {
+      let count = 0;
+      for (let i = 0; i < groups.length; i++) if (n & (1 << i)) count++;
+      return count;
+    };
+    const order = [...Array(1 << groups.length).keys()].sort((a, b) => {
+      if (bits(a) !== bits(b)) return bits(a) - bits(b);
+      // Same number of groups moved: prefer the layout that leaves the earliest
+      // group on its own axis.
+      for (let i = 0; i < groups.length; i++) {
+        const inA = a & (1 << i);
+        const inB = b & (1 << i);
+        if (inA !== inB) return inA ? 1 : -1;
+      }
+      return 0;
+    });
+    for (const flipped of order) {
+      const lanes = layoutFor(flipped);
+      if (clears(lanes)) return lanes;
+    }
   }
-  return offsets;
+  return layoutFor(0);
 }
 
-/** True positions as screen px at `zoom`, one shared frame for drawn-position checks. */
+/** No displacement at all, and the axis a lone middle lane falls back to. */
+const NO_LANE = { x: 0, y: 0, axis: 'ew' };
+
+/**
+ * A lane's identity for the `match` expressions that key text placement off it.
+ *
+ * The axis is part of it even though it never moves the pin: the middle lane of
+ * an odd group is offset 0 either way, and its name still has to know which
+ * axis its neighbours took so it can go on the other one.
+ */
+const laneKey = (offset) => `${offset.axis}:${offset.x},${offset.y}`;
+
+/**
+ * True positions as screen px at `zoom`, one shared frame for drawn-position
+ * checks: x grows east, **y grows south**, matching the canvas and the engine.
+ *
+ * The southward y is not cosmetic. Every lane offset in this file is consumed
+ * by a canvas image and by the tap resolver, both of which count y downward, so
+ * a north-up frame here would silently invert the sign of a north-south lane in
+ * every clearance check that mixes the two. It cost nothing while lanes only
+ * ever ran east-west.
+ */
 function pxAtZoom(list, zoom, lat) {
   const mPerPx = metersPerPixel(zoom, lat);
   const mPerDegLat = 111320;
   const mPerDegLng = mPerDegLat * Math.cos((lat * Math.PI) / 180);
-  return list.map((p) => ({ x: (p.lng * mPerDegLng) / mPerPx, y: (p.lat * mPerDegLat) / mPerPx }));
+  return list.map((p) => ({ x: (p.lng * mPerDegLng) / mPerPx, y: -(p.lat * mPerDegLat) / mPerPx }));
 }
 
 /**
  * The minimum |dx| + |dy| between two drawn pins across a zoom range, each pin
  * its true position (px at the range's widest zoom) plus a static lane offset.
  *
- * Static offsets make this non-monotone in zoom: one component can shrink
- * toward a kink where offset and true separation cancel. It is piecewise
- * linear in the zoom scale factor `s` (1 at the widest zoom, doubling per
- * level), so the minimum sits at an endpoint or at the kink -- checked
- * exactly, where sampling zooms could step over the dip.
+ * Static offsets make this non-monotone in zoom: either component can shrink
+ * toward a kink where offset and true separation cancel. As a function of the
+ * zoom scale factor `s` (1 at the widest zoom, doubling per level) it is the
+ * sum of two absolute values, so it is convex and piecewise linear with one
+ * kink per axis -- the minimum sits at an endpoint or at a kink, checked
+ * exactly, where sampling zooms could step over the dip. Lanes run on one axis
+ * at a time (see coincidentGroups), but the pair being compared may be in two
+ * groups that chose differently, so both kinks are live.
  */
 function leastDrawnL1(a, b, sMax, sFrom = 1) {
   const dx = b.x - a.x;
-  const dy = Math.abs(b.y - a.y);
-  const dOff = (b.off ?? 0) - (a.off ?? 0);
-  const l1At = (s) => Math.abs(dx * s + dOff) + dy * s;
+  const dy = b.y - a.y;
+  const offX = (b.off?.x ?? 0) - (a.off?.x ?? 0);
+  const offY = (b.off?.y ?? 0) - (a.off?.y ?? 0);
+  const l1At = (s) => Math.abs(dx * s + offX) + Math.abs(dy * s + offY);
   let least = Math.min(l1At(sFrom), l1At(sMax));
-  const kink = dx !== 0 ? -dOff / dx : -1;
-  if (kink > sFrom && kink < sMax) least = Math.min(least, l1At(kink));
+  for (const [delta, off] of [
+    [dx, offX],
+    [dy, offY],
+  ]) {
+    const kink = delta !== 0 ? -off / delta : -1;
+    if (kink > sFrom && kink < sMax) least = Math.min(least, l1At(kink));
+  }
   return least;
 }
 
@@ -373,7 +524,7 @@ function leaderStartZoom(venues, offsets, { splitZoom, maxZoom, lat }) {
   const sMax = 2 ** (maxZoom - candidate);
   const points = pxAtZoom(venues, candidate, lat).map((p, i) => ({
     ...p,
-    off: offsets.get(i) ?? 0,
+    off: offsets.get(i) ?? NO_LANE,
     grouped: offsets.has(i),
   }));
   for (let i = 0; i < points.length; i++) {
@@ -392,48 +543,60 @@ function leaderStartZoom(venues, offsets, { splitZoom, maxZoom, lat }) {
   return candidate;
 }
 
-// A displaced small pin's lane: far enough east or west of its own coordinate
-// that its diamond clears a venue diamond drawn at that exact coordinate, with
-// a leader run left visible between them.
+// A displaced small pin's lane: far enough from its own coordinate, on whichever
+// side displacedStopOffsets picks, that its diamond clears a venue diamond drawn
+// at that exact coordinate, with a leader run left visible between them.
 const SMALL_LEADER_OFF_PX = VENUE_R + LEADER_RUN_PX + SMALL_R;
 
 /**
  * Transit stops whose pins cannot clear a venue pin somewhere in the displaced
- * range, and the east-west offset each one moves by, keyed by stop index.
+ * range, and the offset each one moves by, keyed by stop index.
  *
  * The venue never moves: it is the primary content and its own placement is
  * already spoken for by the venue groups, so the smaller pin is the one
- * displaced, with the same dot-and-leader honesty. Preferred lane is the side
- * of the map the stop is really on relative to the venue it dodges; if the
- * displaced diamond would land on any other pin anywhere in the range the side
- * flips, and if neither side clears, the stop stays put -- the overlap it had
- * anyway, now a decision rather than an accident. Below the leader zoom the
- * stop draws plain and can tuck under a venue pin, as every small pin may at
- * wide zooms: that is ordinary map generalization, where the venue wins the
- * space by paint order and the zoom that separates them is always available.
+ * displaced, with the same dot-and-leader honesty. Lanes are tried in the order
+ * the stop's own position argues for -- the axis it is further from the venue
+ * on, and on each axis the side it is really on -- which is coincidentGroups'
+ * rule applied to a pair rather than a group: displacement should exaggerate a
+ * difference that exists and never invent one along an axis where there is
+ * none. If a lane's diamond would land on any other pin anywhere in the range
+ * the next one is tried, and if none of the four clears the stop stays put --
+ * the overlap it had anyway, now a decision rather than an accident. Below the
+ * leader zoom the stop draws plain and can tuck under a venue pin, as every
+ * small pin may at wide zooms: that is ordinary map generalization, where the
+ * venue wins the space by paint order and the zoom that separates them is
+ * always available.
  */
 function displacedStopOffsets(stops, venues, groupOffsets, sponsors, { leaderZoom, maxZoom, lat }) {
   const sMax = 2 ** (maxZoom - leaderZoom);
   const venuePins = pxAtZoom(venues, leaderZoom, lat).map((p, i) => ({
     ...p,
-    off: groupOffsets.get(i) ?? 0,
+    off: groupOffsets.get(i) ?? NO_LANE,
     clear: VENUE_R + SMALL_R,
   }));
-  const sponsorPins = pxAtZoom(sponsors, leaderZoom, lat).map((p) => ({ ...p, off: 0, clear: 2 * SMALL_R }));
-  const stopPins = pxAtZoom(stops, leaderZoom, lat).map((p) => ({ ...p, off: 0 }));
+  const sponsorPins = pxAtZoom(sponsors, leaderZoom, lat).map((p) => ({ ...p, off: NO_LANE, clear: 2 * SMALL_R }));
+  const stopPins = pxAtZoom(stops, leaderZoom, lat).map((p) => ({ ...p, off: NO_LANE }));
 
   const offsets = new Map();
   const collides = (pin, index) =>
     [...venuePins, ...sponsorPins].some((o) => leastDrawnL1(pin, o, sMax) < o.clear) ||
     stopPins.some(
-      (s, j) => j !== index && leastDrawnL1(pin, { ...s, off: offsets.get(j) ?? 0 }, sMax) < 2 * SMALL_R
+      (s, j) => j !== index && leastDrawnL1(pin, { ...s, off: offsets.get(j) ?? NO_LANE }, sMax) < 2 * SMALL_R
     );
 
   stopPins.forEach((pin, index) => {
     const blocker = venuePins.find((v) => leastDrawnL1(pin, v, sMax) < v.clear);
     if (!blocker) return;
-    const side = pin.x >= blocker.x ? 1 : -1;
-    for (const offset of [side * SMALL_LEADER_OFF_PX, -side * SMALL_LEADER_OFF_PX]) {
+    const toBlockerX = pin.x - (blocker.x + blocker.off.x);
+    const toBlockerY = pin.y - (blocker.y + blocker.off.y);
+    const lane = (x, y) => ({ x: x * SMALL_LEADER_OFF_PX, y: y * SMALL_LEADER_OFF_PX, axis: x === 0 ? 'ns' : 'ew' });
+    const sideX = toBlockerX >= 0 ? 1 : -1;
+    const sideY = toBlockerY >= 0 ? 1 : -1;
+    const eastWest = [lane(sideX, 0), lane(-sideX, 0)];
+    const northSouth = [lane(0, sideY), lane(0, -sideY)];
+    const order =
+      Math.abs(toBlockerX) >= Math.abs(toBlockerY) ? [...eastWest, ...northSouth] : [...northSouth, ...eastWest];
+    for (const offset of order) {
       if (!collides({ ...pin, off: offset }, index)) {
         offsets.set(index, offset);
         return;
@@ -522,8 +685,9 @@ function clusterImage(radius, { fill, stroke }, dpr) {
 }
 
 /**
- * A pin displaced `offset` pixels east or west of the coordinate it belongs
- * to, with a dot back at that coordinate and a line joining the two.
+ * A pin displaced `offset` pixels from the coordinate it belongs to, with a dot
+ * back at that coordinate and a line joining the two. The offset runs along one
+ * axis at a time, whichever its group chose (see coincidentGroups).
  *
  * All three parts are one image, anchored on the dot. MapLibre has no
  * leader-line primitive and its collision handling hides symbols rather than
@@ -531,26 +695,27 @@ function clusterImage(radius, { fill, stroke }, dpr) {
  * displacement is precomputed and static -- and baking the line into the icon
  * is what makes it impossible for another label to be placed across it.
  */
-function leaderImage(offset, radius, { fill, dot, line }, dpr) {
-  const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + radius + 2, radius + 2, dpr);
+function leaderImage({ x, y }, radius, { fill, dot, line }, dpr) {
+  const { ctx, cx, cy } = pinCanvas(Math.abs(x) + radius + 2, Math.abs(y) + radius + 2, dpr);
+  const displaced = x !== 0 || y !== 0;
 
-  if (offset !== 0) {
+  if (displaced) {
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + offset, cy);
+    ctx.lineTo(cx + x, cy + y);
     ctx.strokeStyle = line;
     ctx.lineWidth = LEADER_LINE_W;
     ctx.stroke();
   }
 
-  diamondPath(ctx, cx + offset, cy, radius);
+  diamondPath(ctx, cx + x, cy + y, radius);
   ctx.fillStyle = fill;
   ctx.fill();
 
   // Drawn last: the dot is the one part that must never be covered, since it is
   // the only thing on the map claiming the venue's real position. A member the
   // lane layout leaves at its own coordinate has nothing to point at.
-  if (offset !== 0) {
+  if (displaced) {
     ctx.beginPath();
     ctx.arc(cx, cy, LEADER_DOT_R, 0, Math.PI * 2);
     ctx.fillStyle = dot;
@@ -568,14 +733,14 @@ function leaderImage(offset, radius, { fill, dot, line }, dpr) {
  * paper. Sharing one offset between two composite images is what keeps ring and
  * diamond aligned by construction instead of by two expressions agreeing.
  */
-function leaderHaloImage(offset, pinRadius, { fill, stroke }, dpr) {
+function leaderHaloImage({ x, y }, pinRadius, { fill, stroke }, dpr) {
   const radius = pinRadius + HALO_PAD;
   const strokeWidth = 2;
   const pad = 2 + strokeWidth;
-  const { ctx, cx, cy } = pinCanvas(Math.abs(offset) + radius + pad, radius + pad, dpr);
+  const { ctx, cx, cy } = pinCanvas(Math.abs(x) + radius + pad, Math.abs(y) + radius + pad, dpr);
 
   ctx.beginPath();
-  ctx.arc(cx + offset, cy, radius, 0, Math.PI * 2);
+  ctx.arc(cx + x, cy + y, radius, 0, Math.PI * 2);
   ctx.globalAlpha = 0.95;
   ctx.fillStyle = fill;
   ctx.fill();
@@ -586,9 +751,13 @@ function leaderHaloImage(offset, pinRadius, { fill, stroke }, dpr) {
   return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
 }
 
-/** Image ids for a displaced pin. One pair per pin kind per distinct offset. */
-const leaderIconId = (kind, offset) => `pin-${kind}-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
-const leaderHaloId = (kind, offset) => `halo-${kind}-leader-${offset < 0 ? 'w' : 'e'}${Math.abs(offset)}`;
+/**
+ * Image ids for a displaced pin. One pair per pin kind per distinct offset --
+ * keyed on the offset alone, not on laneKey: two groups that chose different
+ * axes and both left a member at 0,0 draw the identical plain diamond.
+ */
+const leaderIconId = (kind, { x, y }) => `pin-${kind}-leader-${x}_${y}`;
+const leaderHaloId = (kind, { x, y }) => `halo-${kind}-leader-${x}_${y}`;
 
 // The three zooms every zoom-keyed stop below is pinned to: the full extent,
 // the home view, and the closest zoom. They follow from the calibration and the
@@ -965,11 +1134,17 @@ export async function renderMap(container, content) {
   // zooms (tile zoom), so a fractional split would swap the two treatments in
   // at different moments and briefly draw both.
   const splitZoom = Math.round(zoomForMeters(SPLIT_VIEW_M, PIN_GEOMETRY_REF_PX, lat));
-  const groupOffsets = coincidentGroups(venues, { splitZoom, lat });
+  const groupOffsets = coincidentGroups(venues, { splitZoom, maxZoom, lat });
   const leaderZoom = leaderStartZoom(venues, groupOffsets, { splitZoom, maxZoom, lat });
+  const nameRank = venueNameRanks(venues, content.events);
   const displaced = [...groupOffsets.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([index, offset]) => ({ venue: venues[index], label: String(index + 1), offset }));
+    .map(([index, offset]) => ({
+      venue: venues[index],
+      label: String(index + 1),
+      offset,
+      sortKey: nameRank.get(index),
+    }));
 
   wrap.innerHTML = '<div class="map-gl" id="map-gl" data-testid="map-canvas"></div>';
   const glHost = wrap.querySelector('#map-gl');
@@ -1109,6 +1284,7 @@ export async function renderMap(container, content) {
       displaced,
       displacedStops,
       leaderZoom,
+      nameRank,
     });
     wirePinTaps(map, { transitById, maxZoom, selectPin });
     // A venue card in the key list behaves as though its pin was tapped:
@@ -1191,17 +1367,68 @@ function renderPinAltList(container, stops, sponsors) {
   });
 }
 
-function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displaced, displacedStops, leaderZoom }) {
+/**
+ * Which venue keeps its name when two names contest the same space: a rank per
+ * venue index, most events first, lowest rank wins.
+ *
+ * `symbol-sort-key` places lower keys first and, with `text-allow-overlap` off,
+ * a name placed first is a name kept. Without one MapLibre falls back to the
+ * order the features arrive in, which here is the order the organizers happened
+ * to type rows into the sheet -- so the venue whose name survived was an
+ * accident of the spreadsheet. Event count is the closest thing the content has
+ * to "how much of the festival happens here", and a venue's number is a sheet
+ * artifact rather than curation (ruled 2026-09-04), so it serves only as the
+ * deterministic tiebreak, applied through the venue's own id.
+ *
+ * Which name survives therefore moves when the organizers edit the lineup. That
+ * is the point: importance should track the actual lineup. Nothing here reaches
+ * the build, so `content.json` stays byte-identical either way.
+ */
+function venueNameRanks(venues, events) {
+  const counts = new Map();
+  for (const event of events) counts.set(event.venue_id, (counts.get(event.venue_id) ?? 0) + 1);
+  const ranks = new Map();
+  venues
+    .map((venue, index) => ({ index, count: counts.get(venue.id) ?? 0, id: venue.id }))
+    .sort((a, b) => b.count - a.count || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .forEach((entry, rank) => ranks.set(entry.index, rank));
+  return ranks;
+}
+
+/** Where a displaced venue's name sits: anchor, justification and offset in ems. */
+function laneNamePlacement(offset) {
+  const clear = VENUE_R + NAME_CLEAR_PX;
+  const ems = (px) => px / NAME_TEXT_PX;
+  if (offset.x > 0) return { anchor: 'left', justify: 'left', offset: [ems(offset.x + clear), 0] };
+  if (offset.x < 0) return { anchor: 'right', justify: 'right', offset: [ems(offset.x - clear), 0] };
+  if (offset.y > 0) return { anchor: 'top', justify: 'center', offset: [0, ems(offset.y + clear)] };
+  if (offset.y < 0) return { anchor: 'bottom', justify: 'center', offset: [0, ems(offset.y - clear)] };
+  // The middle lane of an odd group draws at its own coordinate, so its name
+  // goes on the axis its neighbours did not take.
+  return offset.axis === 'ns'
+    ? { anchor: 'left', justify: 'left', offset: [ems(clear), 0] }
+    : { anchor: 'top', justify: 'center', offset: [0, ems(clear)] };
+}
+
+function addPins(
+  map,
+  { venues, stops, sponsors, clusterMaxZoom, colors, displaced, displacedStops, leaderZoom, nameRank }
+) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  // Zero is always a legal lane -- an odd group's middle member keeps its own
-  // coordinate -- and seeding it keeps the text-offset matches below well
-  // formed when nothing is displaced at all.
-  const laneOffsets = [...new Set([0, ...displaced.map((d) => d.offset)])];
-  const stopLaneOffsets = [...new Set([0, ...displacedStops.values()])];
+  // The distinct lanes in play, deduplicated by laneKey. NO_LANE is always
+  // legal -- an odd group's middle member keeps its own coordinate -- and
+  // seeding it keeps the `match` expressions below well formed when nothing is
+  // displaced at all, since a match needs at least one branch.
+  const distinctLanes = (lanes) => [...new Map(lanes.map((lane) => [laneKey(lane), lane])).values()];
+  const laneOffsets = distinctLanes([NO_LANE, ...displaced.map((d) => d.offset)]);
+  const stopLaneOffsets = distinctLanes([NO_LANE, ...displacedStops.values()]);
+  // Images are keyed on the pixel offset alone, so two lanes that differ only
+  // in axis share one.
+  const laneImages = (lanes) => [...new Map(lanes.map((lane) => [`${lane.x}_${lane.y}`, lane])).values()];
   map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
   const haloColors = { fill: colors.accent, stroke: colors.accentDark };
   const leaderColors = (fill) => ({ fill, dot: colors.leaderDot, line: colors.leaderLine });
-  for (const offset of laneOffsets) {
+  for (const offset of laneImages(laneOffsets)) {
     map.addImage(leaderIconId('venue', offset), leaderImage(offset, VENUE_R, leaderColors(colors.venue), dpr).data, {
       pixelRatio: dpr,
     });
@@ -1209,7 +1436,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
       pixelRatio: dpr,
     });
   }
-  for (const offset of stopLaneOffsets) {
+  for (const offset of laneImages(stopLaneOffsets)) {
     map.addImage(
       leaderIconId('transit', offset),
       leaderImage(offset, SMALL_R, leaderColors(colors.transit), dpr).data,
@@ -1266,6 +1493,8 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
           labelNum: i + 1,
           name: v.name,
           grouped: displacedIds.has(v.id),
+          // Collision priority for this venue's name label; see venueNameRanks.
+          sortKey: nameRank.get(i) ?? 0,
         },
         geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
       })),
@@ -1287,7 +1516,14 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
           id: d.venue.id,
           label: d.label,
           name: d.venue.name,
-          offset: d.offset,
+          // The lane as three scalars: GeoJSON-to-tile conversion stringifies
+          // any property that isn't one, so an {x, y} object would arrive as
+          // "[object Object]". `lane` is what the placement matches key off;
+          // offsetX/offsetY are what the tap resolver measures with.
+          lane: laneKey(d.offset),
+          offsetX: d.offset.x,
+          offsetY: d.offset.y,
+          sortKey: d.sortKey ?? 0,
           icon: leaderIconId('venue', d.offset),
           halo: leaderHaloId('venue', d.offset),
         },
@@ -1312,7 +1548,9 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
           letters: s.lines.map((l) => TRANSIT_LINE_LETTER[l]).filter(Boolean).join('\n'),
           grouped: displacedStops.has(i),
           ...(displacedStops.has(i) && {
-            offset: displacedStops.get(i),
+            lane: laneKey(displacedStops.get(i)),
+            offsetX: displacedStops.get(i).x,
+            offsetY: displacedStops.get(i).y,
             icon: leaderIconId('transit', displacedStops.get(i)),
             halo: leaderHaloId('transit', displacedStops.get(i)),
           }),
@@ -1440,8 +1678,8 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
       // a match over the lanes for the same reason as the venue layer below.
       'text-offset': [
         'match',
-        ['get', 'offset'],
-        ...stopLaneOffsets.flatMap((offset) => [offset, ['literal', [offset / 11, 0]]]),
+        ['get', 'lane'],
+        ...stopLaneOffsets.flatMap((offset) => [laneKey(offset), ['literal', [offset.x / 11, offset.y / 11]]]),
         ['literal', [0, 0]],
       ],
     },
@@ -1524,8 +1762,11 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
       // and an array offset comes back as "[-2,0]" and silently falls back to 0.
       'text-offset': [
         'match',
-        ['get', 'offset'],
-        ...laneOffsets.flatMap((offset) => [offset, ['literal', [offset / VENUE_TEXT_PX, 0]]]),
+        ['get', 'lane'],
+        ...laneOffsets.flatMap((offset) => [
+          laneKey(offset),
+          ['literal', [offset.x / VENUE_TEXT_PX, offset.y / VENUE_TEXT_PX]],
+        ]),
         ['literal', [0, 0]],
       ],
     },
@@ -1560,7 +1801,7 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
         'text-font': FONT_SEMIBOLD,
         'text-size': SPONSOR_NAME_TEXT_PX,
         // The engine tries each side in turn and keeps the first that fits.
-        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-variable-anchor': NAME_ANCHOR_ORDER,
         // +3: the generic sponsor pin's stroke widens its image, and both
         // sponsor kinds share this layer, so both clear the wider box.
         'text-radial-offset': (SMALL_R + 3 + NAME_CLEAR_PX) / SPONSOR_NAME_TEXT_PX,
@@ -1581,9 +1822,12 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
         'text-field': ['get', 'name'],
         'text-font': FONT_SEMIBOLD,
         'text-size': NAME_TEXT_PX,
-        'text-variable-anchor': ['left', 'right', 'top', 'bottom'],
+        'text-variable-anchor': NAME_ANCHOR_ORDER,
         'text-radial-offset': (VENUE_R + NAME_CLEAR_PX) / NAME_TEXT_PX,
         'text-justify': 'auto',
+        // Whose name survives a collision, decided rather than inherited from
+        // sheet row order -- see venueNameRanks.
+        'symbol-sort-key': ['get', 'sortKey'],
       },
       paint: nameLabelPaint(colors.labelVenue),
     },
@@ -1593,12 +1837,14 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
   // coordinate is (which is empty paper beside the leader line -- and for a
   // coincident pair, the same box twice, so collision would keep one name of
   // two). Anchored on the lane's outward side, the label grows away from the
-  // group instead of back across it; the middle lane of an odd group (offset
-  // 0) hangs its name below, since east and west belong to its neighbours.
-  // Fixed data-driven anchors rather than text-variable-anchor: variable
-  // anchoring treats text-offset as unsigned and re-aims it at whichever
-  // anchor it picks, which throws away the lane's side.
-  const laneSide = (offset, west, east, middle) => (offset < 0 ? west : offset > 0 ? east : middle);
+  // group instead of back across it; the middle lane of an odd group (offset 0)
+  // takes the axis its neighbours left free. Fixed data-driven anchors rather
+  // than text-variable-anchor: variable anchoring treats text-offset as
+  // unsigned and re-aims it at whichever anchor it picks, which throws away the
+  // lane's side. The clearance runs from the lane offset because the leader
+  // image's collision box spans the whole composite, dot to beyond the
+  // diamond's far tip. See laneNamePlacement for the four cases.
+  const laneNames = laneOffsets.map((offset) => ({ key: laneKey(offset), ...laneNamePlacement(offset) }));
   map.addLayer(
     {
       id: 'venue-leader-name-label',
@@ -1609,36 +1855,17 @@ function addPins(map, { venues, stops, sponsors, clusterMaxZoom, colors, displac
         'text-field': ['get', 'name'],
         'text-font': FONT_SEMIBOLD,
         'text-size': NAME_TEXT_PX,
-        'text-anchor': [
-          'match',
-          ['get', 'offset'],
-          ...laneOffsets.flatMap((offset) => [offset, laneSide(offset, 'right', 'left', 'top')]),
-          'top',
-        ],
-        'text-justify': [
-          'match',
-          ['get', 'offset'],
-          ...laneOffsets.flatMap((offset) => [offset, laneSide(offset, 'right', 'left', 'center')]),
-          'center',
-        ],
+        'text-anchor': ['match', ['get', 'lane'], ...laneNames.flatMap((l) => [l.key, l.anchor]), 'top'],
+        'text-justify': ['match', ['get', 'lane'], ...laneNames.flatMap((l) => [l.key, l.justify]), 'center'],
         // A match over the lanes for the same stringification reason as the
-        // number layer above. The clearance runs from the lane offset because
-        // the leader image's collision box spans the whole composite, dot to
-        // beyond the diamond's far tip.
+        // number layer above.
         'text-offset': [
           'match',
-          ['get', 'offset'],
-          ...laneOffsets.flatMap((offset) => [
-            offset,
-            [
-              'literal',
-              offset === 0
-                ? [0, (VENUE_R + NAME_CLEAR_PX) / NAME_TEXT_PX]
-                : [(offset + Math.sign(offset) * (VENUE_R + NAME_CLEAR_PX)) / NAME_TEXT_PX, 0],
-            ],
-          ]),
+          ['get', 'lane'],
+          ...laneNames.flatMap((l) => [l.key, ['literal', l.offset]]),
           ['literal', [0, 0]],
         ],
+        'symbol-sort-key': ['get', 'sortKey'],
       },
       paint: nameLabelPaint(colors.labelVenue),
     },
@@ -1681,8 +1908,10 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
   // stop draws plain, at its own coordinate.
   const drawnPoint = (feature, layer) => {
     const point = map.project(feature.geometry.coordinates);
-    const offset = feature.properties.offset;
-    return LEADER_LAYERS.has(layer) && typeof offset === 'number' ? { x: point.x + offset, y: point.y } : point;
+    const { offsetX, offsetY } = feature.properties;
+    return LEADER_LAYERS.has(layer) && typeof offsetX === 'number' && typeof offsetY === 'number'
+      ? { x: point.x + offsetX, y: point.y + offsetY }
+      : point;
   };
 
   const openTransit = (id) => {

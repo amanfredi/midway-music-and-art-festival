@@ -42,6 +42,34 @@ test('name labels exist for venues and sponsors, gated to the leader zoom, witho
   }
 });
 
+// The two decisions the name layers now make on purpose, asserted on the
+// layers themselves. What they *do* with them is exercised against purpose-built
+// geometry in map-collision-decisions.spec.mjs.
+test('both venue name layers rank collisions by the venue sort key', async ({ page }) => {
+  await gotoMap(page);
+  const keys = await mapEval(page, (map, ids) =>
+    ids.map((id) => [id, JSON.stringify(map.getLayoutProperty(id, 'symbol-sort-key'))]),
+    ['venue-name-label', 'venue-leader-name-label'],
+  );
+  for (const [id, key] of keys) {
+    expect(key, `${id} falls back to feature order, which is sheet row order`).toBe('["get","sortKey"]');
+  }
+});
+
+test('names try above and below a pin before either side of it', async ({ page }) => {
+  await gotoMap(page);
+  const orders = await mapEval(page, (map, ids) =>
+    ids.map((id) => [id, map.getLayoutProperty(id, 'text-variable-anchor')]),
+    ['venue-name-label', 'sponsor-name-label'],
+  );
+  for (const [id, order] of orders) {
+    // `bottom` anchors the label's bottom edge, so the name sits above the pin;
+    // `top` puts it below. Horizontal first aimed every name straight along
+    // University Avenue at its nearest neighbour.
+    expect(order, `${id} tries a horizontal side first`).toEqual(['bottom', 'top', 'left', 'right']);
+  }
+});
+
 test('pin layers reserve their boxes so labels cannot cross them; invisible halos do not', async ({ page }) => {
   await gotoMap(page);
   const placement = await mapEval(page, (map) => {

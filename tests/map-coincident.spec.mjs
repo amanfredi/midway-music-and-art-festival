@@ -16,37 +16,60 @@ import { gotoMap, mapEval, sheet, sourceFeatures, waitForMapIdle, SOURCE_FEATURE
  * Where the biggest thing in a composite icon sits, in CSS pixels from the
  * anchor the engine places on the feature's coordinate.
  *
- * Both images are read the same way: count opaque rows per column, then take
- * the middle of the columns within 2 rows of the tallest. That is the diamond in
- * a pin image (its sides fall away 2 rows per column, and the dot and line are
- * far shorter) and the ring in a halo image, and it is symmetric about the
- * shape's centre either way — a plain column-of-maximum would pick whichever of
- * the two central columns came first.
+ * Both images are read the same way, on both axes: count opaque pixels per
+ * column and per row, then take the middle of the band within 2 of the fullest.
+ * That band is the diamond in a pin image (its sides fall away 2 px per step,
+ * and the dot and the 2 px leader line are far thinner) and the ring in a halo
+ * image, and it is symmetric about the shape's centre either way — a plain
+ * index-of-maximum would pick whichever of two equal central lines came first.
+ *
+ * Both axes matter now that a lane can run north–south: reading only columns
+ * would call a vertically displaced pin undisplaced.
  */
 const IMAGE_PROBE_FN = `(map, id) => {
   const image = map.style.getImage(id);
   const { width, height, data } = image.data;
+  const opaque = (x, y) => data[(y * width + x) * 4 + 3] > 8;
   const columns = new Array(width).fill(0);
+  const rows = new Array(height).fill(0);
   for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) if (data[(y * width + x) * 4 + 3] > 8) columns[x]++;
+    for (let x = 0; x < width; x++) if (opaque(x, y)) { columns[x]++; rows[y]++; }
   }
-  const plateau = columns.map((n, x) => x).filter((x) => columns[x] >= Math.max(...columns) - 2);
-  const centre = width / 2;
-  const middle = (plateau[0] + plateau[plateau.length - 1] + 1) / 2;
+  const middleOf = (counts) => {
+    const peak = Math.max(...counts);
+    const band = counts.map((n, i) => i).filter((i) => counts[i] >= peak - 2);
+    return (band[0] + band[band.length - 1] + 1) / 2;
+  };
+  const ax = Math.floor(width / 2);
+  const ay = Math.floor(height / 2);
+  let opaqueAtAnchor = false;
+  for (let y = ay - 1; y <= ay + 1; y++) {
+    for (let x = ax - 1; x <= ax + 1; x++) {
+      if (x >= 0 && y >= 0 && x < width && y < height && opaque(x, y)) opaqueAtAnchor = true;
+    }
+  }
   return {
     pixelRatio: image.pixelRatio,
-    centreColumn: (middle - centre) / image.pixelRatio,
-    opaqueAtAnchor: columns[centre] > 0 || columns[centre - 1] > 0,
+    centreColumn: (middleOf(columns) - width / 2) / image.pixelRatio,
+    centreRow: (middleOf(rows) - height / 2) / image.pixelRatio,
+    opaqueAtAnchor,
   };
 }`;
 
+/** The lane a displaced feature carries, as the pixel pair the pin is drawn at. */
+const LANE_OF = `(properties) => ({
+  x: typeof properties.offsetX === 'number' ? properties.offsetX : 0,
+  y: typeof properties.offsetY === 'number' ? properties.offsetY : 0,
+})`;
+
 /** Every venue symbol on screen, at the point it is actually drawn. */
 const DRAWN_SYMBOLS_FN = `(map) => {
+  const laneOf = ${LANE_OF};
   const out = [];
   for (const layer of ['venue-pin', 'venue-leader-pin', 'venue-cluster']) {
     for (const f of map.queryRenderedFeatures({ layers: [layer] })) {
       const point = map.project(f.geometry.coordinates);
-      const offset = f.properties.offset;
+      const lane = layer === 'venue-leader-pin' ? laneOf(f.properties) : { x: 0, y: 0 };
       const key = layer + ':' + (f.properties.cluster_id ?? f.properties.id);
       if (out.some((s) => s.key === key)) continue;
       out.push({
@@ -55,8 +78,8 @@ const DRAWN_SYMBOLS_FN = `(map) => {
         label: f.properties.label,
         pointCount: f.properties.point_count,
         groupedCount: f.properties.groupedCount,
-        x: point.x + (typeof offset === 'number' ? offset : 0),
-        y: point.y,
+        x: point.x + lane.x,
+        y: point.y + lane.y,
       });
     }
   }
@@ -84,8 +107,8 @@ async function centreOnCoincidentPair(page) {
       return {
         members: members.map((f) => ({
           ...f.properties,
-          x: rect.left + point.x + f.properties.offset,
-          y: rect.top + point.y,
+          x: rect.left + point.x + f.properties.offsetX,
+          y: rect.top + point.y + f.properties.offsetY,
         })),
       };
     },
@@ -107,9 +130,9 @@ test('coincident venues draw as separate numbered pins tethered to their true po
   for (const member of pair.members) {
     expect(drawn.find((p) => p.id === member.id), `${member.name} is not drawn`).toBeTruthy();
     expect(member.label).toMatch(/^\d+$/);
-    expect(member.offset).not.toBe(0);
+    expect(Math.abs(member.offsetX) + Math.abs(member.offsetY), `${member.name} is not displaced`).toBeGreaterThan(0);
   }
-  expect(new Set(pair.members.map((m) => m.offset)).size).toBe(2);
+  expect(new Set(pair.members.map((m) => m.lane)).size).toBe(2);
   expect(
     await mapEval(page, (map) => map.queryRenderedFeatures({ layers: ['venue-cluster'] }).length),
     'a stack still covers the pins it was replaced by',
@@ -119,7 +142,8 @@ test('coincident venues draw as separate numbered pins tethered to their true po
   // the middle, the numbered diamond a whole offset away from it.
   for (const member of pair.members) {
     const probe = await mapEval(page, IMAGE_PROBE_FN, member.icon);
-    expect(probe.centreColumn, `${member.name}: the diamond is not at its offset`).toBeCloseTo(member.offset, 0);
+    expect(probe.centreColumn, `${member.name}: the diamond is not at its lane's x`).toBeCloseTo(member.offsetX, 0);
+    expect(probe.centreRow, `${member.name}: the diamond is not at its lane's y`).toBeCloseTo(member.offsetY, 0);
     expect(probe.opaqueAtAnchor, `${member.name}: nothing is drawn at the venue's own coordinate`).toBe(true);
   }
 });
@@ -168,8 +192,10 @@ test('the tap highlight rings the displaced diamond, not the point it points at'
   // would be the failure this layer exists to avoid.
   const ring = await mapEval(page, IMAGE_PROBE_FN, member.halo);
   const pin = await mapEval(page, IMAGE_PROBE_FN, member.icon);
-  expect(ring.centreColumn, 'the ring sits at the coordinate, not at the diamond').toBeCloseTo(member.offset, 0);
+  expect(ring.centreColumn, 'the ring sits at the coordinate, not at the diamond').toBeCloseTo(member.offsetX, 0);
+  expect(ring.centreRow, 'the ring sits at the coordinate, not at the diamond').toBeCloseTo(member.offsetY, 0);
   expect(ring.centreColumn).toBeCloseTo(pin.centreColumn, 0);
+  expect(ring.centreRow).toBeCloseTo(pin.centreRow, 0);
   expect(
     await mapEval(page, (map) => map.queryRenderedFeatures({ layers: ['venue-leader-halo'] }).length),
     'the halo layer draws nothing to ring the pin with',
@@ -331,8 +357,8 @@ test('a transit stop that cannot clear a venue pin draws displaced, with its own
         map.queryRenderedFeatures({ layers: [layer] }).some((r) => r.properties.id === f.properties.id);
       return {
         ...f.properties,
-        x: rect.left + point.x + f.properties.offset,
-        y: rect.top + point.y,
+        x: rect.left + point.x + f.properties.offsetX,
+        y: rect.top + point.y + f.properties.offsetY,
         onLeaderLayer: drawnBy('transit-leader-pin'),
         onPlainLayer: drawnBy('transit-pin'),
       };
@@ -343,9 +369,10 @@ test('a transit stop that cannot clear a venue pin draws displaced, with its own
 
   expect(stop.onLeaderLayer, 'the displaced stop is not drawn by its leader layer').toBe(true);
   expect(stop.onPlainLayer, 'the stop draws twice, plain and displaced').toBe(false);
-  expect(stop.offset).not.toBe(0);
+  expect(Math.abs(stop.offsetX) + Math.abs(stop.offsetY), 'the stop is not displaced').toBeGreaterThan(0);
   const probe = await mapEval(page, IMAGE_PROBE_FN, stop.icon);
-  expect(probe.centreColumn, 'the diamond is not at its offset').toBeCloseTo(stop.offset, 0);
+  expect(probe.centreColumn, "the diamond is not at its lane's x").toBeCloseTo(stop.offsetX, 0);
+  expect(probe.centreRow, "the diamond is not at its lane's y").toBeCloseTo(stop.offsetY, 0);
   expect(probe.opaqueAtAnchor, "nothing is drawn at the stop's own coordinate").toBe(true);
 
   // A tap on the displaced diamond opens that stop's sheet — identified by
@@ -360,14 +387,15 @@ test('a transit stop that cannot clear a venue pin draws displaced, with its own
 
 /** Every pin on screen with its drawn point and type, for cross-type spacing checks. */
 const TYPED_SYMBOLS_FN = `(map) => {
+  const laneOf = ${LANE_OF};
   const out = [];
   const grab = (layer, type) => {
     for (const f of map.queryRenderedFeatures({ layers: [layer] })) {
       const point = map.project(f.geometry.coordinates);
-      const offset = layer.includes('-leader-') && typeof f.properties.offset === 'number' ? f.properties.offset : 0;
+      const lane = layer.includes('-leader-') ? laneOf(f.properties) : { x: 0, y: 0 };
       const key = type + ':' + f.properties.id;
       if (out.some((s) => s.key === key)) continue;
-      out.push({ key, type, x: point.x + offset, y: point.y });
+      out.push({ key, type, x: point.x + lane.x, y: point.y + lane.y });
     }
   };
   grab('venue-pin', 'venue');
@@ -455,13 +483,13 @@ test('the leader treatment is identical at desktop and phone frame widths', asyn
       (map, featuresFn) => ({
         leaderZoom: map.getLayer('venue-leader-pin').minzoom,
         displacedVenues: new Function('return ' + featuresFn)()(map, 'venue-groups')
-          .map((f) => `${f.properties.id}@${f.properties.offset}`)
+          .map((f) => `${f.properties.id}@${f.properties.lane}`)
           .sort(),
         displacedStops: [
           ...new Set(
             new Function('return ' + featuresFn)()(map, 'transit')
               .filter((f) => f.properties.grouped)
-              .map((f) => `${f.properties.id}@${f.properties.offset}`)
+              .map((f) => `${f.properties.id}@${f.properties.lane}`)
           ),
         ].sort(),
       }),
@@ -477,6 +505,56 @@ test('the leader treatment is identical at desktop and phone frame widths', asyn
 
   expect(desktop.displacedVenues.length).toBeGreaterThan(0);
   expect(phone).toEqual(desktop);
+});
+
+// A group's lanes run on one axis, and along that axis each member stays on the
+// side of the group its venue is really on. Which axis a group ends up on is a
+// decision about the whole neighbourhood — a group whose own axis is blocked
+// gives it up (see coincidentGroups), and the committed fixtures are crowded
+// enough that this happens — so the axis choice itself is tested against
+// purpose-built geometry in map-collision-decisions.spec.mjs. What must hold
+// for every venue set is the two properties below.
+test('a coincident group lanes on one axis, with every member on its own side of it', async ({ page }) => {
+  await gotoMap(page);
+  const displaced = await sourceFeatures(page, 'venue-groups');
+  expect(displaced.length).toBeGreaterThan(1);
+
+  // Group members are the displaced venues that share a lane axis and a lane
+  // ladder: same axis, offsets a whole LEADER_LANE_PX apart, and — since a
+  // group is decided by coordinates being nearly identical — coordinates within
+  // a few metres of each other on the axis they do not spread along.
+  const byGroup = new Map();
+  for (const feature of displaced) {
+    const [axis] = feature.properties.lane.split(':');
+    const [lng, lat] = feature.geometry.coordinates;
+    const across = axis === 'ew' ? lat.toFixed(3) : lng.toFixed(3);
+    const key = `${axis}|${across}`;
+    byGroup.set(key, [...(byGroup.get(key) ?? []), { ...feature.properties, lat, lng }]);
+  }
+
+  let checked = 0;
+  for (const [key, members] of byGroup) {
+    if (members.length < 2) continue;
+    checked++;
+    const axis = key.split('|')[0];
+    // Exactly one of the two offsets is ever non-zero, and it is the one the
+    // axis names — nothing is displaced diagonally.
+    for (const member of members) {
+      const off = axis === 'ew' ? member.offsetY : member.offsetX;
+      expect(off, `${member.name} is displaced across its group's ${axis} axis`).toBe(0);
+    }
+    // Sorted by where each member is drawn, the members come out in the order
+    // of their true positions: west to east, or north to south.
+    const drawn = [...members].sort((a, b) =>
+      axis === 'ew' ? a.offsetX - b.offsetX : a.offsetY - b.offsetY
+    );
+    const truth = [...members].sort((a, b) => (axis === 'ew' ? a.lng - b.lng : b.lat - a.lat));
+    expect(
+      drawn.map((m) => m.name),
+      `a ${axis} group's pins are not in the order of the venues they stand for`,
+    ).toEqual(truth.map((m) => m.name));
+  }
+  expect(checked, 'no group of two or more was found; this test proves nothing').toBeGreaterThan(0);
 });
 
 test('every displaced venue is one of the venues the key list numbers', async ({ page }) => {

@@ -1,0 +1,68 @@
+{
+  "version": "performersfx",
+  "settings": {},
+  "venues": [],
+  "vendors": [],
+  "sponsors": [],
+  "events": [
+    {
+      "id": "night-market",
+      "title": "Aardvark Night Market",
+      "venue_id": "hamlinepark",
+      "start": "2026-10-03T12:00",
+      "end": "2026-10-03T20:00",
+      "kind": "vendor",
+      "tickets": "",
+      "age_limit": "",
+      "description": "A vendor row, which this page must never list.",
+      "url": "https://vendor.example/"
+    },
+    {
+      "id": "zeta-quartet",
+      "title": "Zeta Quartet",
+      "venue_id": "sundinmusichall",
+      "start": "2026-10-02T18:00",
+      "end": "2026-10-02T19:00",
+      "kind": "music",
+      "tickets": "General Admission",
+      "age_limit": "",
+      "description": "Four players, one bow between them.",
+      "url": "https://zeta-quartet.example/"
+    },
+    {
+      "id": "amber-hollow",
+      "title": "amber hollow",
+      "venue_id": "midwaysaloon",
+      "start": "2026-10-02T20:00",
+      "end": "2026-10-02T21:00",
+      "kind": "music",
+      "tickets": "",
+      "age_limit": "21+",
+      "description": "First paragraph of the bio.\nSecond paragraph of the bio.\n\n"
+    },
+    {
+      "id": "beacon-street",
+      "title": "Beacon Street Choir",
+      "venue_id": "hamlinepark",
+      "start": "2026-10-03T14:00",
+      "end": "2026-10-03T15:00",
+      "kind": "literary",
+      "tickets": "",
+      "age_limit": "",
+      "description": "",
+      "url": ""
+    },
+    {
+      "id": "delta-ensemble",
+      "title": "Delta Ensemble",
+      "venue_id": "hamlinepark",
+      "start": "2026-10-04T13:00",
+      "end": "2026-10-04T14:00",
+      "kind": "performance",
+      "tickets": "",
+      "age_limit": "",
+      "description": "A bio containing <b>markup</b> that must stay literal text.",
+      "url": "javascript:alert(1)"
+    }
+  ]
+}

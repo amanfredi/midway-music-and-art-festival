@@ -28,6 +28,12 @@ tests (refreshed 2026-08-09), and the emergency-build copies under
 `content/snapshot/sources/` — one per remote source, so three of them now — are
 written by successful builds.
 
+The organizers' Squarespace site carries two pages rendered from this same
+pipeline — **Performers** and **Venues** (midwaymusicandart.org/performers,
+/venues), live since 2026-09-04 — via the twin embed scripts in `site/js/`
+(binding interface: the Squarespace embed contract in CONTRACTS.md; operator
+procedure in README).
+
 The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
 service worker and CI all landed and were audited in earlier rounds.
 
@@ -56,8 +62,10 @@ message. CONTRACTS.md's embed section (retitled "Squarespace embed contract")
 now covers both embeds; README carries the venues paste, the `data-embed`
 override and the copy step.
 
-The venues page's one-line code block is the remaining Squarespace-side
-paste.
+Deployed and pasted the same day (after a sheet fix: a stray `5` in the
+venues tab's `id` header cell failed the build exactly as designed, and the
+validation email path got its first real exercise). Both pages verified live
+by Anthony: midwaymusicandart.org/performers and /venues.
 
 ### 2026-09-04 — first live paste, and the invisible-bio fix
 

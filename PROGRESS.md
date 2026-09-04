@@ -33,7 +33,15 @@ The organizers' Squarespace site carries two pages rendered from this same
 pipeline — **Performers** and **Venues** (midwaymusicandart.org/performers,
 /venues), live since 2026-09-04 — via the twin embed scripts in `site/js/`
 (binding interface: the Squarespace embed contract in CONTRACTS.md; operator
-procedure in README).
+procedure in README). A third surface is built and waiting to be pasted: the
+**map embed**, `https://go.midwaymusicandart.org/?embed=map`, the Map view
+without app chrome (Map embed contract in CONTRACTS.md; iframe snippet and
+verification walk-through in README).
+
+**A deploy cannot ship right now**: the live venues tab's `id` column header has
+been overwritten with `5`, so the build refuses rather than publishing venues
+with no ids. The site stays on the last good build until the sheet is fixed —
+see the top of BACKLOG.
 
 The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
 service worker and CI all landed and were audited in earlier rounds.
@@ -41,6 +49,84 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-04 — deliberate label collisions, a desktop map frame, and a map embed
+
+`definitions/squarespace-map-embed.md`, in three stages. The suite is green at
+144 tests and `content.json` is byte-identical across repeated builds; the phone
+map is byte-identical for every capture except the two collision behaviours that
+were the point. Before/after captures at 393 px and 1440 px are in
+`reviews/2026-09-map-collisions/`, with the harness that reproduces them.
+
+**Reproduced first.** Both reported symptoms show up against named venues on a
+build from the last-good snapshot. At the leader zoom on a desktop frame, Sundin
+Music Hall (3 events) lost its name to Soeffker Gallery (0 events) and Urban
+Lights (2) lost its to Elsa's House of Sleep (0) — in both cases to a venue that
+happened to sit lower in the sheet. And Vig Guitars and Fluid Ink Tattoos, which
+share a longitude exactly and differ only in latitude, were displaced east and
+west along the one axis they do not vary in.
+
+**Which name survives is now ranked** — event count descending, tiebroken by
+venue id, as `symbol-sort-key` on both venue name layers. With no sort key at
+all, MapLibre had been falling back to source feature order, which is sheet row
+order. The ranking moves when the organizers edit the lineup, which is the
+point; the build is untouched, since the count is derived at render time from
+content the view already holds.
+
+**A coincident group now lanes along the axis it actually spreads on**, and
+gives that axis up only where laying out on it would put a diamond on another
+pin. Two things forced more than the definition sketched. First, the give-way
+decision cannot be made a group at a time: in the committed fixtures the Hamline
+Park pair's east–west lanes are blocked by the Vig Guitars pair's north–south
+ones and vice versa, so settling either first locks in an overlap that the
+existing no-overlap test catches. It is now one decision over all groups at
+once, walked in preference order — fewest groups moved off their own axis first
+— which is a few dozen layouts at this scale. Second, `pxAtZoom` returned
+north-up y while every consumer of a lane offset counts y downward; that cost
+nothing while lanes only ran east–west and inverts a north–south lane's sign the
+moment they don't.
+
+On the live sheet the visible result is Sundin/Soeffker stacking vertically, the
+Urban Lights trio giving up its east–west lanes — computed at the split zoom,
+those lanes put Black Hart of Saint Paul 36 px from Black Garnet Books, under
+the 38 px two-diamonds-clear floor, which is what the deployed code does with
+today's sheet — and Vig/Fluid keeping east–west because nothing else fits
+there, a new backlog note.
+
+**Name anchors try above and below before either side.** The venues are strung
+along University Avenue, so horizontal-first aimed every name down the row at
+its neighbour. Measured across five zooms this is a wash on how many names get
+placed (43 either way); it was chosen on what the label points at, not on count.
+
+**The Map view has a desktop frame.** From 860 px up the frame is 1100 px wide
+with its height still capped at 560 px, instead of a 560 px square adrift in a
+1440 px window. The cap is not lifted, it is turned on its side: both of its
+documented reasons are about height, so view zooms now come from the frame's
+shorter side and the on-screen scale is identical to the square frame's — no
+readability argument has to be redone. The square home view had been cropping
+the venue set, which spans ~3.4 km east to west against a 3 km view; the wide
+frame shows all of it. On a short window the height gives way so the legend and
+venue key stay above the fold. Map view only.
+
+**The embed is `?embed=map`** — a query parameter rather than a hidden route,
+because it says how a view is presented rather than which view you are on, and
+it pins its own route so the pasted URL is the whole address. Deferred questions
+answered while building: cooperative gestures are embed-only (on our own page
+the map is the page and the wheel should zoom it); the notice banner stays,
+because a same-day change has to reach people reading the map on the organizers'
+site too; and the iframe height is a fixed number rather than a postMessage
+protocol, made safe by laying the venue key out in columns in the embed — 21
+venues in one column is ~1900 px of iframe and grows by a row per venue, in
+columns it is ~1160 px and grows by a row per three or four. Links out of the
+map open the full app in a new tab, since an embed has no tab bar to come back
+with. The service worker needed no case: it already answers every navigation
+with the cached `index.html`.
+
+Found on the way, and not fixed here because it is not ours to fix: **the live
+venues tab's `id` header has been overwritten with `5`**, so `npm run build`
+fails and no deploy can ship until it is corrected in the sheet. The work above
+was built and captured against `content/snapshot/sources/`, the last bytes that
+passed. BACKLOG carries it at the top.
 
 ### 2026-09-04 — sapphire cards go two-up, outranking a ruby tier nobody holds
 

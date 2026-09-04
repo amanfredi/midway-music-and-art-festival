@@ -358,6 +358,93 @@ message, so a forgotten copy shows up as a red test rather than as a venues
 page quietly running last month's script. Neither page needs re-pasting when
 the script changes — they load it by URL.
 
+## The map on the main website
+
+The Squarespace site can show the festival map itself rather than a link to it:
+the same map, the same pins, the same venue sheets, inside the organizers' own
+page. One URL does it —
+
+```
+https://go.midwaymusicandart.org/?embed=map
+```
+
+— the app's Map view with its own header and tab bar suppressed. It changes
+nothing for anyone who visits go.midwaymusicandart.org directly, and content
+reaches it exactly as it reaches the app: on the 6-hour rebuild, or immediately
+with `gh workflow run rebuild-content.yml`. Squarespace is edited once, to set
+this up, and never again for content.
+
+### Setting it up
+
+Put a Code block in a **full-width** section of the map page — the heights below
+assume the embed gets most of the page's width — holding this:
+
+```html
+<style>
+  .mmaf-map-embed { display: block; width: 100%; border: 0; height: 1600px; }
+  @media (max-width: 700px) { .mmaf-map-embed { height: 1950px; } }
+</style>
+<iframe class="mmaf-map-embed"
+        src="https://go.midwaymusicandart.org/?embed=map"
+        title="Midway Music &amp; Arts Fest map"
+        loading="lazy"
+        allow="geolocation"></iframe>
+```
+
+`allow="geolocation"` is what lets the locate button work. Without it the button
+is still there and does nothing.
+
+Then add an ordinary text block under the embed with a link to the full guide,
+worded however the page wants — something like "Planning your day? The full
+schedule, your saved events and the map are at go.midwaymusicandart.org." That
+link is the whole mobile story: the embedded map works on a phone, but the
+schedule, starring and search only exist in the app, and a phone-sized iframe is
+a poor place to meet them. Keeping the link in Squarespace's own content means
+the organizers can reword it without a deploy.
+
+### The two heights
+
+An iframe is exactly as tall as the number in that snippet, and anything the map
+page draws past it scrolls *inside* the iframe — which strands a visitor between
+two scrollbars. So the number has to cover the whole embed: the map frame, the
+legend, and the venue list under them.
+
+The venue list is laid out in as many columns as the iframe is wide enough for —
+five at 1440 px, two at 700, one on a phone — so the embed is tallest at the
+narrow end of each branch. Measured at 21 venues: 1060 px at 1440 wide, 1430 px
+just above the phone breakpoint, and 1800 px at 430. That is what the 1600 and
+1950 above are sized against, with room for several more venues at each width.
+If the venues tab grows a lot, raise both and re-check with step 3 below. Extra
+height costs only blank space; too little costs the trap.
+
+### Verifying after a paste
+
+Load the published page in an ordinary tab, not the Squarespace editor.
+
+1. The map draws, with numbered venue pins on it, a legend under it and the
+   numbered venue list under that. No Midway header bar, no row of app tabs.
+2. Put the pointer over the map and scroll: the **page** scrolls and the map
+   stays put. Hold Ctrl (Cmd on a Mac won't do it) and scroll: now the map
+   zooms. That swap is deliberate — without it, scrolling down the page stops
+   dead on the map.
+3. Scroll to the bottom of the embed: the last venue in the list should be
+   followed by the page's own content, with no scrollbar of its own down the
+   side of the map block. A scrollbar there means the height in the snippet is
+   too small; raise it.
+4. Click a pin, or a venue in the list: the venue sheet opens over the map.
+   Escape or the × closes it.
+5. Click one of the events inside that sheet: it opens the full app in a new
+   tab, on that event. It must not navigate the embed itself — there is no tab
+   bar in there to get back with.
+6. Click the ◎ locate button: the browser asks for location permission. Nothing
+   happening means `allow="geolocation"` is missing from the iframe tag.
+7. On a phone: one finger scrolls the page past the map, two fingers pan the
+   map, and the link out of step 1's text block is visible without hunting.
+
+If the map block is blank, the code block never ran — the same Business-plan
+question the performers page settles, and the same check: look in the Network
+tab for a request to `go.midwaymusicandart.org`.
+
 ## Swapping in the real map artwork (maybe)
 
 The map today is drawn by MapLibre from OpenStreetMap street centerlines

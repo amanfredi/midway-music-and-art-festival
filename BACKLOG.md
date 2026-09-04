@@ -4,7 +4,19 @@ Everything forward-looking lives here. PROGRESS.md is the state journal: what
 happened and why. Nothing should appear in both.
 
 Items are not prioritized against each other. The festival is October 2–4,
-2026; nothing here blocks the site working today.
+2026; nothing here blocks the site working today — **except the first item
+below, which blocks every deploy.**
+
+## Blocking a deploy right now
+
+- **The venues tab's `id` header has been overwritten with `5`** (found
+  2026-09-04). `npm run build` fails with `venues.csv: expected column "id" is
+  missing from the header row (found: 5, name, address, location, description,
+  url)`, and so does the deploy workflow and the 6-hour content rebuild. The
+  live site is unaffected — it stays on the last good build — but nothing new
+  can ship until cell A1 of the venues tab reads `id` again. Every other cell in
+  the tab looks intact. This is a sheet fix, not a code one: the build is
+  refusing exactly as designed rather than publishing a guide with no venue ids.
 
 - Consider adopting svelte/sveltekit (see especially the static site adapter https://svelte.dev/docs/kit/adapter-static)
 - Consider moving deployment to Cloudflare Pages free plan and reverting github repo to private visibility (https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-kit-site/#deploy-with-cloudflare-pages)
@@ -94,17 +106,11 @@ and re-spec. The 4.5:1 small-text requirement is unchanged.
 
 ## Squarespace umbrella site
 
-**Embed the festival map on the main Squarespace site — needs its own define
-session** (added 2026-09-04, Anthony's idea). The sketch: essentially the
-existing map view at a larger default size, under the Squarespace site header,
-with the app's footer tab bar gone. Shapes to weigh in the define pass: an
-iframe of a chrome-less map-only page (hidden route, or a query param that
-suppresses nav) versus conditional formatting of the existing page. Verified
-2026-09-04: go.midwaymusicandart.org serves neither `X-Frame-Options` nor
-`Content-Security-Policy`, so nothing blocks Squarespace framing it today.
-Related: the Performers page (`definitions/performers-page.md`, landed
-2026-09-04) established the repo-hosted embed pattern on the same Squarespace
-site.
+**Paste the map embed onto the Squarespace map page** (added 2026-09-04). The
+app side landed the same day — `?embed=map`, the contract in CONTRACTS.md, the
+iframe snippet and the verification walk-through in README. What is left is
+Anthony's: paste it, add the text block linking phone visitors to the full
+guide, and walk the seven checks. Nothing in this repo changes when he does.
 
 **Performers embed follow-ups** (added 2026-09-04). The embed ignores the
 accordion block's "expand first item" setting (`data-is-expanded-first-item`) —
@@ -136,38 +142,19 @@ the placeholder fixtures and no longer describes what ships. Extending
 `displacedStopOffsets` to sponsors is mechanical (small-pin lanes, no letters to
 offset).
 
-**Venue label and lane collision handling could be more deliberate** (added
-2026-08-31, from Anthony's read of the deployed map). Two symptoms, each
-tracing to a mechanism that is defensible but arbitrary.
-
-Names disappear in an order nobody chose. `venue-name-label` sets no
-`symbol-sort-key` — there is none anywhere in `map.js` — so when the collision
-pass drops a name that will not fit, MapLibre resolves by feature order in the
-source, which is sheet row order. Which venue keeps its name while zooming out
-is an accident of where the organizers happened to type it. A sort key would
-make the sacrifice order a decision instead: by event count, by whatever ranks
-a venue's importance to an attendee.
-
-Lanes always run east–west. `coincidentGroups` (`map.js:296`) sorts each
-coincident group by longitude and lays its members along a horizontal axis in
-`LEADER_LANE_PX` steps. The stated reason is sound — a displaced diamond stays
-on the side of the group its venue is really on — but it only holds when the
-group's members actually differ in longitude. A group stacked north–south gets
-sorted on a near-meaningless key and then displaced along the axis it did not
-vary in, which is what reads as a pin sliding sideways where it should have
-moved up or down. Choosing the axis from the group's own spread — its principal
-axis, or simply whichever of lat/lng varies more — would keep the existing
-rationale and fix the degenerate case.
-
-Adjacent, and the same bias: both name layers use `text-variable-anchor:
-['left', 'right', 'top', 'bottom']`, so a label tries both horizontal sides
-before it tries above or below. Worth re-examining alongside the lane axis,
-because the two compound — a horizontally displaced pin carrying a horizontally
-anchored name reaches further sideways than either does alone.
-
-The mechanisms are confirmed in the code; the mapping from each to what was
-seen on the deployed map is not, so reproducing against named venues is the
-first step.
+**The Snelling and Thomas venue neighbourhood has no room for a north–south
+lane** (added 2026-09-04, found while making the lane axis deliberate). Vig
+Guitars and Fluid Ink Tattoos share a longitude and differ only in latitude, so
+their lanes should run north–south — and on both the live sheet and the
+committed fixtures they cannot: Fluid Ink's north lane lands within 38 px of
+Mosaic on a Stick (13 px on the live sheet), and every other axis assignment for
+the surrounding groups is worse. The pair therefore keeps east–west lanes by the
+give-way rule, which is the outcome that ships today, decided rather than
+inherited. Four venues sit inside ~100 m there and 64 px lanes need more room
+than that. Nothing to do unless it reads badly on the deployed map; if it does,
+the lever is a shorter lane step for cramped groups (the floor is 2 × `VENUE_R`
+= 38 px, against today's 64), which would cost every displaced pin its visible
+leader run and so needs its own look.
 
 **Map presentation is CI-validated against fixtures only** (added 2026-08-23).
 The venues sheet is live, and pin-collision outcomes (group membership, the
@@ -185,7 +172,20 @@ natural choke point.
 in its RECIPE.md): the 2026-08-11 map bundle changed four things inside the
 map frame — 38 px venue pins, pin-matched legend swatches, the pan d-pad, and
 the scale bar — and the 2026-08-22 color scheme then changed every view, so
-the recapture now covers the whole shell, not just the map frame.
+the recapture now covers the whole shell, not just the map frame. The
+2026-09-04 desktop map frame folds in too: every `map-desktop` shot is now a
+1100 × 560 frame rather than a 560 px square. The before/after pairs in
+`reviews/2026-09-map-collisions/` are evidence for that change, not a new
+baseline — they cover four states at two widths, against the snapshot content
+rather than the live sheet.
+
+**Give the app's own desktop Map view the embed's columnar venue key**
+(added 2026-09-04). `body.is-embed .venue-key-list` lays the venue key out in
+as many columns as fit, which took the embed from ~1900 px tall to ~1160 px.
+The app's own Map view keeps the single column, because it has no iframe height
+to overflow — but at 1440 px it is a 21-row column under a 1100 px map, and the
+same grid would read better there too. Deliberately not done with the desktop
+frame: that change was scoped to the frame, and this one changes a list.
 
 The remaining audit items below were specified against the retired SVG map;
 they are requirements the MapLibre map must meet, kept for their measurements

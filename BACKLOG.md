@@ -87,6 +87,20 @@ pins are now canvas symbols, so before the ack matters, find where the color
 lives in `map.js`, re-measure the letter contrast as the engine renders it,
 and re-spec. The 4.5:1 small-text requirement is unchanged.
 
+## Squarespace umbrella site
+
+**Embed the festival map on the main Squarespace site — needs its own define
+session** (added 2026-09-04, Anthony's idea). The sketch: essentially the
+existing map view at a larger default size, under the Squarespace site header,
+with the app's footer tab bar gone. Shapes to weigh in the define pass: an
+iframe of a chrome-less map-only page (hidden route, or a query param that
+suppresses nav) versus conditional formatting of the existing page. Verified
+2026-09-04: go.midwaymusicandart.org serves neither `X-Frame-Options` nor
+`Content-Security-Policy`, so nothing blocks Squarespace framing it today.
+Related: the Performers page (`definitions/performers-page.md`, in flight
+2026-09-04) establishes the repo-hosted embed pattern on the same Squarespace
+site.
+
 ## Map
 
 **Fix route 67 upstream in OSM** (added 2026-08-23). Relation 2449177 (Metro

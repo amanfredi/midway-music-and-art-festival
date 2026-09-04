@@ -35,6 +35,30 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-04 — the venues list, and where to see each act
+
+Every performer's bio now ends with "See them at Midway Saloon on Friday,
+October 2 at 5:00 PM.", joining the event's `venue_id` against the venues
+array in the same `content.json` fetch. `start` is read field by field and
+the `Date` built from those numbers: `new Date("<string>")` parses by engine
+and timezone, while a date built from components names the same weekday
+everywhere.
+
+The organizers' venues page renders the same way — one accordion item per
+venue, address then description then link, `#venue-<id>` deep links on the
+same slugs the app routes on. Rather than fork this much DOM surgery, the
+script now carries two dataset adapters and picks one from the filename it
+was loaded under (`data-embed` on the tag overrides; an unrecognized value
+fails closed), and `site/js/venues-embed.js` is a byte-identical committed
+copy of `performers-embed.js`. Nothing generates that copy, so
+`tests/embed-twins.test.mjs` fails when the two drift, with the fix in its
+message. CONTRACTS.md's embed section (retitled "Squarespace embed contract")
+now covers both embeds; README carries the venues paste, the `data-embed`
+override and the copy step.
+
+The venues page's one-line code block is the remaining Squarespace-side
+paste.
+
 ### 2026-09-04 — first live paste, and the invisible-bio fix
 
 Anthony pasted the stub and the page rendered — settling the last open
@@ -55,7 +79,8 @@ events tab feeds both the app and the main website and neither drifts.
 Squarespace is edited once — an accordion block with one placeholder item and a
 one-line code block — and never again for content. README carries the paste
 procedure and the first-load checklist; the binding interface is the new
-"Performers embed contract" in CONTRACTS.md; the definition is
+embed contract section in CONTRACTS.md (now "Squarespace embed contract",
+covering both embeds); the definition is
 `definitions/performers-page.md`.
 
 Two facts about the Squarespace side came from reading the live page and its

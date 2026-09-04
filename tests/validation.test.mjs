@@ -189,6 +189,14 @@ describe("good fixtures", () => {
       assert.ok(venueIds.has(e.venue_id), `event ${e.id} references unknown venue ${e.venue_id}`);
     }
 
+    // url is an optional field: always a string, never absent or null, and the
+    // fixtures cover both a set value and a blank one
+    for (const e of content.events) {
+      assert.equal(typeof e.url, "string", `event ${e.id} url should be a string, got ${JSON.stringify(e.url)}`);
+    }
+    assert.ok(content.events.some((e) => e.url !== ""), "fixtures should cover at least one event with a url");
+    assert.ok(content.events.some((e) => e.url === ""), "fixtures should cover at least one event with a blank url");
+
     // sponsors: sorted by tier_order then name; logo rewritten + bundled file exists
     for (let i = 1; i < content.sponsors.length; i++) {
       const prev = content.sponsors[i - 1];
@@ -561,6 +569,23 @@ describe("source shape and headers", () => {
     assert.notEqual(result.status, 0, "a missing column should fail the build");
     assert.match(result.stderr, /vendors\.csv/);
     assert.ok(result.stderr.includes('"type"'), `stderr should name the missing column\n${result.stderr}`);
+  });
+
+  test("events.csv missing its url column fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "events-header-missing-url", [dropColumn("events.csv", "url")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a missing url column should fail the build");
+    assert.match(result.stderr, /events\.csv/);
+    assert.ok(result.stderr.includes('"url"'), `stderr should name the missing column\n${result.stderr}`);
+  });
+
+  test("events.csv url header respelled only in capitalization names both spellings", () => {
+    const config = makeFixtureSet(TMP_ROOT, "events-header-url-case", [renameHeader("events.csv", "url", "Url")]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a respelled header should fail the build");
+    assert.match(result.stderr, /events\.csv/);
+    assert.ok(result.stderr.includes('"Url"'), `stderr should quote the sheet's spelling\n${result.stderr}`);
+    assert.ok(result.stderr.includes('"url"'), `stderr should quote the expected spelling\n${result.stderr}`);
   });
 
   test("columns the schema doesn't know about are still ignored", () => {
@@ -964,6 +989,40 @@ describe("url fields", () => {
     ]);
     const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+  });
+
+  // events.url reuses validateUrlField/urlValueError and normalizeUrls — the
+  // same code path venues.url and sponsors.url go through above — so these
+  // cases mirror the venue ones rather than re-deriving the rule.
+  test("an event link with a script scheme fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "event-url-scheme", [
+      setCell("events.csv", 2, "url", "javascript:alert(1)"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a javascript: event link should fail the build");
+    assert.match(result.stderr, /events\.csv row 2/);
+    assert.match(result.stderr, /only https, http, and mailto/);
+  });
+
+  test("an event's bare domain is completed to https rather than rejected", () => {
+    const config = makeFixtureSet(TMP_ROOT, "event-bare-url", [
+      setCell("events.csv", 2, "url", "example-performer-site.test"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    assert.match(result.stdout, /Completed \d+ link\(s\)/);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.url, "https://example-performer-site.test");
+  });
+
+  test("a blank event url passes and comes out as an empty string", () => {
+    const config = makeFixtureSet(TMP_ROOT, "event-url-blank", [setCell("events.csv", 2, "url", "")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "midway-strays");
+    assert.equal(event.url, "", "a blank url should be an empty string, never absent or null");
   });
 });
 

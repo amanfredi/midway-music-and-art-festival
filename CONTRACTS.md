@@ -178,7 +178,7 @@ typed are kept. Two consequences worth relying on:
 Build errors remain for a value that slugifies to nothing (`&&&`) and for two
 rows that slugify to the same id. The build prints every rewrite it made.
 
-**Links follow the same rule.** Every URL field (`venues.url`,
+**Links follow the same rule.** Every URL field (`venues.url`, `events.url`,
 `sponsors.url`, `settings.donation_url`) may use only `https:`, `http:`, or
 `mailto:` — anything else, `javascript:` included, is a build error. A bare
 domain (`blackgarnetbooks.com`) is completed to `https://` rather than
@@ -194,7 +194,7 @@ neither is a build error.
   the emitted content.json always carries plain `lat`/`lng` numbers, so the
   site itself never sees plus codes.
 
-**events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, age_limit, description`
+**events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, age_limit, description, url`
 - `date`: `YYYY-MM-DD`, **or** the `M/D/YYYY` a Google Sheets date cell exports,
   which is rewritten to `YYYY-MM-DD`. Every rewrite is printed, one line per row
   (`events.csv row 2 (Miss Georgia Peach): date "10/2/2026" -> "2026-10-02"`).
@@ -233,6 +233,11 @@ neither is a build error.
   stays blank in content.json; the two set values render a badge in every event
   row.
 - `description` optional.
+- `url` optional: the performer/act's website, validated and completed by the
+  same rule as `venues.url`/`sponsors.url` (see "Links follow the same rule"
+  above). Consumed by the Squarespace performers page
+  (`definitions/performers-page.md`); the festival app itself ignores it for
+  now.
 
 **vendors.csv** — `id, name, type, description, location`
 - `type`: one of `food|art|retail`. All required except `description`.
@@ -382,7 +387,7 @@ snapshot directory was modified.
   "version": "a1b2c3d4e5f6",
   "settings": { "festival_name": "…", "banner_id": "…", "banner_text": "…", "you_are_here_enabled": "false", "donation_url": "…", "donation_label": "Donate", "…": "…" },
   "venues":   [ { "id": "…", "name": "…", "address": "…", "lat": 44.9557, "lng": -93.1668, "description": "…", "url": "…" } ],
-  "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "age_limit": "", "description": "…" } ],
+  "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "age_limit": "", "description": "…", "url": "…" } ],
   "vendors":  [ { "id": "…", "name": "…", "type": "food", "description": "…", "lat": 44.9557, "lng": -93.1668 } ],
   "sponsors": [ { "id": "…", "name": "…", "tier": "Emerald Tier (Presenting Partner)", "tier_slug": "emerald", "tier_order": 1, "blurb": "…", "logo": "assets/sponsors/….svg", "url": "…", "lat": 44.9557, "lng": -93.1668 } ]
 }

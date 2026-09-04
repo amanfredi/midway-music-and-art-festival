@@ -126,7 +126,7 @@ const SOURCE_LABEL = {
 // are still ignored — coordinators keep notes columns in the sheet.
 const EXPECTED_COLUMNS = {
   venues: ["id", "name", "address", "location", "description", "url"],
-  events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description"],
+  events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description", "url"],
   vendors: ["id", "name", "type", "description", "location"],
   sponsors: ["id", "name", "tier", "blurb", "url", "location"],
   settings: ["key", "value"],
@@ -662,6 +662,7 @@ function normalizeUrls(parsed) {
   };
   rewrite("venues.csv", parsed.venues.records, "url", "name");
   rewrite("sponsors.csv", parsed.sponsors.records, "url", "name");
+  rewrite("events.csv", parsed.events.records, "url", "title");
   rewrite(
     "settings.csv",
     parsed.settings.records.filter((rec) => String(rec.fields.key ?? "").trim() === "donation_url"),
@@ -896,6 +897,7 @@ function validateEvents(records, venueIds) {
     ...validateRequiredFields(fileLabel, records, ["id", "title", "venue_id", "date", "start_time"], "title"),
     ...validateDuplicateIds(fileLabel, records, "title"),
     ...validateIdFormat(fileLabel, records, "title"),
+    ...validateUrlField(fileLabel, records, "title"),
   ];
 
   for (const rec of records) {
@@ -1039,6 +1041,7 @@ function validateEvents(records, venueIds) {
       tickets,
       age_limit,
       description: rec.fields.description ?? "",
+      url: rec.fields.url ?? "",
     };
   });
   return { errors, clean };

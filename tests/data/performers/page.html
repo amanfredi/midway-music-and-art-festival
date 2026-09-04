@@ -1,0 +1,196 @@
+<!doctype html>
+<!--
+  Stand-in for the organizers' Squarespace performers page.
+
+  The accordion block below is the markup Squarespace served for
+  https://www.midwaymusicandart.org/new-page on 2026-09-04, trimmed to one item
+  (the placeholder the operator instructions call for) and with every
+  Squarespace script removed — the point of the fixture is that the page brings
+  no behaviour of its own, so anything that opens or closes came from
+  site/js/performers-embed.js.
+
+  The <style> block is the subset of Squarespace's own accordion stylesheet
+  (website.components.accordion.styles.css, same date) that the open/close path
+  depends on: the dropdown is display:none until the --open class lands, and
+  --pre-open is the offscreen state the script measures the natural height in.
+  Without these rules the toggle tests would pass against nothing.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Performers — fixture</title>
+    <style>
+      .sqs-block-accordion .accordion-items-container {
+        list-style-type: none;
+        margin: 0;
+        padding: 0;
+      }
+      .sqs-block-accordion .accordion-item {
+        margin: 0;
+        padding: 0;
+        position: relative;
+      }
+      .sqs-block-accordion .accordion-divider {
+        background-color: currentColor;
+        height: var(--accordion-divider-thickness);
+        opacity: var(--accordion-divider-opacity);
+      }
+      .sqs-block-accordion
+        .accordion-items-container:not([data-is-last-divider-visible='true'])
+        .accordion-item:last-of-type
+        .accordion-divider:not(.accordion-divider--top) {
+        display: none;
+      }
+      .sqs-block-accordion .accordion-item__title {
+        flex: 1;
+        overflow: hidden;
+      }
+      .sqs-block-accordion .accordion-item__click-target {
+        align-items: center;
+        background: transparent;
+        border: none;
+        box-sizing: border-box;
+        color: inherit;
+        display: flex;
+        font: inherit;
+        justify-content: space-between;
+        padding: var(--accordion-item-padding-top) var(--accordion-item-padding-right)
+          var(--accordion-item-padding-bottom) var(--accordion-item-padding-left);
+        text-align: left;
+        width: 100%;
+      }
+      .sqs-block-accordion .accordion-item__dropdown {
+        box-sizing: border-box;
+        display: none;
+        overflow: hidden;
+      }
+      .sqs-block-accordion .accordion-item__dropdown--pre-open {
+        display: block;
+        height: auto;
+        left: 0;
+        position: absolute;
+        top: 0;
+        transition: none;
+        visibility: hidden;
+        width: 100%;
+      }
+      .sqs-block-accordion .accordion-item__dropdown--open {
+        display: block;
+      }
+      .sqs-block-accordion .accordion-item__description {
+        box-sizing: border-box;
+        max-width: 300px;
+        min-width: var(--accordion-description-width);
+        padding: var(--accordion-description-padding-top)
+          var(--accordion-description-padding-right) var(--accordion-description-padding-bottom)
+          var(--accordion-description-padding-left);
+      }
+      .sqs-block-accordion .accordion-icon-container {
+        height: var(--accordion-icon-size);
+        position: relative;
+        width: var(--accordion-icon-size);
+      }
+      .sqs-block-accordion .plus__horizontal-line,
+      .sqs-block-accordion .plus__vertical-line {
+        background-color: currentColor;
+        display: block;
+        height: var(--accordion-icon-thickness);
+        position: absolute;
+        transition: transform 0.25s;
+        width: 100%;
+      }
+      .sqs-block-accordion .plus__vertical-line {
+        transform: rotate(90deg);
+      }
+      .sqs-block-accordion .accordion-item[data-is-open='true'] .plus__vertical-line {
+        transform: rotate(0deg);
+      }
+      #block-performers {
+        --accordion-item-padding-top: 30px;
+        --accordion-item-padding-bottom: 30px;
+        --accordion-item-padding-left: 0px;
+        --accordion-item-padding-right: 0px;
+        --accordion-icon-size: 14px;
+        --accordion-icon-thickness: 3px;
+        --accordion-description-padding-top: 0px;
+        --accordion-description-padding-bottom: 30px;
+        --accordion-description-padding-left: 0px;
+        --accordion-description-padding-right: 0px;
+        --accordion-description-width: 70%;
+        --accordion-divider-thickness: 1px;
+        --accordion-divider-opacity: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Performers</h1>
+
+    <div
+      class="sqs-block website-component-block sqs-block-website-component sqs-block-accordion accordion-block"
+      data-block-type="1337"
+      data-definition-name="website.components.accordion"
+      data-sqsp-block="accordion"
+      id="block-performers"
+    >
+      <div class="sqs-block-content">
+        <ul
+          class="accordion-items-container"
+          data-should-allow-multiple-open-items="false"
+          data-is-divider-enabled="true"
+          data-is-first-divider-visible="true"
+          data-is-last-divider-visible="true"
+          data-is-expanded-first-item="false"
+          data-accordion-title-alignment="left"
+          data-accordion-description-alignment="left"
+          data-accordion-description-placement="left"
+          data-accordion-icon-placement="left"
+        >
+          <li class="accordion-item">
+            <div
+              data-sqsp-accordion-block-divider
+              class="accordion-divider accordion-divider--top"
+              aria-hidden="true"
+            ></div>
+            <h4 class="accordion-item__title-wrapper" data-sqsp-accordion-block-item-title>
+              <button
+                id="button-performers-1"
+                class="accordion-item__click-target"
+                aria-expanded="false"
+                aria-controls="dropdown-performers-1"
+              >
+                <span class="accordion-item__title">Performers load here</span>
+                <div class="accordion-icon-container" aria-hidden="true">
+                  <div class="plus">
+                    <div class="plus__horizontal-line"></div>
+                    <div class="plus__vertical-line"></div>
+                  </div>
+                </div>
+              </button>
+            </h4>
+            <div
+              class="accordion-item__dropdown"
+              id="dropdown-performers-1"
+              role="region"
+              aria-labelledby="button-performers-1"
+            >
+              <div class="accordion-item__description" data-sqsp-accordion-block-item-description>
+                The lineup appears here when the page loads.
+              </div>
+            </div>
+            <div
+              data-sqsp-accordion-block-divider
+              class="accordion-divider"
+              aria-hidden="true"
+            ></div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <script
+      src="/js/performers-embed.js"
+      data-content-url="/performers-content.json"
+      defer
+    ></script>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 id,name,tier,tier_order,blurb,location,url
-cadenzamusic,Cadenza Music,Topaz (Community Partner),1,,,
-platform,Platform,Sapphire (Supporting Partner),1,,,
-idealprinters,Ideal Printers,Topaz (Community Partner),2,,,
-oldnationalbank,Old National Bank,Sapphire (Supporting Partner),2,,,
-bewickcafe,Bewick Cafe,Topaz (Community Partner),3,,,
+cadenzamusic,Cadenza Music,Topaz (Community Partner),1,,,https://www.cadenzamusic.com/
+platform,Platform,Sapphire (Supporting Partner),1,,,https://www.platformmn.com/
+idealprinters,Ideal Printers,Topaz (Community Partner),2,,,https://www.idealprint.com/
+oldnationalbank,Old National Bank,Sapphire (Supporting Partner),2,,,https://www.oldnational.com/
+bewickcafe,Bewick Cafe,Topaz (Community Partner),3,,,https://www.bewickcafe.com/
+wellingtonmanagement,Wellington Management,Sapphire (Supporting Partner),3,,,https://wellingtonmgt.com/

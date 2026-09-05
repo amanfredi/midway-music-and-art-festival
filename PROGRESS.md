@@ -100,11 +100,16 @@ Found along the way and deliberately left alone: **a toast raised while a sheet
 is open is painted underneath it**, in the app as much as in the embed. A modal
 `<dialog>` and its `::backdrop` are in the top layer, above every `z-index` on
 the page, so the venue sheet's share button has never managed to show its "Link
-copied" — measured, not inferred: `elementFromPoint` at the toast's own centre
-returns a link inside the sheet. It is in BACKLOG rather than in this commit
-because fixing it changes the app's presentation, which this work was scoped not
-to do. The embed's toasts are anchored correctly meanwhile, which keeps that a
-small change rather than two problems at once.
+copied". It is in BACKLOG rather than in this commit because fixing it changes
+the app's presentation, which this work was scoped not to do. The embed's toasts
+are anchored correctly meanwhile, which keeps that a small change rather than
+two problems at once.
+
+*Corrected by the entry above, which fixed it.* The evidence originally cited
+here was `elementFromPoint` naming a link inside the sheet at the toast's own
+centre. The conclusion was right and that reasoning was not: a modal dialog
+makes everything outside it inert, and inert content is not hit-testable, so
+the probe answers a different question. Do not reuse it.
 
 Evidence: the `frame-` and `tap-` prefixes in `reviews/2026-09-embed-sheet/`.
 

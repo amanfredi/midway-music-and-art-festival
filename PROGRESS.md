@@ -93,6 +93,40 @@ stretch to fill their row instead. Measured after the fix: from ~600px of
 window width up the tab no longer changes at all — sapphire cards hold 274px,
 topaz 179px — and the phone layout is untouched.
 
+### 2026-09-04 — pins reserve the diamond's area rather than its bounding box
+
+Anthony's read of the corner placements, and he had the geometry right: a
+collision box is axis-aligned, and the bounding box of a 45° square is twice its
+area. The error is worst exactly where it showed — on the diagonals, where the
+ink stops at 0.71 R and the box corner sits at 1.41 R — so a corner-placed name
+stood off twice as far as it looked like it should.
+
+Venue pins now reserve a square of the diamond's own area, side R √2, giving up
+the four tips and keeping the body. The pin layer draws and a transparent
+blocker layer beside it reserves, because MapLibre takes a symbol's collision
+box from its image rect and `icon-padding` cannot go negative — the same
+decoupling the tether already used. Corner clearances are measured to that box;
+cardinals still clear the tip, which is real ink.
+
+**His hypothesis about Fluid Ink Tattoos was right to the pixel.** Its "below"
+candidate was blocked by Vig Guitars' box overlapping it by 9 px horizontally
+and **2 px vertically** — pure bounding-box overhang, with the ink nowhere near.
+The shrink frees it, and Fluid Ink is now named below its pin, where he placed
+it by hand. Mosaic on a Stick is to its left and Black Hart top-right, also as
+placed.
+
+Counting venue pins in frame that carry a name, at the leader zoom: phone 10 of
+14 → **12**, desktop 18 of 20 → **19** on the content the captures use; phone 9
+→ 12 and desktop 17 → 19 on shipping content. The two contents now agree,
+nothing was lost, and Black Hart of Saint Paul — the one loss from making dots
+block — is recovered. No tip overlaps in the captures; names sit closer to their
+pins and read as belonging to them. Captures under the `after-box-` prefix.
+
+Still unnamed at the leader zoom: Sundin Music Hall and Elsa's House of Sleep on
+the phone, Soeffker Gallery on desktop — in each case the lower-ranked half of a
+pair whose members want the same space, which is the ranking working rather than
+failing.
+
 ### 2026-09-04 — dots earn their own collision box, and names get the corners
 
 Two refinements to the entry below, from Anthony reading

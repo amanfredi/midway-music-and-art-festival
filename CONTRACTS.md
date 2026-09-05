@@ -701,8 +701,30 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   already visible, so crossing it costs little; a dot is the only mark on the
   map claiming where a venue really is, and a name across it leaves a tether
   pointing at ink you cannot see. Its own box is about 15 px square, the dot
-  rather than the composite. So, in full: **a label may be drawn across a leader
-  line. It may not be drawn across a diamond, its number, or a location dot.**
+  rather than the composite.
+
+  **A venue pin reserves the diamond's area, not its bounding box.** Collision
+  boxes are axis-aligned, and the bounding box of a 45° square is twice its
+  area — the error worst on the diagonals, where the ink stops at 0.71 R and the
+  box corner sits at 1.41 R, so a corner-placed name stood off twice as far as
+  it looked like it should. The reserved box is therefore a square of side
+  R √2 (`PIN_BLOCK_HALF`), which gives up the four tips and keeps the body. As
+  with the tether, the drawing and the reserving are separate layers:
+  `venue-pin` and `venue-leader-pin` draw with `icon-ignore-placement`, and
+  `venue-pin-block` / `venue-leader-block` hold a transparent square of the
+  wanted size. There is no other way — MapLibre takes a symbol's collision box
+  from its image rect, and `icon-padding` has a floor of 0.
+
+  Only venue pins have blockers. A transit or sponsor pin's overhang is ~10 px
+  on the diagonal against a venue pin's ~14, and two more layers each was not
+  worth it; if that changes, the pattern is here to copy.
+
+  So, in full: **a label may cross a leader line and may graze a diamond's tips.
+  It may not cover a diamond's body, its number, or a location dot.** The number
+  is safe by construction rather than by luck — it is central, and at
+  `VENUE_TEXT_PX` a two-digit label reaches ~12 px from the centre against the
+  blocker's 15.4 — and a test pins that, because it is the one part of this the
+  arithmetic could quietly stop being true about.
 
   The displaced pins come from their own
   unclustered `venue-groups` source, because the clustered one hides them inside
@@ -825,16 +847,22 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   a whole lane away from the diamond. That property supersedes `text-anchor`,
   `text-offset` and `text-radial-offset` on this layer.
 
-  **Every name layer offers the four corners, and they carry the full clearance
-  on both axes.** A pin whose four sides are all spoken for still has its
-  corners, and on this map that is the common case. They are only usable with an
-  offset per anchor: a single `text-radial-offset` places a diagonal candidate
-  at radius/√2 on each axis, which is *inside* the square collision box it is
-  meant to clear, so the placement pass rejects it and the candidate is
-  decoration — measured, adding corner anchors to a radial-offset layer changed
-  nothing at all. This is why the plain venue and sponsor name layers use
-  `text-variable-anchor-offset` too, with a constant list rather than a
-  data-driven one.
+  **Every name layer offers the four corners.** A pin whose four sides are all
+  spoken for still has its corners, and on this map that is the common case.
+  They are only usable with an offset per anchor: a single `text-radial-offset`
+  places a diagonal candidate at radius/√2 on each axis, which is *inside* the
+  square collision box it is meant to clear, so the placement pass rejects it
+  and the candidate is decoration — measured, adding corner anchors to a
+  radial-offset layer changed nothing at all. This is why the plain venue and
+  sponsor name layers use `text-variable-anchor-offset` too, with a constant
+  list rather than a data-driven one.
+
+  A corner's clearance is measured to **what the pin reserves**, a cardinal's to
+  **what it draws**: `PIN_BLOCK_HALF + NAME_CLEAR_PX` against
+  `VENUE_R + NAME_CLEAR_PX`. A side name has to clear a real tip; a corner name
+  has nothing there to clear, so holding it at the same distance was what made
+  diagonal names look stranded. Sponsor names keep one clearance for both,
+  since sponsor pins have no blocker.
 
   Its offsets are in **ems of the layer's own text size**, and that coupling is
   binding: changing a name layer's `text-size` without dividing the offsets by
@@ -1198,7 +1226,8 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   `queryRenderedFeatures` only once placement has put it on screen.
   Layer ids are part of the hook: `venue-pin`, `venue-leader-pin`,
   `venue-cluster`, `transit-pin`, `transit-leader-pin`, `sponsor-featured-pin`,
-  `sponsor-generic-pin`, the tether layers `venue-leader-line`,
+  `sponsor-generic-pin`, the collision blockers `venue-pin-block` and
+  `venue-leader-block`, the tether layers `venue-leader-line`,
   `transit-leader-line`, `venue-leader-dot` and `transit-leader-dot`,
   the tap-highlight halos `venue-highlight`, `venue-leader-halo`,
   `transit-highlight`, `sponsor-highlight`, the name layers `venue-name-label`,

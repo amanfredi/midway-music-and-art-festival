@@ -144,23 +144,26 @@ the lever is a shorter lane step for cramped groups (the floor is 2 × `VENUE_R`
 = 38 px, against today's 64), which would cost every displaced pin its visible
 leader run and so needs its own look.
 
-Same neighbourhood, same cause: **Fluid Ink Tattoos is the venue still
-unnamed** at the leader zoom after the 2026-09-04 fill-rate work took a phone
-frame from 8 names of 14 to 11. Corner candidates seated Mosaic on a Stick on
-desktop; Fluid Ink's eight candidates are all inside a neighbour's *diamond*
-rather than inside the empty paper the tether used to reserve, so nothing short
-of moving a pin will seat it. A shorter lane step is the same lever.
+Same neighbourhood, resolved: Fluid Ink Tattoos and Mosaic on a Stick are both
+named as of the 2026-09-04 collision-box shrink. Fluid Ink's "below" candidate
+had been blocked by 2 px of Vig Guitars' bounding-box overhang.
 
-**Black Hart of Saint Paul goes unnamed at the phone home view** (added
-2026-09-04, the one loss from making location dots block labels). It sits 26 px
-from that frame's right edge; west is where both its neighbours' dots are, its
-own group's diamonds hold north and south, and its only unblocked candidates are
-past the edge — where MapLibre places a label anyway, invisibly, since
-off-screen placements are legal. Centred on it, or on desktop, it is named. Two
-possible levers if it matters: preferring on-screen candidates (the engine
-offers no such control, so this would mean placing names ourselves), or a
-shorter lane step here as above. Neither is worth it for one venue at one camera
-position.
+**Small pins have no collision blocker** (added 2026-09-04). Venue pins reserve
+a square of the diamond's own area rather than its bounding box; transit and
+sponsor pins still reserve the box. Their overhang is ~10 px on the diagonal
+against a venue pin's ~14, and it would cost two more layers each, so it was
+left. The pattern to copy is `venue-pin-block` in `map.js`. Worth doing only if
+a name is seen standing off a transit or sponsor pin the way they used to stand
+off venue pins.
+
+**A label can be placed off the frame edge, invisibly** (added 2026-09-04).
+MapLibre allows off-screen placements — sensibly, so labels are ready as you pan
+— but that means a name whose only unblocked candidate lies past the edge is
+consumed rather than dropped, and no later candidate is tried. Seen once, on
+Black Hart of Saint Paul at the phone home view before the box shrink; the
+shrink freed an on-screen candidate and it has not recurred. There is no engine
+control for preferring on-screen candidates, so the only fix would be placing
+names ourselves. Not worth it unless it starts happening to venues that matter.
 
 **Sponsor and street labels were never re-measured after the tether split**
 (added 2026-09-04). Taking the leader composites out of the collision index

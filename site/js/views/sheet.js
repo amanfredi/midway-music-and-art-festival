@@ -55,6 +55,12 @@ function open(innerHtml, { openedBy } = {}) {
   // then moved. A no-op outside the embed. `openedBy` is the element the
   // visitor tapped, where the caller knows it and it is not the map: a tap on
   // the map means the map frame, which is what this defaults to.
+  //
+  // Passed in rather than read off `document.activeElement`, which looks
+  // equivalent and is not: WebKit does not focus a button on a pointer click,
+  // so it reports <main> where Chromium reports the button (measured
+  // 2026-09-05). Inferring the anchor would work in every browser it was tested
+  // in and fall back to the map frame on iOS Safari.
   anchorEmbedOverlay(dialog, openedBy ? { centreOn: openedBy } : {});
   dialog.showModal();
   // Focus the dialog itself (not the close button showModal would pick): its

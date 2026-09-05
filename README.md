@@ -71,6 +71,23 @@ The build tests run `scripts/build.mjs` against generated copies of the good
 fixtures — one deliberately broken cell each (`tests/fixture-sets.mjs`) — into
 throwaway output directories, so they never disturb `site/`.
 
+### Two traps when a test serves its own page
+
+Both bit real work in September 2026, and both fail quietly — the harness runs,
+the numbers are just wrong.
+
+- **A page route cannot intercept what the service worker answers.** The embed
+  and collision specs fulfil their own `data/content.json` or host page through
+  `page.route`; the site's worker installs on the first load and serves the
+  cached *app* for it on every load after that, so the interception silently
+  stops applying partway through a run. `test.use({ serviceWorkers: 'block' })`,
+  or `serviceWorkers: 'block'` on the context in a standalone harness.
+- **A stand-in host page needs `<meta name="viewport">`.** Without one, mobile
+  emulation lays the page out at its 980px fallback width rather than the
+  viewport you asked for. That is invisible in a screenshot of a 393px phone —
+  it just quietly gives the embedded map a four-column venue key, an iframe
+  ~600px shorter than a real phone's, and every measurement taken from it.
+
 ## Deploy
 
 Pushing to `main` runs `.github/workflows/deploy.yml`: tests, then build,
@@ -376,6 +393,10 @@ nothing for anyone who visits go.midwaymusicandart.org directly, and content
 reaches it exactly as it reaches the app: on the 6-hour rebuild, or immediately
 with `gh workflow run rebuild-content.yml`. Squarespace is edited once, to set
 this up, and never again for content.
+
+It is live at **www.midwaymusicandart.org/map**, which is not in the site's
+sitemap and is reachable only by its URL or by whatever links to it — so a page
+search will not find it.
 
 ### Setting it up
 

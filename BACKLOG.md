@@ -259,6 +259,24 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
 
 ## App
 
+**Closing a sheet does not return focus to the card that opened it, in Safari**
+(added 2026-09-05, measured while checking something else). `views/sheet.js`
+captures `document.activeElement` as the element to restore focus to on close.
+That is right in Chromium, which focuses a button on a pointer click, and wrong
+in WebKit, which does not: it captures `<main>`, and `.focus()` on a
+non-focusable element does nothing. A Safari visitor who taps a venue card and
+closes the sheet is left at the top of the page rather than back at the card.
+Keyboard users are unaffected — tabbing to a button really does focus it, so
+`activeElement` is the button on that path.
+
+The fix is one line now that the tapped element is threaded through for the
+embed's anchor: prefer it over the inference, `const trigger = openedBy ??
+document.activeElement`. Left out of the anchoring work because it changes the
+app's behaviour, which that work was scoped not to do. Only the key-list path
+passes `openedBy` today, which is also the only path where the visitor has a
+scroll position worth being returned to. Same root fact as the anchor's, which
+CONTRACTS.md records under "Map embed".
+
 **A toast raised from an open sheet is painted underneath it** (added
 2026-09-05, found while anchoring the embed's overlays; **not** an embed bug —
 the app has it too, and has had it since the sheet became a modal `<dialog>`).

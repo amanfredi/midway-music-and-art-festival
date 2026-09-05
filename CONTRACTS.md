@@ -1056,6 +1056,15 @@ hash is required and none should be pasted.
   height depends on the venue and is not known until it is laid out, and a sheet
   painted in one place and moved after is a flash the visitor would see.
 
+  **The tapped element is passed in — `openVenueSheet(id, { openedBy })` — and
+  never read from `document.activeElement`.** Reading it looks equivalent and is
+  not: measured 2026-09-05, a real pointer click on a `.venue-key-btn` leaves
+  `activeElement` as that button in Chromium and as `<main>` in WebKit, which
+  does not focus a button on click at all. A sheet that inferred its own anchor
+  would work in every browser it was tested in and quietly fall back to the map
+  frame on iOS Safari — the browser this was reported from. Don't simplify the
+  argument away.
+
   **Width and the height cap always come from the map frame**, whatever the
   anchor: it is the embed's content column, and one size rule is enough. The
   sheet is never taller than the frame — one that ran past the box the tap
@@ -1363,8 +1372,13 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   `arterial-fill`,
   `spine-fill`, `rail-green`, `rail-blue`, `bus-route`, `street-label-spine`,
   `street-label-arterial`, `station-label`. `venue-leader-pin` and
-  `venue-leader-halo` carry the split zoom as their `minzoom`, which is how a
-  test asks where the two coincident-venue treatments meet. Source ids:
+  `venue-leader-halo` carry the **leader** zoom as their `minzoom`, which is how
+  a test asks where the two coincident-venue treatments meet — and, since it is
+  where every group has broken into individual pins, what a key-list tap zooms
+  to as its floor. Not the split zoom: the leader zoom is `splitZoom - 1` unless
+  a group's pins would still collide there (`leaderStartZoom`), so the two are
+  usually a level apart and a test that wants one must not read the other.
+  Source ids:
   `mapdata`, `venues`, `venue-groups`, `transit`, `sponsors`; features in all
   five pin sources are id'd by their index, which is what `setFeatureState`
   addresses — a displaced venue is addressed in `venue-groups`, since that is
@@ -1386,6 +1400,10 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - `.pin-alt-btn[data-kind="transit"|"sponsor"][data-id="<id>"]` on each button
   in the visually-hidden pin list, one per drawn transit and sponsor pin
 - `.venue-key-btn[data-venue-id="<id>"]` on each venue card in the key list
+- `#locate-btn` on the map's locate control, and `#toast-root` / `.toast` on the
+  live region and the messages in it. In the embed both the sheet and the toast
+  root carry `data-embed-anchor` (`bottom` or `middle`), which is how a test
+  asks which anchor a tap chose without inferring it from coordinates
 - `[data-testid="you-are-here"]` on the locate marker, which exists only after
   a successful fix — assert on count, not visibility
 

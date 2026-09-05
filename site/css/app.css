@@ -868,14 +868,26 @@ img {
   transition: opacity 120ms ease-out;
 }
 
+/* Two layers, and both are needed. The dissolve is the stronger signal but it
+   only speaks when there is content at the fold to dissolve — measured
+   2026-09-05, the venue the report was filed against has whitespace and half a
+   button there, so the fade alone photographed as a smudge. The shade is a
+   band at the border whatever is behind it: an edge that content passes under.
+   Its ink is --color-text at low alpha, so it reads as shade rather than as a
+   colour of its own; it is spelled out here rather than tokenised because
+   nothing else in the app draws one. */
 .sheet__fade--top {
   top: 0;
-  background: linear-gradient(to bottom, var(--color-surface) 20%, var(--color-surface-fade));
+  background:
+    linear-gradient(to bottom, rgba(29, 42, 51, 0.22), rgba(29, 42, 51, 0)) top / 100% 1rem no-repeat,
+    linear-gradient(to bottom, var(--color-surface) 20%, var(--color-surface-fade));
 }
 
 .sheet__fade--bottom {
   bottom: 0;
-  background: linear-gradient(to top, var(--color-surface) 20%, var(--color-surface-fade));
+  background:
+    linear-gradient(to top, rgba(29, 42, 51, 0.22), rgba(29, 42, 51, 0)) bottom / 100% 1rem no-repeat,
+    linear-gradient(to top, var(--color-surface) 20%, var(--color-surface-fade));
 }
 
 .sheet:is([data-sheet-scroll='up'], [data-sheet-scroll='both']) .sheet__fade--top,

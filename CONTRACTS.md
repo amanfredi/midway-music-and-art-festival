@@ -1020,10 +1020,20 @@ CDNs, no analytics.
   `down` or `both` — from the scroller's own geometry, recomputed on scroll and
   on resize (the sheet's height is not settled when it opens: the embed caps it
   to a frame that reflows, and the app to a window that rotates). `app.css`
-  draws `.sheet__fade--top`/`--bottom` at each live edge, dissolving the content
-  into the sheet's own surface. Both directions, because "there is more below"
-  and "there is more above" are different facts; and the cue goes out at the end
-  of the scroll, because one that survives the end stops meaning anything.
+  draws `.sheet__fade--top`/`--bottom` at each live edge. Both directions,
+  because "there is more below" and "there is more above" are different facts;
+  and the cue goes out at the end of the scroll, because one that survives the
+  end stops meaning anything.
+
+  **The cue is two layers and needs both.** The dissolve — content fading into
+  the sheet's own surface — is the stronger signal, and it only speaks when
+  there is content at the fold to dissolve. The venue the report was filed
+  against has whitespace and half a button there, and the dissolve alone
+  photographed as a smudge (measured 2026-09-05,
+  `reviews/2026-09-embed-sheet/*-cue-phone-edge.png`). Under it is a shade at
+  the border, which draws whatever is behind it: an edge that content passes
+  under. Judge either of them on a magnified crop of the edge — the cue is the
+  last ~35 px of a 361 px sheet, and a whole-screen shot at 1x loses it.
 
   **A native scrollbar cannot carry this.** iOS hides overlay scrollbars until a
   finger is already moving, and iOS Safari is this app's reference browser — the

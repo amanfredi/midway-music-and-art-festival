@@ -58,12 +58,27 @@ affordance. It reads as a layout bug, and the visitor's conclusion is that the
 rest of the venue's page is broken rather than that it is one drag away.
 
 The content now dissolves into the sheet's own surface at whichever edge still
-has something behind it, and stops dissolving at the end of the scroll.
-`views/sheet.js` publishes `data-sheet-scroll` (`none`/`up`/`down`/`both`) on
-the dialog and `app.css` fades each live edge from it. Both surfaces get it from
-one code path — the app's own 80 vh bottom sheet overflows too, which was
-checked rather than assumed: at 393 × 480 it needs a scroll for every venue in
-the sheet.
+has something behind it, and stops at the end of the scroll. `views/sheet.js`
+publishes `data-sheet-scroll` (`none`/`up`/`down`/`both`) on the dialog and
+`app.css` draws each live edge from it. Both surfaces get it from one code path
+— the app's own 80 vh bottom sheet overflows too, which was checked rather than
+assumed: at 393 × 480 a venue sheet runs 261 px past its edge, against 155 in
+the embed's frame.
+
+**The dissolve alone was not enough, and the photographs are why.** It is the
+stronger of the two signals but it can only speak when there is content at the
+fold to dissolve — and the venue the report was filed against (Hive
+Collaborative) has whitespace and half a Share button there, so the first pass
+photographed as a smudge. A shade at the border went under it: that one draws
+whatever is behind it, and says "an edge, with content passing under it" rather
+than "this text is ending". Both together are what
+`reviews/2026-09-embed-sheet/after-cue-phone-edge.png` shows.
+
+That pair also taught the harness something. The cue is the last ~35 px of a
+361 px sheet, and at 1x a whole-screen shot loses it completely — judged from
+the full-screen shots the change looked like nothing had happened, twice. The
+capture script now emits a 3x crop of the edge, and that is the shot to judge
+this on.
 
 Two alternatives lost. **A styled scrollbar** fails on the one browser that
 matters most: iOS hides overlay scrollbars until a finger is already moving, so

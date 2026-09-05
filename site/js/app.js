@@ -12,7 +12,7 @@ import { renderVendors } from './views/vendors.js';
 import { renderSponsors } from './views/sponsors.js';
 import { requestPersistentStorage } from './persist-storage.js';
 import { initInstallPrompt } from './pwa-install.js';
-import { embedRoute, fullAppUrl, isEmbed } from './embed.js';
+import { embedRoute, fullAppUrl, isEmbed, reportHeightToParent } from './embed.js';
 
 const viewEl = document.getElementById('view');
 const bannerRegion = document.getElementById('banner-region');
@@ -61,10 +61,24 @@ function announceRoute(routeName) {
   });
 }
 
+/**
+ * The organizers' notice bar, above everything.
+ *
+ * Never in an embed. When the embed was built this went the other way — the
+ * banner is organizer content, and a same-day change should reach the people
+ * reading the map on the organizers' own site too — but seeing it on the live
+ * page settled it the other way round (Anthony, 2026-09-05): inside somebody
+ * else's page a dismissible bar reads as the embed malfunctioning rather than
+ * as the festival announcing something, and anything urgent can be said in the
+ * Squarespace page itself, where it will look like it belongs.
+ *
+ * Not rendered rather than hidden, so the embed carries no dismiss button in
+ * the tab order and never writes a dismissal to storage.
+ */
 function renderBanner() {
   const content = store.getContent();
   bannerRegion.innerHTML = '';
-  if (!content) return;
+  if (!content || isEmbed()) return;
   const { banner_id: bannerId, banner_text: bannerText } = content.settings;
   if (!bannerText || store.isBannerDismissed(bannerId)) return;
 
@@ -179,6 +193,8 @@ function startEmbed() {
   // Squarespace page and wherever the visitor came from. The router reads
   // location.hash when it starts, moments from now, so no event is needed.
   if (!location.hash.startsWith(route)) history.replaceState(null, '', route);
+
+  reportHeightToParent();
 
   document.addEventListener(
     'click',

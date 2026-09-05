@@ -18,20 +18,32 @@ const IS_SHOWN = `(selector) => {
   return !!el && getComputedStyle(el).display !== 'none';
 }`;
 
-// The iframe height README tells the operator to paste. It is a number somebody
-// types, so the fit below is a check on the mechanism — the embed laying itself
-// out short enough to fit a plausible height — and not on the live venue count,
-// which this suite never sees. README says how to recompute it.
-const IFRAME_HEIGHT = 1600;
+// The no-JS fallback height from README's snippet. The listener below should
+// replace it with the embed's real height within a frame or two, which is what
+// the test asserts — starting deliberately short so a broken listener shows up
+// as an internal scrollbar rather than passing by luck.
+const IFRAME_HEIGHT = 700;
 
 /** A tall host page with the embed in the middle of it, as Squarespace has it. */
 const HOST_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Host</title>
-<style>body{margin:0;font:16px system-ui} .band{height:900px;background:#eef}</style></head>
+<style>body{margin:0;font:16px system-ui} .band{height:900px;background:#eef}
+#map{display:block;width:100%;border:0;height:${IFRAME_HEIGHT}px}</style></head>
 <body>
 <div class="band" id="above">above the map</div>
-<iframe id="map" src="${EMBED_URL}" width="100%" height="${IFRAME_HEIGHT}" style="border:0;display:block"
-        title="Festival map" allow="geolocation"></iframe>
+<iframe id="map" src="${EMBED_URL}" title="Festival map" allow="geolocation"></iframe>
 <div class="band" id="below">below the map</div>
+<script>
+  // The listener README tells the operator to paste, character for character in
+  // what it checks: the message has to come from this iframe and carry a
+  // plausible height.
+  window.addEventListener('message', function (event) {
+    var frame = document.getElementById('map');
+    if (!frame || !event.data || event.data.type !== 'mmaf-embed-height') return;
+    if (event.source !== frame.contentWindow) return;
+    var height = Number(event.data.height);
+    if (height > 200 && height < 6000) frame.style.height = height + 'px';
+  });
+</script>
 </body></html>`;
 
 /** Resolves once the embedded map has drawn. */
@@ -64,8 +76,9 @@ test('the embed URL renders the map with no app header and no tab bar', async ({
       map: shown('[data-testid="map-canvas"]'),
       legend: shown('.map-legend'),
       venueKeys: document.querySelectorAll('.venue-key-btn').length,
-      // Organizer content, not app chrome — a same-day notice has to reach the
-      // people reading the map on the organizers' own site too.
+      // Suppressed along with the rest of the shell (ruled 2026-09-05): inside
+      // somebody else's page a dismissible bar reads as the embed
+      // malfunctioning rather than as the festival announcing something.
       banner: !!document.querySelector('[data-testid="notice-banner"]'),
     };
   }, IS_SHOWN);
@@ -76,7 +89,7 @@ test('the embed URL renders the map with no app header and no tab bar', async ({
   expect(state.map).toBe(true);
   expect(state.legend).toBe(true);
   expect(state.venueKeys).toBeGreaterThan(0);
-  expect(state.banner, 'the organizers’ banner is suppressed in the embed').toBe(true);
+  expect(state.banner, 'the notice banner shows inside the embed').toBe(false);
 });
 
 test('an unknown embed value falls back to the whole app rather than to no navigation', async ({ page }) => {
@@ -90,6 +103,7 @@ test('the app itself is untouched by the embed mode', async ({ page }) => {
   await waitForEmbeddedMap(page);
   const state = await page.evaluate((isShown) => ({
     tabBar: new Function('return ' + isShown)()('.tab-bar'),
+    banner: !!document.querySelector('[data-testid="notice-banner"]'),
     // Cooperative gestures are the embed's answer to being inside somebody
     // else's scrolling page; on the app's own page they would just make the
     // map harder to use.
@@ -97,6 +111,8 @@ test('the app itself is untouched by the embed mode', async ({ page }) => {
     embedClass: document.body.classList.contains('is-embed'),
   }), IS_SHOWN);
   expect(state.tabBar).toBe(true);
+  // The banner is the app's own; only the embed suppresses it.
+  expect(state.banner, 'the app itself lost its notice banner').toBe(true);
   expect(state.cooperative).toBe(false);
   expect(state.embedClass).toBe(false);
 });
@@ -123,8 +139,14 @@ test('an iframe of the embed scrolls the host page and never scrolls inside itse
   expect(embed, 'the embed iframe never loaded').toBeTruthy();
   await waitForEmbeddedMap(embed);
 
-  // The iframe is taller than everything the embed draws, so the embed has no
-  // scrollbar of its own for a scroll to get caught in.
+  // The embed tells the page how tall it is and the page believes it, so the
+  // iframe ends up the height of its content: no scrollbar inside it, and no
+  // band of blank space under the venue list. A fixed number cannot do this —
+  // the venue key's column count follows the iframe's width, which the host
+  // page decides, so any breakpoint can land on the wrong step.
+  await expect
+    .poll(async () => (await page.locator('#map').boundingBox()).height, { timeout: 10_000 })
+    .not.toBe(IFRAME_HEIGHT);
   const fits = await embed.evaluate(() => ({
     content: Math.ceil(document.documentElement.scrollHeight),
     frame: window.innerHeight,
@@ -133,6 +155,7 @@ test('an iframe of the embed scrolls the host page and never scrolls inside itse
     fits.content,
     `the embed needs ${fits.content}px and the iframe gives it ${fits.frame}px — the venue list would scroll inside the map`,
   ).toBeLessThanOrEqual(fits.frame);
+  expect(fits.frame - fits.content, 'the iframe is taller than the embed needs').toBeLessThan(4);
 
   // A plain wheel over the middle of the map moves the host page and leaves the
   // map where it was.

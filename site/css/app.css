@@ -1002,6 +1002,9 @@ html:has(dialog.sheet[open]) {
    deliberately inherits nothing from the host page's theme (no parity
    liability when the organizers restyle).
 
+   The notice banner is suppressed too, in app.js rather than here — it is
+   rendered rather than static, so not building it is cleaner than hiding it.
+
    Nothing here is scoped to the map view. The suppression is about the shell,
    and a second embed later should not need a second copy of it. */
 body.is-embed .app-header,
@@ -1015,6 +1018,12 @@ body.is-embed {
      reserve would otherwise read as a band of dead space at the end of the
      venue key list. */
   --tab-bar-height: 0px;
+  /* The app stretches to the viewport so its tab bar sits at the bottom of a
+     short page. In an iframe that viewport is the iframe, so the document can
+     never measure shorter than the frame it is in — and the height the embed
+     reports back (js/embed.js) could only ever grow the frame, never shrink it.
+     Nothing here needs the stretch: the embed is exactly as tall as it draws. */
+  min-height: 0;
 }
 
 /* The host page scrolls, and the map sits in the middle of it. touch-action:
@@ -1184,10 +1193,18 @@ body.is-embed .venue-key-list {
   cursor: pointer;
 }
 
+/* The sr-only treatment, with one addition: min-height has to be reset too.
+   The rule above sets min-height 44px for the touch target, and a min-height
+   beats height, so `height: 1px` alone left every hidden button a 44px
+   absolutely-positioned box stacked at the end of the view — about 19px of it
+   past the bottom of the page's content. That is scrollable overflow nothing
+   draws in, and it is what stopped the embed from being able to measure itself
+   (js/embed.js): the document was always taller than the body. */
 .pin-alt-btn:not(:focus) {
   position: absolute;
   width: 1px;
   height: 1px;
+  min-height: 0;
   padding: 0;
   margin: -1px;
   overflow: hidden;

@@ -4,6 +4,6 @@
     "events": "content/fixtures/events.csv",
     "vendors": "content/fixtures/vendors.csv",
     "sponsors": "content/fixtures/sponsors.csv",
-    "settings": "content/fixtures/settings.csv"
+    "settings": "tests/fixtures-good/settings.csv"
   }
 }

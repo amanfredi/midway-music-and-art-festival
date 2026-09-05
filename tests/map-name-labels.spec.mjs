@@ -85,30 +85,73 @@ test('names try above and below a pin before either side, and the corners after'
   }
 });
 
-test('pin layers reserve their boxes so labels cannot cross them; invisible halos do not', async ({ page }) => {
+test('every pin reserves a box, venue pins through a smaller blocker; halos and lines do not', async ({ page }) => {
   await gotoMap(page);
   const placement = await mapEval(page, (map) => {
-    const read = (id) => map.getLayoutProperty(id, 'icon-ignore-placement') ?? false;
-    const pins = [
-      'venue-pin',
-      'venue-leader-pin',
-      'venue-cluster',
-      'transit-pin',
-      'transit-leader-pin',
-      'sponsor-featured-pin',
-      'sponsor-generic-pin',
-    ];
+    const read = (id) => (map.getLayer(id) ? (map.getLayoutProperty(id, 'icon-ignore-placement') ?? false) : null);
+    const width = (image) => {
+      const img = map.style.getImage(image);
+      return img && img.data.width / img.pixelRatio;
+    };
     return {
-      pins: pins.map((id) => [id, read(id)]),
-      halos: ['venue-leader-halo', 'transit-leader-halo'].map((id) => [id, read(id)]),
+      // Pins that reserve their own image's box.
+      direct: ['venue-cluster', 'transit-pin', 'transit-leader-pin', 'sponsor-featured-pin', 'sponsor-generic-pin'].map(
+        (id) => [id, read(id)],
+      ),
+      // Venue pins draw at full size and reserve through a blocker instead.
+      delegating: ['venue-pin', 'venue-leader-pin'].map((id) => [id, read(id)]),
+      blockers: ['venue-pin-block', 'venue-leader-block'].map((id) => [id, read(id)]),
+      // Neither the invisible-until-selected halos nor the leader lines reserve.
+      transparent: ['venue-leader-halo', 'transit-leader-halo', 'venue-leader-line', 'transit-leader-line'].map((id) => [
+        id,
+        read(id),
+      ]),
+      pinWidth: width('pin-venue'),
+      blockWidth: width('pin-venue-block'),
     };
   });
-  for (const [id, ignored] of placement.pins) {
+
+  for (const [id, ignored] of placement.direct) {
     expect(ignored, `${id} does not register its collision box; a name can be placed across it`).toBe(false);
   }
-  for (const [id, ignored] of placement.halos) {
-    expect(ignored, `${id} reserves label room for a ring that is invisible until selected`).toBe(true);
+  for (const [id, ignored] of placement.delegating) {
+    expect(ignored, `${id} registers its own bounding box instead of delegating to its blocker`).toBe(true);
   }
+  for (const [id, ignored] of placement.blockers) {
+    expect(ignored, `${id} is missing; nothing is reserving space for the venue pins`).not.toBeNull();
+    expect(ignored, `${id} does not reserve anything, so a label can cross a venue diamond`).toBe(false);
+  }
+  for (const [id, ignored] of placement.transparent) {
+    expect(ignored, `${id} reserves label room it should not`).toBe(true);
+  }
+
+  // The point of the blocker: a diamond's bounding box is twice the diamond's
+  // area, so the box gives up the tips and keeps the body. Anything close to
+  // the pin's own width would be the old behaviour by another name.
+  expect(placement.blockWidth, 'the blocker reserves as much as the pin draws').toBeLessThan(
+    placement.pinWidth / Math.SQRT2 + 1,
+  );
+  expect(placement.blockWidth, 'the blocker is too small to protect the diamond body').toBeGreaterThan(
+    placement.pinWidth / 2,
+  );
+});
+
+// The tips may be grazed; the number may not. It sits at the centre, so the
+// blocker has to be wider than the number it is protecting — at two digits,
+// which is the widest the key list produces for this sheet.
+test("a venue pin's number stays inside what the pin reserves", async ({ page }) => {
+  await gotoMap(page);
+  const fit = await mapEval(page, (map) => {
+    const img = map.style.getImage('pin-venue-block');
+    const size = map.getLayoutProperty('venue-pin', 'text-size');
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.font = `700 ${size}px system-ui, Helvetica Neue, Helvetica, Arial`;
+    return {
+      blockHalf: img.data.width / img.pixelRatio / 2 + 2,
+      numberHalf: ctx.measureText('88').width / 2 + 2,
+    };
+  });
+  expect(fit.numberHalf, 'a two-digit pin number reaches outside the box that protects it').toBeLessThan(fit.blockHalf);
 });
 
 test('a venue is named at close zoom and nothing is named below the leader zoom', async ({ page }) => {
@@ -193,12 +236,20 @@ test("displaced venues' names ride their lanes: the coincident pair is named twi
 });
 
 // A pin whose four sides are all spoken for still has its corners, and on this
-// map that is common. Corners only work with an offset per anchor: a single
-// radial distance puts a diagonal candidate at radius/sqrt(2) on each axis,
-// which is INSIDE the square collision box it is meant to clear, so the
-// placement pass rejects it and the candidate is decoration. Measured before
-// the offsets were split out: adding corners changed nothing at all.
-test('every name layer offers the four corners, cleared to the box corner', async ({ page }) => {
+// map that is the common case. Two things have to hold for them to be usable.
+//
+// They need an offset per anchor: a single `text-radial-offset` places a
+// diagonal candidate at radius/sqrt(2) on each axis, inside the square box it is
+// meant to clear, so the placement pass rejects it and the candidate is
+// decoration. Measured before the offsets were split out, adding corner anchors
+// changed nothing at all.
+//
+// And they are measured to what the pin RESERVES, not to its bounding box. A
+// venue pin reserves a square of the diamond's own area (PIN_BLOCK_HALF), so the
+// corner clearance is smaller than the cardinal one -- a corner name sits as
+// close as a side name looks, instead of standing off at the bounding box's
+// corner, 1.41R out where the ink stopped at 0.71R.
+test('every name layer offers the four corners, cleared to what the pin reserves', async ({ page }) => {
   await gotoMap(page);
   const layers = await mapEval(page, (map, ids) =>
     ids.map((id) => {
@@ -208,21 +259,37 @@ test('every name layer offers the four corners, cleared to the box corner', asyn
       const pairs = expr[0] === 'literal' ? expr[1] : expr[3][1];
       const at = {};
       for (let i = 0; i < pairs.length; i += 2) at[pairs[i]] = pairs[i + 1];
-      return [id, at];
+      const blocker = map.style.getImage(id === 'sponsor-name-label' ? 'pin-sponsor-featured' : 'pin-venue-block');
+      return [id, at, blocker && blocker.data.width / blocker.pixelRatio / 2 + 2];
     }),
     ['venue-name-label', 'sponsor-name-label', 'venue-leader-name-label'],
   );
 
-  for (const [id, at] of layers) {
+  for (const [id, at, blockHalf] of layers) {
     for (const anchor of ['bottom-left', 'bottom-right', 'top-left', 'top-right']) {
       expect(at[anchor], `${id} offers no ${anchor} candidate`).toBeTruthy();
     }
-    // `left` puts the name east of the pin and `bottom` puts it above, so the
-    // corner that does both must carry the full sideways clearance AND the full
-    // upward one — not a diagonal share of one radius.
-    const east = at['left'][0];
-    const above = at['bottom'][1];
-    expect(at['bottom-left'], `${id}'s upper-right corner is closer in than its sides`).toEqual([east, above]);
-    expect(at['top-right'], `${id}'s lower-left corner is closer in than its sides`).toEqual([at['right'][0], at['top'][1]]);
+    // `left` puts the name east of the pin, `bottom` puts it above. The corner
+    // that does both carries a full clearance on each axis — never a diagonal
+    // share of one radius, which is what would put it back inside the box.
+    const cornerX = Math.abs(at['bottom-left'][0]);
+    const cornerY = Math.abs(at['bottom-left'][1]);
+    expect(cornerX, `${id}'s corner offset is a diagonal share of one radius`).toBeCloseTo(cornerY, 3);
+    expect(at['top-right'][0], `${id}'s corners are not symmetric`).toBeCloseTo(-cornerX, 3);
+    expect(at['top-right'][1], `${id}'s corners are not symmetric`).toBeCloseTo(cornerY, 3);
+
+    // And the corner has to sit outside what the pin reserves, or the pin's own
+    // box rejects its own name — the failure that made corners inert before.
+    const textPx = id === 'sponsor-name-label' ? 11 : 12;
+    expect(cornerX * textPx, `${id}'s corner candidate is inside the pin's own box`).toBeGreaterThan(blockHalf);
   }
+
+  // The venue layers' corners pull in closer than their sides, because a venue
+  // pin reserves less than it draws. A sponsor pin has no blocker of its own, so
+  // its corners stay at the side clearance.
+  const [venue] = layers;
+  expect(
+    Math.abs(venue[1]['bottom-left'][0]),
+    'venue corners stand off as far as the sides; the box shrink is not being used',
+  ).toBeLessThan(Math.abs(venue[1]['left'][0]));
 });

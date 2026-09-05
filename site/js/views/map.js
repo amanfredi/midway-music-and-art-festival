@@ -173,6 +173,21 @@ const FONT_SEMIBOLD = [`MMAF Semibold,${UI_FONT_STACK}`];
 // property of the current venue set, not a floor — re-measure if the sheet
 // gains venues.
 const VENUE_R = 19;
+// What a venue pin RESERVES, as the half-side of an axis-aligned square.
+//
+// Collision boxes in MapLibre are axis-aligned, and the bounding box of a
+// 45-degree square is twice its area: a diamond of half-diagonal R has area
+// 2R^2 and its AABB has 4R^2. The error is worst exactly where it shows -- on
+// the diagonals, where the ink stops at 0.71R and the box corner sits at 1.41R,
+// so a corner-placed name stood off twice as far as it looked like it should
+// (Anthony, 2026-09-04). This is the side of the square with the diamond's own
+// area, R * sqrt(2), so the box gives up the four tips and keeps the body.
+//
+// The tips are allowed to be grazed. What may not be covered is the diamond's
+// body or the number inside it, and the number is central: at VENUE_TEXT_PX a
+// two-digit label reaches ~12 px from the centre against this box's 13.4, so it
+// stays inside. A test pins that rather than trusting the arithmetic.
+const PIN_BLOCK_HALF = VENUE_R / Math.SQRT2;
 const SMALL_R = 11;
 const CLUSTER_R = 17;
 // The number inside the venue diamond, sized so a two-digit label still clears
@@ -735,6 +750,23 @@ function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
     ctx.lineWidth = strokeWidth;
     ctx.stroke();
   }
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
+}
+
+/**
+ * A pin's collision footprint: a square that reserves space and draws nothing.
+ *
+ * MapLibre ties a symbol's collision box to its image rect, so the only way to
+ * reserve less than the pin draws is to let something else do the reserving --
+ * the same decoupling the tether uses. The pin layer stops registering and this
+ * rides beside it, at the same position, with the box we actually want.
+ *
+ * Fully transparent rather than nearly so: the box comes from the image's
+ * dimensions, not its pixels, and a square of faint grey over the map's paper
+ * would be visible at exactly the sizes that matter.
+ */
+function blockerImage(halfSide, dpr) {
+  const { ctx } = pinCanvas(halfSide, halfSide, dpr);
   return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
 }
 
@@ -1528,17 +1560,17 @@ function venueNameRanks(venues, events) {
  * any that land inside the pin's box disappear. Measured on a phone frame:
  * 12px -> 11px took the placed names from 8 to 4, and 10px to none.
  */
-function nameCandidates({ clear, textPx, order, lane = NO_LANE }) {
+function nameCandidates({ clear, cornerClear = clear, textPx, order, lane = NO_LANE }) {
   const ems = (px) => px / textPx;
   const at = {
     east: ['left', [ems(lane.x + clear), ems(lane.y)]],
     west: ['right', [ems(lane.x - clear), ems(lane.y)]],
     above: ['bottom', [ems(lane.x), ems(lane.y - clear)]],
     below: ['top', [ems(lane.x), ems(lane.y + clear)]],
-    upRight: ['bottom-left', [ems(lane.x + clear), ems(lane.y - clear)]],
-    upLeft: ['bottom-right', [ems(lane.x - clear), ems(lane.y - clear)]],
-    downRight: ['top-left', [ems(lane.x + clear), ems(lane.y + clear)]],
-    downLeft: ['top-right', [ems(lane.x - clear), ems(lane.y + clear)]],
+    upRight: ['bottom-left', [ems(lane.x + cornerClear), ems(lane.y - cornerClear)]],
+    upLeft: ['bottom-right', [ems(lane.x - cornerClear), ems(lane.y - cornerClear)]],
+    downRight: ['top-left', [ems(lane.x + cornerClear), ems(lane.y + cornerClear)]],
+    downLeft: ['top-right', [ems(lane.x - cornerClear), ems(lane.y + cornerClear)]],
   };
   return order.flatMap((where) => at[where]);
 }
@@ -1587,6 +1619,9 @@ function addPins(
   const tethers = (lanes) =>
     [...new Map(lanes.map((lane) => [`${lane.x}_${lane.y}`, lane])).values()].filter((l) => l.x !== 0 || l.y !== 0);
   map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
+  // Reserves the diamond's own area rather than its bounding box -- see
+  // PIN_BLOCK_HALF and the venue blocker layers below.
+  map.addImage('pin-venue-block', blockerImage(PIN_BLOCK_HALF - 2, dpr).data, { pixelRatio: dpr });
   const haloColors = { fill: colors.accent, stroke: colors.accentDark };
   const tetherColors = { dot: colors.leaderDot, line: colors.leaderLine };
   map.addImage('leader-dot', leaderDotImage(tetherColors, dpr).data, { pixelRatio: dpr });
@@ -1941,6 +1976,11 @@ function addPins(
     },
     paint: { 'text-color': '#ffffff' },
   });
+  // The venue pins draw but no longer reserve: the blocker layers below do that,
+  // with a box the size of the diamond's own area rather than of its bounding
+  // box (see PIN_BLOCK_HALF). Splitting them is the only way -- MapLibre takes a
+  // symbol's collision box from its image rect, and icon-padding cannot go
+  // negative.
   map.addLayer({
     id: 'venue-pin',
     type: 'symbol',
@@ -1949,11 +1989,19 @@ function addPins(
     layout: {
       ...pinLayout,
       ...labelLayout,
+      'icon-ignore-placement': true,
       'icon-image': 'pin-venue',
       'text-field': ['get', 'label'],
       'text-size': VENUE_TEXT_PX,
     },
     paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: 'venue-pin-block',
+    type: 'symbol',
+    source: 'venues',
+    filter: plainVenue,
+    layout: { ...pinLayout, 'icon-image': 'pin-venue-block' },
   });
   map.addLayer({
     id: 'venue-leader-pin',
@@ -1963,8 +2011,9 @@ function addPins(
     layout: {
       ...pinLayout,
       ...labelLayout,
-      // The ordinary venue diamond, moved into its lane, so the box it reserves
-      // is the diamond's rather than the whole dot-to-diamond composite's.
+      // The ordinary venue diamond, moved into its lane. What it reserves is the
+      // blocker layer's business, not this one's.
+      'icon-ignore-placement': true,
       'icon-image': 'pin-venue',
       'icon-offset': laneIconOffset(laneOffsets),
       'text-field': ['get', 'label'],
@@ -1985,6 +2034,13 @@ function addPins(
       ],
     },
     paint: { 'text-color': '#ffffff' },
+  });
+  map.addLayer({
+    id: 'venue-leader-block',
+    type: 'symbol',
+    source: 'venue-groups',
+    minzoom: leaderZoom,
+    layout: { ...pinLayout, 'icon-image': 'pin-venue-block', 'icon-offset': laneIconOffset(laneOffsets) },
   });
 
   // Venue and sponsor names beside their pins, from the leader zoom inward --
@@ -2044,7 +2100,14 @@ function addPins(
         'text-size': NAME_TEXT_PX,
         'text-variable-anchor-offset': [
           'literal',
-          nameCandidates({ clear: VENUE_R + NAME_CLEAR_PX, textPx: NAME_TEXT_PX, order: NAME_ANCHOR_ORDER }),
+          nameCandidates({
+            clear: VENUE_R + NAME_CLEAR_PX,
+            // Measured to what the pin reserves, not to its bounding box, so a
+            // corner-placed name sits as close as a side-placed one looks.
+            cornerClear: PIN_BLOCK_HALF + NAME_CLEAR_PX,
+            textPx: NAME_TEXT_PX,
+            order: NAME_ANCHOR_ORDER,
+          }),
         ],
         'text-justify': 'auto',
         // Whose name survives a collision, decided rather than inherited from
@@ -2071,7 +2134,13 @@ function addPins(
   // ordered list. It supersedes text-anchor, text-offset and
   // text-radial-offset on this layer; setting any of them here does nothing.
   const displacedName = (offset) =>
-    nameCandidates({ clear: VENUE_R + NAME_CLEAR_PX, textPx: NAME_TEXT_PX, order: laneNameOrder(offset), lane: offset });
+    nameCandidates({
+      clear: VENUE_R + NAME_CLEAR_PX,
+      cornerClear: PIN_BLOCK_HALF + NAME_CLEAR_PX,
+      textPx: NAME_TEXT_PX,
+      order: laneNameOrder(offset),
+      lane: offset,
+    });
   const laneNames = laneOffsets.map((offset) => ({ key: laneKey(offset), candidates: displacedName(offset) }));
   map.addLayer(
     {

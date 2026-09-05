@@ -68,16 +68,26 @@ Nothing ships. The artist-facing constraints are in
 `reference/artist-accessibility-rider.md`; the three above are implementation
 constraints on whoever wires the artwork up, not on the artist.
 
-**Sponsor presentation, pending real sponsors.** The featured-vs-generic
-sponsor pin distinction wants a design review once someone can see it against
-real logos. Emerald tier's "special treatment / custom branding" is undefined
-because no emerald sponsor exists yet, and the ruby logo-pin map format is
-likewise unspecified. Added 2026-09-04: the Support tab's card ladder is now
-deliberately inverted above sapphire — sapphire renders two cards per row
-with a 96px logo tile, past ruby's 84px, because the two live tiers
-(sapphire/topaz) needed a visible step and no ruby or emerald sponsor exists
-(Anthony's call, problem deferred). If a ruby or emerald sponsor signs,
-re-rank the tiers above sapphire's new size before their logo publishes.
+**Emerald and ruby treatment, pending such a sponsor.** The featured-vs-generic
+pin distinction landed 2026-09-05 — featured is a 27 px square carrying the
+sponsor's own mark, generic a small solid diamond — so what is left here is only
+what no live sponsor can settle. Emerald tier's "special treatment / custom
+branding" is undefined because no emerald sponsor exists, and a ruby-specific
+map format is likewise unspecified; both render identically to sapphire today,
+which is the deliberate answer until one signs. Added 2026-09-04: the Support
+tab's card ladder is deliberately inverted above sapphire — sapphire renders two
+cards per row with a 96px logo tile, past ruby's 84px, because the two live tiers
+(sapphire/topaz) needed a visible step (Anthony's call, problem deferred). If a
+ruby or emerald sponsor signs, re-rank the tiers above sapphire's new size and
+decide the pin treatment before their logo publishes.
+
+Two smaller questions came out of the pin work:
+- **Whether a featured key-list card carries anything beyond mark and name** — a
+  blurb line, a tier label. Decide after seeing the list with the three live
+  sponsors, and before the Squarespace map embed ships, since that is where the
+  list is largest.
+- **The 64 KB mark cap and the 128 px raster floor are assumptions.** Revisit
+  when a real mark trips one; nothing does today (the live marks are 3–27 KB).
 
 **Transit pin green — needs a brand ack, then it lands.** White line letters
 on `--pin-transit` `#298d4e` compute 4.19:1. The CSS comment justifies that as
@@ -240,7 +250,8 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
 - [ ] **Hit-target floor for transit and sponsor pins** (WCAG 2.5.8, F4).
       **Needs re-measuring against the new map** — the old measurement (22.7px
       rendered, closest pair 3.4px apart) described SVG pins whose hit shape
-      was the diamond itself. Pins are now 22px canvas symbols, but a tap
+      was the diamond itself. Transit and generic sponsor pins are now 22px
+      canvas symbols (featured squares are 27px), but a tap
       resolves against a ±10px box around the touch point, so the effective
       target is larger than the drawn one and the two no longer coincide. Which
       of them 2.5.8 measures here is the question to settle before deciding
@@ -444,6 +455,11 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
       (procedure in README; standing gate, last passed 2026-08-10 — **owed
       again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
+- [ ] **Featured-pin marks on a real phone.** All three live marks draw, but the
+      judgement is a 3× one and the screenshots are 1×. Wellington Management's
+      is 318×144, which contain-fit makes ~21 × 9.5 px inside the square, and it
+      reads as a dark band rather than a building at 1×; if it does not resolve
+      at 3×, the fix is a squarer crop of the silhouette, not a bigger pin.
 - [ ] In-place content refresh on a real phone (new 2026-08-09, after the
       revalidation fix): with a tab already open, publish a banner change and
       confirm it appears without touching the tab; then confirm a worker

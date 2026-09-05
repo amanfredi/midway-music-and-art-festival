@@ -22,7 +22,10 @@ the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
 11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. All six
 sponsors carry `location`s in the sheet as of 2026-09-04, so each gets a map
 pin: a sponsor may sit anywhere inside the map's calibration frame, not just
-the festival box (ruled 2026-09-04 — see the log). Vendors is deliberately empty (`"vendors": null`), so that tab reads
+the festival box (ruled 2026-09-04 — see the log). The three sapphire sponsors are
+**Featured Destinations** (2026-09-05): 27 px squares carrying a committed
+square mark (`content/logos/<id>-pin.png`), listed above the venues in the
+map key; topaz sponsors are solid red diamonds listed below them. Vendors is deliberately empty (`"vendors": null`), so that tab reads
 "Vendor list coming soon."; the organizers have not named vendors yet.
 `content/fixtures/venues.csv` remains a hand-committed copy feeding the offline
 tests (refreshed 2026-08-09), and the emergency-build copies under
@@ -45,6 +48,100 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-05 — a Featured Destination looks like one
+
+Three sapphire sponsors bought the featured tier and got a pin
+indistinguishable in size from a topaz one: the same 22 px diamond, differing
+only in fill — and the fill convention ran backwards, so the *lesser* sponsor
+looked heavier. Nothing said which sponsor a red diamond was until the leader
+zoom, and no sponsor appeared in the key list at all, which is the only place a
+name shows at the home view and the part of the view the Squarespace map embed
+will surface at desktop widths.
+
+The featured pin is now the venue diamond unrotated: an axis-aligned square of
+side `FEATURED_SIDE = round(VENUE_R * sqrt(2))` = 27 px, paper with a 2 px red
+keyline, carrying the sponsor's own square mark contain-fit inside a 1 px
+inset. Equal ink to a venue pin and no more — the bounding-box reading (38 px)
+would have doubled it and put sponsors above venues in the hierarchy. Generic
+sponsors became a solid small red diamond, so fill now runs with weight instead
+of against it.
+
+The mark is a hand-made committed file, `content/logos/<id>-pin.<ext>` in svg
+or png, required exactly when a sponsor draws a featured pin — featured tier
+AND a location — and a hard build error otherwise, naming the path. That is the
+missing-logo rule applied one layer in, for the same reason: a pin with nothing
+in the middle of it is a paying sponsor's presence disappearing without anyone
+being told. Under `--skip-invalid-rows` the two rules part company (Anthony's
+call, 2026-09-05): a bad logo costs the logo, a bad mark costs the whole row.
+A sponsor without a wordmark still renders as a name, which the app handles,
+but a sponsor published without its mark would put an empty red square on the
+map — so the row is dropped and reported by name, which is what that flag
+already means for a row it cannot publish. Every way a required mark can fail
+behaves the same, and if the drops would leave the sponsors tab with nothing in
+it the build stops, the same refusal an all-rows-invalid source gets.
+
+No image library entered the build, which still has to deploy with NPM down.
+Copying the file is the only transformation, so unchanged sources keep
+producing a byte-identical content.json. Dimensions come out of a PNG's IHDR
+and an SVG root's own attributes — which is why those are the two formats
+allowed — and three things are reported without failing, because they are
+judgements a phone settles rather than rules: a raster under 128 px, an aspect
+past 2:1, and a `-pin` file for a sponsor that draws no featured pin. An SVG
+whose root lacks explicit width and height is refused outright: Safari draws
+nothing into a canvas from one, so the pin would be blank on iPhones and look
+right everywhere it was tested.
+
+Loading marks made pin images asynchronous for the first time. The layer draws
+the empty square from the first frame and swaps in per-sponsor images as they
+arrive, so nothing on the map waits on a mark and one 404 costs one sponsor its
+picture plus a console warning.
+
+Two pieces of geometry moved with the shape, both for the same reason — a
+square's ink runs all the way to its corner where a diamond's stops at a point.
+The sponsor name offset is now measured to the square's collision box
+(`FEATURED_SIDE / 2 + NAME_CLEAR_PX`) and its corner offset is no longer pulled
+in the way the venue pin's is; the old numbers would have landed every diagonal
+name inside the pin's own box, where the placement pass rejects it and the name
+silently disappears. And the clearance the displaced-transit check keeps from a
+sponsor was re-derived: in the |dx| + |dy| measure every shape contributes its
+L1 radius — R for a diamond, the full side for a square — so a stop clears a
+featured sponsor at `SMALL_R + FEATURED_SIDE` rather than `2 * SMALL_R`. The
+L1 test is sufficient but not tight for a square, which costs a few pixels of
+displacement and keeps one measure across the file.
+
+The key list under the map became three headed sections — Featured
+Destinations, Venues, Sponsors — holding exactly what the map draws, with an
+empty section rendering nothing at all rather than a heading over nothing.
+Sponsor cards run the venue card's path: highlight, recentre with `easeTo`, open
+the sheet. Venue cards and their numbering are untouched, and `.venue-key-btn`
+still means a venue card and only a venue card. Sponsors left `#map-pin-alt`,
+which now holds transit: a sponsor with a visible button and a hidden one is two
+stops for a screen reader and one pin.
+
+Measured at the home view against the 46 px the two shapes need: fixtures leave
+62.1 px between the closest featured pin and a venue, the live sheet 157.5 px.
+Neither is a floor. Wellington Management's mark is the one to watch — 318×144,
+which contain-fit turns into ~21 × 9.5 px inside the square, and the build says
+so; at a 1× screenshot it reads as a dark band rather than a building, and
+whether that is legible at 3× is a device question the airplane-mode pass now
+asks. Screenshots in `reviews/2026-09-sponsor-presentation/`; definition in
+`definitions/sponsor-map-presentation.md`.
+
+### 2026-09-05 — sponsor sheet links out to the sponsor, not to directions
+
+`openSponsorSheet` no longer offers "Open in Google Maps"; it renders a
+"Sponsor website" link from `sponsor.url` (same `safeHref`/new-tab-hint
+pattern as the venue sheet's website link), or no link at all when the
+sponsor has none. The sheet still opens only for sponsors with a pin — the
+gate moved from a maps href to the location fields directly. CONTRACTS.md's
+Google Maps line is now venue/transit only, with the sponsor website link's
+shape stated beside it. `shortline-credit-union` gained a fixture url so the
+with-link case has coverage; `daily-trim-barbershop` (also pinned, still no
+url) covers the no-link case. The Support page's card links now carry the
+same label ("Sponsor website" replaced "Visit site"): link text names the
+destination, and one label across both surfaces reads as one thing. `npm
+test` green (174 unit, 170 Playwright).
 
 ### 2026-09-05 — the sheet admits it scrolls
 

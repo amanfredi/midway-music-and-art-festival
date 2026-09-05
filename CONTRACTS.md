@@ -593,6 +593,21 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   recenters the map on it with `easeTo` (a jump under
   `prefers-reduced-motion`), in addition to opening the sheet.
 
+  **The card's camera must end where that venue has a pin of its own** — a
+  displaced pin on a leader line counts, an unbroken stack does not. Centring
+  alone is not that: below the leader zoom a stacked venue has no pin, so the
+  map centred on a cluster bubble and lit a feature it wasn't drawing, and the
+  tap produced nothing a visitor could see (measured 2026-09-05: 17 of 21
+  venues at the phone's home view, and the same at the 2026-09-04 baseline —
+  the gap dates from the key list first being linked to the map, in the first
+  week of clustering). So the tap zooms to the leader zoom as a floor, never
+  outward, and then **checks against what the engine drew** and steps in a
+  further whole zoom level if the venue is still inside a cluster. The floor
+  alone is not enough on principle even though it is enough for today's sheet:
+  the leader zoom clears every coincident group by construction, but clustering
+  releases on its own 26 px radius, so a pair too far apart to be a group can
+  still share a bubble there. Test the property, not the camera position.
+
   A **scale bar** (MapLibre `ScaleControl`, imperial, top-left) sits in the
   frame: across a 120 m–16 km zoom range nothing else says what scale the view
   is at. It is DOM + arithmetic; it fetches nothing.

@@ -46,6 +46,32 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-05 — a venue card zooms until that venue has a pin of its own
+
+Reported as a regression: clicking a venue in the key list no longer reaches a
+view where the highlighted pin is visible. **It is not a regression.** The same
+17 of 21 venues fail at `94187a0`, the commit before any of this month's map
+work, as at current `main` — same venues, and the same four that work. The
+camera code has not been touched since 2026-08-23, and it never set a zoom at
+all: it was written on 2026-08-11, the day after clustering shipped, and has
+never been able to break a stack.
+
+What it did instead was centre on a venue that had no pin and light a feature
+the map wasn't drawing. Those two things are exactly what the existing test
+asserted, which is how this stayed quiet for a month. The new test asserts the
+property — the venue ends up drawn, as its own pin, highlighted — and sweeps
+every venue in the fixtures.
+
+The tap now zooms to the leader zoom as a floor, and never outward. That is
+where the displaced treatment switches on, so every coincident group has broken
+into individual pins by then; measured across the whole sheet, it is also
+exactly the deepest floor any of the 21 venues needs. The second fact is
+arithmetic about this data rather than a guarantee — clustering releases on its
+own 26 px radius, so a pair 150 m apart is too far apart to be a coincident
+group and still close enough to share a bubble at the leader zoom. So the camera
+checks what the engine actually drew and steps in another whole level if it has
+to. There is a test for that pair, built to sit in the gap on purpose.
+
 ### 2026-09-05 — the embed's overlays move to the map frame
 
 Reported from the live page: tapping a venue pin in the embedded map scrolled

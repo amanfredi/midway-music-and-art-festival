@@ -38,17 +38,28 @@ procedure in README). A third surface is built and waiting to be pasted: the
 without app chrome (Map embed contract in CONTRACTS.md; iframe snippet and
 verification walk-through in README).
 
-**A deploy cannot ship right now**: the live venues tab's `id` column header has
-been overwritten with `5`, so the build refuses rather than publishing venues
-with no ids. The site stays on the last good build until the sheet is fixed —
-see the top of BACKLOG.
-
 The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
 service worker and CI all landed and were audited in earlier rounds.
 
 ## Log
 
 Newest first.
+
+### 2026-09-04 — every content view is a 560px column
+
+The Support cap (below) made that one page fixed-width while the rest of the
+site stayed fluid; Anthony ruled the cap should be site-wide. `.view` now caps
+every content view at 560px centered — the same number the map frame caps
+itself at — and the map view opts out, since `.map-frame` manages its own
+width including the 1100px desktop wide frame. The sponsors-specific cap is
+gone, subsumed by the shared rule. Verified at a 1400px window: schedule,
+vendors and sponsors columns all hold 560px, the map frame holds 1100px, and
+the suite is green at 144.
+
+Housekeeping in the same push: the venues-header deploy blocker recorded
+earlier today is cleared — cell A1 reads `id` again and `npm run build`
+succeeds against the live sheet — so its Status paragraph and BACKLOG section
+are gone.
 
 ### 2026-09-04 — cap the sponsors view, and let cards fill their row
 

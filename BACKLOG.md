@@ -4,19 +4,7 @@ Everything forward-looking lives here. PROGRESS.md is the state journal: what
 happened and why. Nothing should appear in both.
 
 Items are not prioritized against each other. The festival is October 2–4,
-2026; nothing here blocks the site working today — **except the first item
-below, which blocks every deploy.**
-
-## Blocking a deploy right now
-
-- **The venues tab's `id` header has been overwritten with `5`** (found
-  2026-09-04). `npm run build` fails with `venues.csv: expected column "id" is
-  missing from the header row (found: 5, name, address, location, description,
-  url)`, and so does the deploy workflow and the 6-hour content rebuild. The
-  live site is unaffected — it stays on the last good build — but nothing new
-  can ship until cell A1 of the venues tab reads `id` again. Every other cell in
-  the tab looks intact. This is a sheet fix, not a code one: the build is
-  refusing exactly as designed rather than publishing a guide with no venue ids.
+2026; nothing here blocks the site working today.
 
 - Consider adopting svelte/sveltekit (see especially the static site adapter https://svelte.dev/docs/kit/adapter-static)
 - Consider moving deployment to Cloudflare Pages free plan and reverting github repo to private visibility (https://developers.cloudflare.com/pages/framework-guides/deploy-a-svelte-kit-site/#deploy-with-cloudflare-pages)

@@ -290,11 +290,13 @@ export function openTransitSheet(stop, lineNames) {
 export function openSponsorSheet(sponsorId) {
   const sponsor = findSponsor(sponsorId);
   if (!sponsor) return;
-  const mapsHref = mapsDirectionsHref(sponsor.lat, sponsor.lng);
-  if (!mapsHref) return;
+  // Sheet still opens only for sponsors with a pin, even though the link it
+  // offers below is the sponsor's website rather than directions.
+  if (!Number.isFinite(sponsor.lat) || !Number.isFinite(sponsor.lng)) return;
+  const websiteHref = safeHref(sponsor.url);
   open(`
     <h2 class="sheet__title" id="sheet-title">${esc(sponsor.name)}</h2>
     ${sponsor.blurb ? `<p class="sheet__description">${esc(sponsor.blurb)}</p>` : ''}
-    <a class="btn btn--secondary" href="${esc(mapsHref)}" target="_blank" rel="noopener">Open in Google Maps${NEW_TAB_HINT}</a>
+    ${websiteHref ? `<a class="btn btn--secondary" href="${esc(websiteHref)}" target="_blank" rel="noopener">Sponsor website${NEW_TAB_HINT}</a>` : ''}
   `);
 }

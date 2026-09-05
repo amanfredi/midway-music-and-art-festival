@@ -26,7 +26,7 @@ function sponsorCardHtml(s, cardClass) {
       ${s.logo ? `<img class="sponsor-card__logo" src="${esc(s.logo)}" alt="${esc(s.name)} logo" loading="lazy">` : ''}
       <h3 class="sponsor-card__name">${esc(s.name)}</h3>
       ${s.blurb ? `<p class="sponsor-card__blurb">${esc(s.blurb)}</p>` : ''}
-      ${linkOrPlain(s.url, 'Visit site', 'sponsor-card__link')}
+      ${linkOrPlain(s.url, 'Sponsor website', 'sponsor-card__link')}
     </div>`;
 }
 
@@ -36,7 +36,7 @@ function spotlightHtml(s) {
       ${s.logo ? `<img class="sponsor-spotlight__logo" src="${esc(s.logo)}" alt="${esc(s.name)} logo" loading="lazy">` : ''}
       <h3 class="sponsor-spotlight__name">${esc(s.name)}</h3>
       ${s.blurb ? `<p class="sponsor-spotlight__blurb">${esc(s.blurb)}</p>` : ''}
-      ${linkOrPlain(s.url, 'Visit site', 'sponsor-spotlight__link')}
+      ${linkOrPlain(s.url, 'Sponsor website', 'sponsor-spotlight__link')}
     </div>`;
 }
 

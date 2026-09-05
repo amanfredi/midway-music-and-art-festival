@@ -1483,6 +1483,38 @@ body.is-embed .venue-key-list {
   pointer-events: none;
 }
 
+/* The toast root joins the **top layer** while it has something to say.
+   `z-index: 60` cannot reach it: a modal <dialog> and its ::backdrop paint in
+   the top layer, above every z-index on the page, so a toast raised from inside
+   the venue sheet was drawn underneath the sheet that raised it — which is
+   every "Link copied" the share button has ever produced.
+
+   `popover="manual"`, set from js/util.js and only where the browser has
+   `showPopover`, so a browser without it keeps exactly today's behaviour rather
+   than losing its toasts to the UA's `display: none`. Manual, not `auto`: an
+   auto popover light-dismisses on the next click anywhere, and a toast is not
+   something the visitor opened.
+
+   Everything below undoes a UA style that would otherwise fight the rules
+   above — `[popover]` arrives centred, boxed and painted. */
+#toast-root[popover] {
+  top: auto;
+  width: auto;
+  height: auto;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  overflow: visible;
+  background: none;
+  color: inherit;
+}
+
+/* Restating the UA's own hiding rule at author strength, because the display:
+   flex above outranks it and would leave an empty popover in the layout. */
+#toast-root[popover]:not(:popover-open) {
+  display: none;
+}
+
 .toast {
   background: var(--color-text);
   color: #fff;

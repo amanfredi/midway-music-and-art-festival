@@ -419,12 +419,12 @@ test('a toast in the embed appears over the map, not at the bottom of the iframe
 // A toast a sheet raised follows the sheet, not the map: the sheet is what the
 // visitor is looking at, and after a venue-card tap it is nowhere near the map.
 //
-// Geometry only. A toast raised while a sheet is open is painted *under* it —
-// a modal <dialog> and its ::backdrop are in the top layer, above every
-// z-index on the page — so there is nothing here to assert about visibility
-// yet. That is true of the app as much as the embed, it predates the embed,
-// and it is in BACKLOG. Anchoring is worth pinning meanwhile: it is what makes
-// that a one-line fix instead of two problems at once.
+// Being in the right place is half of it; being drawn at all is the other half,
+// and that needed the toast root to join the top layer the open sheet already
+// occupies (toast-layer.spec.mjs holds that mechanism, on both surfaces). Both
+// are asserted here because in the embed they fail in different directions: the
+// wrong anchor puts the toast a screen away, and the wrong layer puts it behind
+// the sheet in exactly the right place.
 test('a toast raised by the sheet follows the sheet rather than the map', async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 852 });
   await page.goto(EMBED_URL);
@@ -446,6 +446,7 @@ test('a toast raised by the sheet follows the sheet rather than the map', async 
       toast: round(document.querySelector('.toast').getBoundingClientRect()),
       sheet: round(document.querySelector('dialog.sheet').getBoundingClientRect()),
       frame: round(document.querySelector('.map-frame').getBoundingClientRect()),
+      inTopLayer: document.getElementById('toast-root').matches(':popover-open'),
     };
   });
 
@@ -454,6 +455,7 @@ test('a toast raised by the sheet follows the sheet rather than the map', async 
   );
   expect(boxes.toast.bottom, 'the toast sits below the sheet that raised it').toBeLessThanOrEqual(boxes.sheet.bottom);
   expect(boxes.toast.top, 'the toast sits above the sheet that raised it').toBeGreaterThanOrEqual(boxes.sheet.top);
+  expect(boxes.inTopLayer, 'the toast is in the right place and behind the sheet').toBe(true);
 });
 
 // With no tab bar there is no way back, so a link out of the map must not

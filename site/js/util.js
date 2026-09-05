@@ -52,6 +52,27 @@ export function groupBy(items, keyFn) {
   return groups;
 }
 
+/**
+ * Puts the toast root in the top layer, where a modal `<dialog>` cannot cover
+ * it, and says whether it managed to.
+ *
+ * The attribute is set from here rather than written into the markup so a
+ * browser without `showPopover` never receives it: the UA hides a `[popover]`
+ * that is not open, so an unsupported browser would lose its toasts entirely
+ * rather than keep the old behaviour of drawing them under an open sheet.
+ *
+ * `manual`, not `auto`: an auto popover light-dismisses on the next click
+ * anywhere on the page, and a toast is not something the visitor opened.
+ */
+function raiseToastRoot(root) {
+  if (typeof root.showPopover !== 'function') return false;
+  if (!root.hasAttribute('popover')) root.setAttribute('popover', 'manual');
+  // A second toast inside the first one's 3.2s is ordinary, and showPopover
+  // throws on a popover that is already showing.
+  if (!root.matches(':popover-open')) root.showPopover();
+  return true;
+}
+
 /** Show a brief, non-blocking toast message (e.g. geolocation errors). */
 export function showToast(message, duration = 3200) {
   const root = document.getElementById('toast-root');
@@ -66,13 +87,12 @@ export function showToast(message, duration = 3200) {
   // the visitor is looking and it is what raised the toast. Read from the DOM
   // rather than passed in: every showToast caller would otherwise have to know
   // whether a sheet happens to be open, which is not their business.
-  //
-  // Caveat worth knowing: a toast raised while a sheet is open is currently
-  // drawn *underneath* it. A modal <dialog> and its ::backdrop paint in the top
-  // layer, above every z-index on the page. That is true of the app as much as
-  // the embed and is tracked in BACKLOG; anchoring it correctly is what makes
-  // fixing that a one-line change rather than two problems at once.
   anchorEmbedOverlay(root, { sitOn: document.querySelector('dialog.sheet[open]') ?? undefined });
+  // **Before the message is appended, and that ordering is load-bearing.**
+  // #toast-root is the aria-live region, and a region that is display:none when
+  // the text arrives may never be announced -- so it has to be showing, and
+  // therefore rendered, before it is given anything to say.
+  raiseToastRoot(root);
   // No role/aria-live on the toast itself: #toast-root is already the live
   // region, and a nested one makes screen readers announce twice.
   const el = document.createElement('div');
@@ -83,7 +103,17 @@ export function showToast(message, duration = 3200) {
   requestAnimationFrame(() => el.classList.add('toast--visible'));
   setTimeout(() => {
     el.classList.remove('toast--visible');
-    setTimeout(() => el.remove(), 300);
+    setTimeout(() => {
+      el.remove();
+      // Out of the top layer once it has nothing to say, so it can never sit
+      // above a sheet opened later. Guarded on the last toast, because
+      // overlapping messages share the root -- and on the attribute, because
+      // `matches(':popover-open')` throws an unknown-pseudo-class SyntaxError
+      // in a browser that has no popover support to have set it.
+      if (!root.firstElementChild && root.hasAttribute('popover') && root.matches(':popover-open')) {
+        root.hidePopover();
+      }
+    }, 300);
   }, duration);
 }
 

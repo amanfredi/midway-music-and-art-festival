@@ -711,6 +711,15 @@ img {
   color: var(--color-text-muted);
 }
 
+/* Capped like .map-frame: #view itself is full-bleed, and without a cap the
+   sapphire two-up grid below grows each card to half a desktop window. 560px
+   is the map frame's own cap, so the two views agree on what "content width"
+   means on a laptop. */
+.sponsors-view {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
 .sponsor-tier {
   margin-bottom: 1.5rem;
 }
@@ -724,7 +733,11 @@ img {
 
 .sponsor-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  /* auto-fit, not auto-fill: with fewer cards than fit the row, auto-fill
+     keeps minting empty tracks as the row widens, so the real cards snapped
+     narrower at every breakpoint — wider window, smaller logos. auto-fit
+     collapses the empty tracks and lets the cards stretch to fill the row. */
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 0.75rem;
 }
 

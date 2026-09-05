@@ -50,6 +50,20 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-04 — cap the sponsors view, and let cards fill their row
+
+The two-up sapphire grid exposed that `#view` has no desktop width cap — the
+map caps itself (`.map-frame`) and every other view had stayed narrow only by
+accident of its content — so sapphire cards grew to half a desktop window.
+The sponsors view now caps at 560px, the map frame's own cap. Separately, the
+card grid's `auto-fill` kept minting empty 150px tracks as the window
+widened, so a tier with fewer cards than tracks snapped *smaller* at every
+breakpoint while resizing — Anthony watched topaz stutter and shrink as he
+widened the window. `auto-fit` collapses the empty tracks so the cards
+stretch to fill their row instead. Measured after the fix: from ~600px of
+window width up the tab no longer changes at all — sapphire cards hold 274px,
+topaz 179px — and the phone layout is untouched.
+
 ### 2026-09-04 — deliberate label collisions, a desktop map frame, and a map embed
 
 `definitions/squarespace-map-embed.md`, in three stages. The suite is green at

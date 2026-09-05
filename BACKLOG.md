@@ -94,12 +94,17 @@ and re-spec. The 4.5:1 small-text requirement is unchanged.
 
 ## Squarespace umbrella site
 
-**Re-paste the map embed snippet** (added 2026-09-05). The embed is live, but
-the snippet gained a `<script>` half on 2026-09-05: the map now posts its height
-and the listener sizes the iframe from it, which is what removed the blank space
-under the venue list. Until the block is re-pasted the live page runs on the
-fallback heights alone, which is the state Anthony saw. The snippet is in
-README, and step 3 of the walk-through is the check that it took.
+**Does the embed's venue sheet read as cramped on a phone?** (added 2026-09-05,
+for Anthony's eye rather than an engineer's). The sheet is confined to the map
+frame and never taller than it — on a phone that is a 361 px square, and a
+typical venue's sheet wants about 500, so it scrolls inside itself with the last
+button cut off mid-height: `reviews/2026-09-embed-sheet/after-sheet-phone.png`.
+The alternative is to start it at the frame's *top* and let it grow downward to
+its natural height, which fits on screen in every case measured — but only while
+the visitor has the map near the top of their screen, and the embed has no way
+to know whether they do (CONTRACTS.md, "Map embed"). Confinement was chosen
+because it is always visible, not because it is prettier. The picture is what to
+judge it on.
 
 **Performers embed follow-ups** (added 2026-09-04). The embed ignores the
 accordion block's "expand first item" setting (`data-is-expanded-first-item`) —

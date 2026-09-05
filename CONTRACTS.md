@@ -1013,6 +1013,43 @@ hash is required and none should be pasted.
   never measure shorter than the frame it is in and the reported height could
   only ever grow; and the measurement reads the **body's** box rather than
   `documentElement.scrollHeight`, which never reports less than the viewport.
+- **Overlays anchor to the map frame, not to the viewport.** The app pins the
+  venue sheet and the toasts to the bottom of the window. Inside a
+  content-height iframe that is the bottom of the *venue key*, a screen and a
+  half below the map: measured on the live page 2026-09-05, a pin tap opened the
+  sheet at y=1122 in a 1661 px iframe while the visitor was looking at
+  y=40..704. `anchorToEmbedFrame()` in `js/embed.js` publishes the frame's box
+  as `--embed-anchor-{left,width,bottom,height}` on the overlay and the
+  `body.is-embed` rules in `app.css` place both overlays from them. The
+  fallbacks are the app's own values, so an overlay opened with no map frame on
+  the page is placed exactly as the app places it.
+
+  **The sheet is confined to the frame**: as wide as it, on its bottom edge,
+  never taller. Confinement is the point — the frame is the one box the visitor
+  is demonstrably looking at, since an overlay only opens in answer to a tap on
+  it, and a sheet that ran past the frame would be heading back towards the edge
+  of the screen. A venue with a long list scrolls inside the sheet, which is
+  what the app's own `80vh` cap does on a small phone.
+
+  **Where the host page is scrolled to is unknowable, and two ways of learning
+  it were ruled out.** A cross-origin `IntersectionObserver` looks like the
+  answer — `intersectionRect` is populated where `rootBounds` is null — but it
+  only delivers on a threshold crossing, and a fixed-height band sliding down a
+  taller iframe never changes the ratio: measured on the live page 2026-09-05,
+  WebKit reported the same stale band at three different host scroll positions
+  where Chromium tracked it. Having the host post its scroll position would
+  work, and would put every future fix behind a re-paste in somebody else's CMS.
+
+  `dialog.focus({ preventScroll: true })` in `views/sheet.js` is the other half.
+  Focus otherwise scrolls its target into view, and inside an iframe that scroll
+  is the *host page's* — which the embed may neither see nor undo. There is
+  nothing off-screen to scroll to now; this is belt and braces for the engines
+  that cannot be tested here.
+
+  The general rule, for whatever is pinned next: **anything the app fixes to the
+  viewport has to be re-anchored in the embed.** As of 2026-09-05 that is every
+  `position: fixed` rule in `app.css` — the tab bar (suppressed), the sheet and
+  the toasts (anchored).
 - **Cooperative gestures are on in the embed and off in the app**
   (`cooperativeGestures: isEmbed()`): ctrl+wheel to zoom, two fingers to pan.
   On the app's own page the map is the page and a plain wheel should zoom it;

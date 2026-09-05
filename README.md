@@ -454,13 +454,18 @@ Load the published page in an ordinary tab, not the Squarespace editor.
    one means the height message is not getting through — check that the
    `<script>` half of the snippet was pasted, and that the class on the iframe
    still matches the one the listener looks for.
-4. Click a pin, or a venue in the list: the venue sheet opens over the map.
-   Escape or the × closes it.
+4. Click a pin, or a venue in the list: the venue sheet opens **over the map**
+   and the page does not move under you. Escape or the × closes it. A page that
+   jumps down to the bottom of the map block instead is running a deploy from
+   before 2026-09-05, when the sheet was pinned to the bottom of the iframe —
+   which on a phone is a screen and a half below the map.
 5. Click one of the events inside that sheet: it opens the full app in a new
    tab, on that event. It must not navigate the embed itself — there is no tab
    bar in there to get back with.
 6. Click the ◎ locate button: the browser asks for location permission. Nothing
-   happening means `allow="geolocation"` is missing from the iframe tag.
+   happening means `allow="geolocation"` is missing from the iframe tag. Deny
+   it, and the explanation appears as a dark bar across the map — over the map
+   rather than at the bottom of the block, for the same reason as step 4.
 7. On a phone: one finger scrolls the page past the map, two fingers pan the
    map, and the link out of step 1's text block is visible without hunting.
 

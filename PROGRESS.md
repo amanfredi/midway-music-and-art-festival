@@ -33,10 +33,11 @@ The organizers' Squarespace site carries two pages rendered from this same
 pipeline — **Performers** and **Venues** (midwaymusicandart.org/performers,
 /venues), live since 2026-09-04 — via the twin embed scripts in `site/js/`
 (binding interface: the Squarespace embed contract in CONTRACTS.md; operator
-procedure in README). A third surface is built and waiting to be pasted: the
-**map embed**, `https://go.midwaymusicandart.org/?embed=map`, the Map view
-without app chrome (Map embed contract in CONTRACTS.md; iframe snippet and
-verification walk-through in README).
+procedure in README). A third is live at midwaymusicandart.org/map: the **map
+embed**, `https://go.midwaymusicandart.org/?embed=map`, the Map view without app
+chrome, in an iframe that sizes itself from a height the embed posts to it (Map
+embed contract in CONTRACTS.md; iframe snippet and verification walk-through in
+README).
 
 The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
 service worker and CI all landed and were audited in earlier rounds.
@@ -44,6 +45,82 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-05 — the embed's overlays move to the map frame
+
+Reported from the live page: tapping a venue pin in the embedded map scrolled
+the host page down to the bottom of the iframe instead of popping the sheet up
+in place.
+
+The sheet is `position: fixed` to the bottom of the viewport, and the embed's
+viewport is the whole iframe — which the height work above deliberately made as
+tall as the embed's content. So the two changes are the same change seen twice:
+in a 1661 px iframe the sheet opened at y=1122 while the visitor was looking at
+y=40..704. Measured on the live page, so the numbers are the real ones.
+
+Neither headless Chromium nor headless WebKit performs the scroll (0 px in both,
+against the live page and against a local host harness), so the fix is aimed at
+the cause rather than the symptom: the sheet now opens inside the map frame,
+where there is nothing off-screen for any browser to scroll to.
+`dialog.focus({ preventScroll: true })` covers the engines that cannot be tested
+here. The same fault had a second victim — toasts, including the "Link copied"
+the sheet's own share button raises — and they are anchored the same way.
+
+Anchoring to the map frame rather than to the visitor's screen is a compromise,
+and the two ways to do better were tried and rejected. A cross-origin
+`IntersectionObserver` does report which band of itself an iframe can see, but
+only redelivers on a threshold crossing: a fixed-height band sliding down a
+taller iframe never changes the ratio, and WebKit duly reported the same stale
+band at three different host scroll positions where Chromium tracked it. Having
+the host page post its scroll position would work, and would put every future
+fix behind another paste into somebody else's CMS.
+
+Evidence in `reviews/2026-09-embed-sheet/`; the phone pair is the clearest —
+before, the entire screen is dimmed with no sheet anywhere on it.
+
+Also checked while reading the live page: the Squarespace block carries the
+snippet's `<script>` half and the deploy carries `reportHeightToParent`, so the
+re-paste the previous entry was waiting on has happened and that backlog item is
+closed.
+
+### 2026-09-05 — the live embed: no demo banner, no banner at all, and it sizes itself
+
+The map embed is pasted and live on the Squarespace site. Three things from
+Anthony's review of it.
+
+**The "Demo Preview" bar on production was ours.** `settings` is still the
+placeholder fixture, so `content/fixtures/settings.csv` *is* the content path —
+`content/config.json` points at it — and its `banner_text` said "Demo preview."
+Cleared, along with `banner_id`. It was not a demo-clock leak: nothing renders
+on `?t=`. The banner's behaviour is still covered by a test-only settings
+fixture under `tests/fixtures-good/`, which the offline, stored-state and
+sw-update suites read through the test config.
+
+**The banner is now suppressed in the embed**, reversing the call recorded when
+the embed was built. The reasoning then was that a banner is organizer content
+and a same-day notice should reach people reading the map on the organizers'
+own site too. Live, it reads as the embed malfunctioning — a dismissible bar
+inside somebody else's page — and anything urgent can be said in the Squarespace
+page itself. Decided on the evidence, not flipped silently.
+
+**The iframe sizes itself now.** The fixed-height ruling did not survive
+contact: the venue key lays out in as many columns as the iframe is wide enough
+for, so the content steps from ~1060 px at four columns to ~1780 at one, and a
+stylesheet in the host page can only branch on the host's viewport while the
+column count follows the iframe's width, which Squarespace decides. Any
+breakpoint can land on the wrong step. The embed posts its height and the
+snippet's listener applies it; the old heights stay as a no-JS fallback.
+Measured across fourteen widths from 1440 to 320: no internal scrollbar
+anywhere, and zero blank space.
+
+Getting that measurement to be possible turned up two real bugs, neither of them
+embed plumbing. `body { min-height: 100dvh }` makes the document at least as
+tall as its frame, so a height reported from inside an iframe could only ever
+grow it. And every visually-hidden pin-alt button was a 44 px absolutely
+positioned box: the sr-only rule set `height: 1px` while the base rule kept
+`min-height: 44px`, and a min-height beats a height. That left ~19 px of
+scrollable overflow at the bottom of the map view that nothing draws in — on the
+app's own pages as much as in the embed.
 
 ### 2026-09-04 — the Playwright port is per-checkout, so concurrent suites stop fighting
 
@@ -92,45 +169,6 @@ widened the window. `auto-fit` collapses the empty tracks so the cards
 stretch to fill their row instead. Measured after the fix: from ~600px of
 window width up the tab no longer changes at all — sapphire cards hold 274px,
 topaz 179px — and the phone layout is untouched.
-
-### 2026-09-05 — the live embed: no demo banner, no banner at all, and it sizes itself
-
-The map embed is pasted and live on the Squarespace site. Three things from
-Anthony's review of it.
-
-**The "Demo Preview" bar on production was ours.** `settings` is still the
-placeholder fixture, so `content/fixtures/settings.csv` *is* the content path —
-`content/config.json` points at it — and its `banner_text` said "Demo preview."
-Cleared, along with `banner_id`. It was not a demo-clock leak: nothing renders
-on `?t=`. The banner's behaviour is still covered by a test-only settings
-fixture under `tests/fixtures-good/`, which the offline, stored-state and
-sw-update suites read through the test config.
-
-**The banner is now suppressed in the embed**, reversing the call recorded when
-the embed was built. The reasoning then was that a banner is organizer content
-and a same-day notice should reach people reading the map on the organizers'
-own site too. Live, it reads as the embed malfunctioning — a dismissible bar
-inside somebody else's page — and anything urgent can be said in the Squarespace
-page itself. Decided on the evidence, not flipped silently.
-
-**The iframe sizes itself now.** The fixed-height ruling did not survive
-contact: the venue key lays out in as many columns as the iframe is wide enough
-for, so the content steps from ~1060 px at four columns to ~1780 at one, and a
-stylesheet in the host page can only branch on the host's viewport while the
-column count follows the iframe's width, which Squarespace decides. Any
-breakpoint can land on the wrong step. The embed posts its height and the
-snippet's listener applies it; the old heights stay as a no-JS fallback.
-Measured across fourteen widths from 1440 to 320: no internal scrollbar
-anywhere, and zero blank space.
-
-Getting that measurement to be possible turned up two real bugs, neither of them
-embed plumbing. `body { min-height: 100dvh }` makes the document at least as
-tall as its frame, so a height reported from inside an iframe could only ever
-grow it. And every visually-hidden pin-alt button was a 44 px absolutely
-positioned box: the sr-only rule set `height: 1px` while the base rule kept
-`min-height: 44px`, and a min-height beats a height. That left ~19 px of
-scrollable overflow at the bottom of the map view that nothing draws in — on the
-app's own pages as much as in the embed.
 
 ### 2026-09-04 — names aim at their own pin, and diagonals come in to the ink
 

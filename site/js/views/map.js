@@ -1473,7 +1473,7 @@ export async function renderMap(container, content) {
       const ref = pinRef.get(venueId);
       if (!ref) return;
       selectPin(ref.source, ref.id);
-      map.easeTo({ center: ref.center, duration: cameraDuration(450) });
+      revealPin(map, { venueId, center: ref.center, floor: leaderZoom, maxZoom });
     };
   });
 
@@ -2418,6 +2418,55 @@ function wirePinTaps(map, { transitById, maxZoom, selectPin }) {
       map.getCanvas().style.cursor = '';
     });
   }
+}
+
+/** Is `venueId` on screen as a pin of its own, rather than inside a stack? */
+function pinIsDrawn(map, venueId) {
+  return ['venue-pin', 'venue-leader-pin'].some(
+    (layer) =>
+      map.getLayer(layer) &&
+      map.queryRenderedFeatures({ layers: [layer] }).some((f) => f.properties.id === venueId)
+  );
+}
+
+/**
+ * Moves the camera until a venue is drawn as its own tappable pin.
+ *
+ * Centring alone is not enough, which is what a key-list tap used to do. A
+ * venue in a stack has no pin of its own to centre on: below the leader zoom
+ * its coincident group draws as a single symbol, and below that supercluster
+ * has whole neighbourhoods rolled into one numbered bubble. Measured
+ * 2026-09-05 on a phone at the home view: 17 of 21 venues had nothing to show
+ * for the tap. Never zooms out — a visitor already looking closely stays there.
+ *
+ * The leader zoom is the floor because that is where the displaced treatment
+ * switches on: from there inward every venue in a group has a pin of its own on
+ * a leader line. It happens to clear the clusters too — measured over the whole
+ * sheet, the deepest floor of 21 venues is exactly the leader zoom — but that is
+ * arithmetic about this data, not a guarantee. Clustering releases on its own
+ * radius: a pair 60 m apart is too far apart to be a coincident group and still
+ * close enough to share a bubble at the leader zoom, and the venue sheet is
+ * edited by people with no reason to know that. So the camera checks its work
+ * against what the engine actually drew and steps in again if it has to, by
+ * whole zoom levels because that is where clustering changes.
+ */
+function revealPin(map, { venueId, center, floor, maxZoom }) {
+  const near = (a, b) => Math.abs(a - b) < 1e-6;
+  const step = (zoom) => {
+    map.easeTo({ center, zoom, duration: cameraDuration(450) });
+    // `idle` rather than `moveend`: symbol placement lands a frame or two after
+    // the camera stops, and a query before that reports the pin as missing.
+    // If it never fires, the correction is simply skipped.
+    map.once('idle', () => {
+      const at = map.getCenter();
+      // A visitor who grabbed the map mid-flight has overruled this; leaving
+      // their camera alone matters more than finishing the job.
+      if (!near(at.lng, center[0]) || !near(at.lat, center[1])) return;
+      if (zoom >= maxZoom || pinIsDrawn(map, venueId)) return;
+      step(Math.min(maxZoom, Math.floor(zoom) + 1));
+    });
+  };
+  step(Math.max(map.getZoom(), floor));
 }
 
 /**

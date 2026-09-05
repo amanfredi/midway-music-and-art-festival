@@ -131,6 +131,9 @@ async function farthestVenue(page) {
     .sort((a, b) => b.d - a.d)[0];
 }
 
+// Camera and feature state only. That both were right while the tap still put
+// nothing on screen is why map-key-list.spec.mjs exists: it asserts the venue
+// ends up with a pin of its own, drawn, which is the property that matters.
 test('tapping a venue card recenters the map on its pin and highlights it', async ({ page }) => {
   await gotoMap(page);
 

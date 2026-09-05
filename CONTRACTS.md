@@ -920,9 +920,13 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   for the same intersection. "You are here" dot only when
   `settings.you_are_here_enabled === "true"` AND user taps a locate button
   (geolocation permission requested on tap, never on load).
-- Venue/sponsor detail includes an "Open in Google Maps" link:
+- Venue/transit detail includes an "Open in Google Maps" link:
   `https://www.google.com/maps/dir/?api=1&destination=<lat>,<lng>&travelmode=walking` (plain
-  link — allowed as user-initiated navigation, not a page resource).
+  link — allowed as user-initiated navigation, not a page resource). The
+  sponsor sheet has no maps link; instead it has a "Sponsor website" link
+  built the same way as the venue sheet's website link (`safeHref(sponsor.url)`,
+  `target="_blank"`, `rel="noopener"`, `NEW_TAB_HINT`), or no link at all when
+  the sponsor has no `url`.
 
 ## UI contract
 

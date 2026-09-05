@@ -410,8 +410,9 @@ async function expectNewTabLinksNamed(scope, label) {
 }
 
 test('external links say they open in a new tab, on views and in every sheet', async ({ page }) => {
-  // Support view: the donate link (the fixture sponsors carry no urls, so the
-  // card links — built by the same helper — have no link to render here).
+  // Support view: the donate link, plus Shortline Credit Union's card link
+  // now that it carries a url (the other fixture sponsors still don't, so
+  // their card links — built by the same helper — render as inert text).
   await page.goto('/' + T + '#/sponsors');
   await expect(page.locator('[data-testid="donate-link"]')).toBeVisible();
   await expectNewTabLinksNamed(page.locator('[data-testid="sponsor-list"]'), 'Support view');
@@ -441,10 +442,22 @@ test('external links say they open in a new tab, on views and in every sheet', a
 
   await page.evaluate(async () => {
     const { openSponsorSheet } = await import('./js/views/sheet.js');
-    openSponsorSheet('shortline-credit-union'); // the fixture sponsor with a location
+    openSponsorSheet('shortline-credit-union'); // the fixture sponsor with a location and a url
   });
   await expect(dialog).toBeVisible();
   await expectNewTabLinksNamed(dialog, 'sponsor sheet');
+  // The sponsor sheet sends people to the sponsor's website, not directions.
+  expect(await dialog.locator('a[href*="google.com/maps"]').count(), 'sponsor sheet should have no maps link').toBe(0);
+  expect(await dialog.locator('a[target="_blank"]').count(), 'sponsor sheet should show exactly one website link').toBe(1);
+
+  // A sponsor with a pin but no url gets no link at all -- the sheet is name
+  // and blurb only, not a dead button.
+  await page.evaluate(async () => {
+    const { openSponsorSheet } = await import('./js/views/sheet.js');
+    openSponsorSheet('daily-trim-barbershop'); // the fixture sponsor with a location and no url
+  });
+  await expect(dialog).toBeVisible();
+  expect(await dialog.locator('a').count(), 'sponsor sheet with no url should show no link').toBe(0);
 });
 
 // Windows High Contrast repaints author colors with the system palette, which

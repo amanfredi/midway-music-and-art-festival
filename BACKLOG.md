@@ -259,6 +259,30 @@ and acceptance criteria (evidence in `reviews/2026-08-wcag-aa-audit.md`).
 
 ## App
 
+**A toast raised from an open sheet is painted underneath it** (added
+2026-09-05, found while anchoring the embed's overlays; **not** an embed bug —
+the app has it too, and has had it since the sheet became a modal `<dialog>`).
+A modal dialog and its `::backdrop` render in the **top layer**, which is above
+every `z-index` on the page, so `#toast-root` at `z-index: 60` is behind both.
+Measured in the app: sheet open at y=308..852, toast drawn at y=742..780, and
+`elementFromPoint` at the toast's own centre returns a link inside the sheet.
+
+What that costs: the share button in the venue sheet is the app's main way to
+share a venue, and its "Link copied" confirmation has never been visible. The
+sheet always reaches the bottom of the window, and the toast always sits just
+above the bottom of the window, so it is covered every time — not sometimes.
+
+The fix is to put the toast root in the top layer as well, most cleanly as
+`popover="manual"` (`showPopover()` after the dialog was shown puts it above,
+since the top layer stacks in the order things enter it). Two things to be
+careful of: `#toast-root` is the `aria-live` region, so it has to be shown
+*before* the toast element is appended or the announcement may be missed; and
+`[popover]` carries UA styles (`inset: 0`, border, padding, background) that
+this rule would have to overrule. Left out of the embed work deliberately —
+it changes the app's presentation, which that work was told not to do — but the
+embed's toasts are already anchored to the sheet that raised them, so this is a
+small change rather than two problems at once.
+
 **The active tab in the bottom nav is nearly invisible** (added 2026-08-31,
 from Anthony's read of the deployed site). `.tab-bar a.is-active` changes
 exactly one thing: `--color-text-muted` (`#4b5962`) becomes `--color-primary`

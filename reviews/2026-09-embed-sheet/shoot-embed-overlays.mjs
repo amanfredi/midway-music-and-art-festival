@@ -2,14 +2,17 @@
 // Capture harness for the embedded map's overlays: the venue sheet and the
 // toasts, in an iframe on a tall host page.
 //
-// Both states come out of ONE browser session. The two prefixes are the same
-// page, loaded twice, differing only in whether the `body.is-embed .sheet` and
-// `body.is-embed #toast-root` rules are deleted from the stylesheet after load
-// -- those rules are the entire positional change, so deleting them reproduces
-// the reported behaviour exactly. Shooting `before` from a git checkout instead
-// would put the two prefixes in different browser launches, which this repo has
-// already been bitten by: the CSS font stack resolves differently per launch
-// (see ../2026-09-map-collisions/RECIPE.md).
+// Two rounds, four prefixes, all out of ONE browser session:
+//   before-/after-  whether an overlay is anchored at all, shot with the map on
+//                   screen (a pin tap, and the locate button's toast)
+//   frame-/tap-     which anchor, shot from the end of the venue key with the
+//                   map frame off screen (a venue-card tap)
+// The earlier state in each pair is reproduced on the live page -- `before-` by
+// stripping the anchor off the element, `frame-` by putting the sheet back on
+// the map frame after it opens, which is what the previous code computed.
+// Shooting them from a git checkout instead would put the two prefixes in
+// different browser launches, which this repo has already been bitten by: the
+// CSS font stack resolves differently per launch (../2026-09-map-collisions).
 //
 // Run from the repo root:
 //   node reviews/2026-09-embed-sheet/shoot-embed-overlays.mjs
@@ -58,21 +61,20 @@ are at go.midwaymusicandart.org.</p></div>
 </script>
 </body></html>`;
 
-/** The rules js/embed.js feeds. Deleting them is the "before" state. */
-const STRIP_ANCHOR_RULES = `() => {
-  let removed = 0;
-  for (const sheet of document.styleSheets) {
-    let rules;
-    try { rules = sheet.cssRules; } catch { continue; }
-    for (let i = rules.length - 1; i >= 0; i--) {
-      const sel = rules[i].selectorText;
-      if (sel === 'body.is-embed .sheet' || sel === 'body.is-embed #toast-root') {
-        sheet.deleteRule(i);
-        removed++;
-      }
-    }
-  }
-  return removed;
+/**
+ * Undoes the anchoring on one overlay, which is the "before" state: with the
+ * custom properties and the data attribute gone, every `body.is-embed` rule
+ * falls back to the app's own values and the overlay returns to the bottom of
+ * the iframe. Done to the element rather than by deleting rules out of the
+ * stylesheet -- selector names change, and a harness that quietly strips the
+ * wrong rule photographs a state nothing ever shipped.
+ */
+const STRIP_ANCHOR = `(selector) => {
+  const el = document.querySelector(selector);
+  if (!el) return false;
+  for (const p of ['left', 'width', 'height', 'bottom', 'middle']) el.style.removeProperty('--embed-anchor-' + p);
+  delete el.dataset.embedAnchor;
+  return true;
 }`;
 
 const TOPMOST_PIN = `() => {
@@ -130,11 +132,6 @@ try {
             setTimeout(done, 2000);
           }),
       );
-      if (prefix === 'before') {
-        const removed = await frame.evaluate(new Function('return ' + STRIP_ANCHOR_RULES)());
-        if (removed !== 2) throw new Error(`expected to strip 2 anchor rules, stripped ${removed}`);
-      }
-
       // The reader's position: the map at the top of the screen, the rest of the
       // embed below the fold. This is what makes a bottom-of-iframe overlay
       // invisible, and it is where the report came from.
@@ -159,6 +156,10 @@ try {
         .locator('.maplibregl-canvas')
         .click({ position: { x: pin.x, y: pin.y } });
       await page.waitForTimeout(600);
+      if (prefix === 'before') {
+        const stripped = await frame.evaluate(new Function('return ' + STRIP_ANCHOR)(), 'dialog.sheet');
+        if (!stripped) throw new Error('no sheet to un-anchor');
+      }
       const sheetAt = await frame.evaluate(() => {
         const d = document.querySelector('dialog.sheet');
         return d ? Math.round(d.getBoundingClientRect().top) : null;
@@ -170,6 +171,10 @@ try {
       await page.waitForTimeout(300);
       await page.frameLocator('.mmaf-map-embed').locator('#locate-btn').click();
       await page.waitForTimeout(600);
+      if (prefix === 'before') {
+        const stripped = await frame.evaluate(new Function('return ' + STRIP_ANCHOR)(), '#toast-root');
+        if (!stripped) throw new Error('no toast root to un-anchor');
+      }
       const toastAt = await frame.evaluate(() => {
         const t = document.querySelector('.toast');
         return t ? Math.round(t.getBoundingClientRect().top) : null;
@@ -181,6 +186,69 @@ try {
 
     await context.close();
   }
+
+  // --- the second round: which anchor, not whether there is one -------------
+  //
+  // `frame-` is the state above (`after-`), photographed from the other end of
+  // the page: the visitor has scrolled to the end of the venue key and the map
+  // frame the sheet anchors to is a screen above them. `tap-` anchors the sheet
+  // to the card instead. Same session, same page, and `frame-` is reproduced by
+  // putting the sheet back on the frame after it opens -- which is exactly what
+  // the previous code computed.
+  const RE_ANCHOR_TO_FRAME = `() => {
+    const d = document.querySelector('dialog.sheet');
+    const f = document.querySelector('.map-frame').getBoundingClientRect();
+    d.dataset.embedAnchor = 'bottom';
+    d.style.setProperty('--embed-anchor-bottom', String(Math.round(window.innerHeight - f.bottom)) + 'px');
+  }`;
+
+  for (const { name: viewport, ctx } of VIEWPORTS) {
+    const context = await browser.newContext({ ...ctx, serviceWorkers: 'block' });
+    for (const prefix of ['frame', 'tap']) {
+      const page = await context.newPage();
+      await page.route('**/embed-host.html', (route) =>
+        route.fulfill({ contentType: 'text/html; charset=utf-8', body: hostPage(PORT) }),
+      );
+      await page.goto(`http://localhost:${PORT}/embed-host.html`, { waitUntil: 'load' });
+      await page.waitForSelector('.mmaf-map-embed');
+      const frame = page.frames().find((f) => f.url().includes('embed=map'));
+      await frame.waitForFunction(() => window.__mmafMap && window.__mmafMap.loaded(), null, { timeout: 30_000 });
+      await page.waitForTimeout(1200);
+
+      const ids = await frame.evaluate(() =>
+        [...document.querySelectorAll('.venue-key-btn')].map((b) => b.dataset.venueId),
+      );
+      const last = ids[ids.length - 1];
+      const cardTop = await frame.evaluate(
+        (id) => document.querySelector(`.venue-key-btn[data-venue-id="${id}"]`).getBoundingClientRect().top,
+        last,
+      );
+      const box = await page.locator('.mmaf-map-embed').boundingBox();
+      const vh = await page.evaluate(() => window.innerHeight);
+      await page.evaluate(
+        (y) => window.scrollTo(0, y),
+        box.y + (await page.evaluate(() => window.scrollY)) + cardTop - vh / 2,
+      );
+      await page.waitForTimeout(300);
+
+      await page.frameLocator('.mmaf-map-embed').locator(`.venue-key-btn[data-venue-id="${last}"]`).click();
+      await page.waitForTimeout(500);
+      if (prefix === 'frame') await frame.evaluate(new Function('return ' + RE_ANCHOR_TO_FRAME)());
+      await page.waitForTimeout(300);
+
+      const sheetAt = await frame.evaluate(() => {
+        const d = document.querySelector('dialog.sheet');
+        return d ? Math.round(d.getBoundingClientRect().top) : null;
+      });
+      console.log(`   ${prefix}/${viewport}: card tap on ${last} opens the sheet at y=${sheetAt} inside the iframe`);
+      const file = join(HERE, `${prefix}-card-${viewport}.png`);
+      await page.screenshot({ path: file });
+      written.push(file.replace(ROOT + '/', ''));
+      await page.close();
+    }
+    await context.close();
+  }
+
   await browser.close();
 } finally {
   server.kill();

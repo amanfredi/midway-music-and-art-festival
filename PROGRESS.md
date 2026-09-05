@@ -46,6 +46,35 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-05 — an embed overlay opens where the tap was
+
+Anchoring the embed's overlays to the map frame (two entries down) was half an
+answer. It holds while the visitor is looking at the map, and a venue-card tap
+at the end of a scrolled venue key is the case where it does not: measured, the
+sheet opened at y=16 in a 1359 px iframe while the visitor was looking at
+y=864..1359 — the same fault as the original bug, wearing a different hat.
+
+The rationale already contained the fix. The map frame was chosen because a tap
+on a pin proves the map is on screen; by the same argument a tap on a venue card
+proves the *card* is. The tap is the evidence, so the anchor follows it: a pin's
+sheet sits on the map frame's bottom edge as before, a card's sheet is centred on
+the card, and a toast an open sheet raises follows the sheet. Centred rather than
+aligned to an edge because the ignorance is symmetric — the card is one point
+known to be on screen, the screen may extend either way from it, and centring
+maximises the expected visible fraction without guessing which way.
+
+Found along the way and deliberately left alone: **a toast raised while a sheet
+is open is painted underneath it**, in the app as much as in the embed. A modal
+`<dialog>` and its `::backdrop` are in the top layer, above every `z-index` on
+the page, so the venue sheet's share button has never managed to show its "Link
+copied" — measured, not inferred: `elementFromPoint` at the toast's own centre
+returns a link inside the sheet. It is in BACKLOG rather than in this commit
+because fixing it changes the app's presentation, which this work was scoped not
+to do. The embed's toasts are anchored correctly meanwhile, which keeps that a
+small change rather than two problems at once.
+
+Evidence: the `frame-` and `tap-` prefixes in `reviews/2026-09-embed-sheet/`.
+
 ### 2026-09-05 — a venue card zooms until that venue has a pin of its own
 
 Reported as a regression: clicking a venue in the key list no longer reaches a

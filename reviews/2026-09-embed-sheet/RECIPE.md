@@ -1,16 +1,21 @@
 # The embedded map's overlays — change evidence
 
-Before/after captures for the 2026-09-05 fix to where the venue sheet and the
+Before/after captures for the 2026-09-05 work on where the venue sheet and the
 toasts open inside the map embed (PROGRESS.md, "the embed's overlays move to the
-map frame"). **Change evidence, not a baseline**: built from
-`content/snapshot/sources/`, not from the live sheet.
+map frame" and "an embed overlay opens where the tap was"). **Change evidence,
+not a baseline**: built from `content/snapshot/sources/`, not from the live
+sheet.
 
-Eight shots, two states × two overlays × two widths:
+Twelve shots in two rounds, answering two different questions.
+
+## Round one: is the overlay anchored at all?
+
+Shot with the map on screen, which is where the first report came from.
 
 | prefix | state |
 |---|---|
 | `before-` | overlays pinned to the bottom of the viewport, which in the embed is the bottom of the whole iframe |
-| `after-` | overlays anchored to the map frame |
+| `after-` | overlays anchored to what the visitor tapped |
 
 - `sheet` — a venue sheet, opened by tapping the topmost pin clear of the canvas
   edges. `before-sheet-phone.png` is the reported bug and the clearest shot in
@@ -20,12 +25,8 @@ Eight shots, two states × two overlays × two widths:
   same fix, and the one a visitor is most likely to meet: the sheet's own share
   button raises "Link copied" the same way.
 
-Each shot is the whole host-page viewport, not the iframe, because the point of
-the set is where the overlay lands *on the visitor's screen*. The host page is
-scrolled so the map is at the top of it and the rest of the embed is below the
-fold, which is the position the report came from.
-
-Measured positions inside the iframe, printed by the run that wrote these:
+The host page is scrolled so the map is at the top of it and the rest of the
+embed is below the fold, which is the position the report came from.
 
 | | iframe height | sheet opens at | toast opens at |
 |---|---|---|---|
@@ -36,20 +37,50 @@ Measured positions inside the iframe, printed by the run that wrote these:
 
 The phone's visible band is roughly y=40..890 of that 1711 px iframe.
 
-## How `before-` was produced
+## Round two: anchored to *what*?
 
-Both prefixes come out of **one browser session**, from the same working tree.
-`before-` is the same page with the `body.is-embed .sheet` and
-`body.is-embed #toast-root` rules deleted from the stylesheet after load; those
-two rules are the entire positional change, and the script fails if it does not
-find exactly two of them. Shooting `before-` from a git checkout instead would
-put the two prefixes in different browser launches, and this repo has been
-bitten by that: the CSS font stack resolves differently per launch
+Shot from the other end of the page — scrolled to the end of the venue key, the
+map frame a screen above the fold — and the sheet opened by tapping the last
+venue card rather than a pin. Anchoring everything to the map is right until the
+map is not what the visitor is looking at.
+
+| prefix | state |
+|---|---|
+| `frame-` | the sheet anchored to the map frame, which is round one's answer |
+| `tap-` | the sheet anchored to the card that was tapped |
+
+| | the card tap opens the sheet at |
+|---|---|
+| `frame-` phone | y=16 |
+| `tap-` phone | y=1350 |
+| `frame-` desktop | y=149 |
+| `tap-` desktop | y=568 |
+
+`frame-card-phone.png` against `tap-card-phone.png` is the pair to look at: the
+same dimmed screen with nothing on it, and then the sheet sitting in the list
+where the card was tapped.
+
+Every shot is the whole host-page viewport rather than the iframe, because the
+point of the set is where the overlay lands *on the visitor's screen*.
+
+## How the earlier state in each pair was produced
+
+All four prefixes come out of **one browser session** from the same working
+tree, because the CSS font stack resolves differently between headless launches
 (`../2026-09-map-collisions/RECIPE.md`).
 
-What that method does *not* capture is `preventScroll` on the sheet's focus
-call, which is JS. Nothing is lost: no engine available here performs that
-scroll in either state (see below).
+- `before-` strips the anchor off the overlay element once it is open — the
+  custom properties and the `data-embed-anchor` attribute — so every
+  `body.is-embed` rule falls back to the app's own value. Done to the element
+  rather than by deleting rules out of the stylesheet: selector names change,
+  and a harness that quietly strips the wrong rule photographs a state that
+  never shipped.
+- `frame-` puts the sheet back on the map frame once it is open, which is what
+  the previous code computed.
+
+What neither method captures is `preventScroll` on the sheet's focus call, which
+is JS. Nothing is lost: no engine available here performs that scroll in either
+state (see below).
 
 ## What these shots do and don't prove
 

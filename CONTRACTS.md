@@ -1028,23 +1028,46 @@ hash is required and none should be pasted.
   never measure shorter than the frame it is in and the reported height could
   only ever grow; and the measurement reads the **body's** box rather than
   `documentElement.scrollHeight`, which never reports less than the viewport.
-- **Overlays anchor to the map frame, not to the viewport.** The app pins the
-  venue sheet and the toasts to the bottom of the window. Inside a
+- **Overlays anchor to what the visitor tapped, not to the viewport.** The app
+  pins the venue sheet and the toasts to the bottom of the window. Inside a
   content-height iframe that is the bottom of the *venue key*, a screen and a
   half below the map: measured on the live page 2026-09-05, a pin tap opened the
   sheet at y=1122 in a 1661 px iframe while the visitor was looking at
-  y=40..704. `anchorToEmbedFrame()` in `js/embed.js` publishes the frame's box
-  as `--embed-anchor-{left,width,bottom,height}` on the overlay and the
-  `body.is-embed` rules in `app.css` place both overlays from them. The
-  fallbacks are the app's own values, so an overlay opened with no map frame on
-  the page is placed exactly as the app places it.
+  y=40..704. `anchorEmbedOverlay()` in `js/embed.js` publishes a box as
+  `--embed-anchor-{left,width,height,bottom,middle}` and a `data-embed-anchor`
+  attribute on the overlay; the `body.is-embed` rules in `app.css` place it from
+  those. The fallbacks are the app's own values, so an overlay opened with no
+  map frame on the page is placed exactly as the app places it.
 
-  **The sheet is confined to the frame**: as wide as it, on its bottom edge,
-  never taller. Confinement is the point — the frame is the one box the visitor
-  is demonstrably looking at, since an overlay only opens in answer to a tap on
-  it, and a sheet that ran past the frame would be heading back towards the edge
-  of the screen. A venue with a long list scrolls inside the sheet, which is
-  what the app's own `80vh` cap does on a small phone.
+  **The tap is the anchor because it is the only evidence of where the visitor
+  is looking** — and it is good evidence. A tap on a pin proves the map frame is
+  on screen; a tap on a venue card proves that card is. Anchoring everything to
+  the map was the first answer and it was half right: it sent a card tap at the
+  end of a scrolled venue key 1300 px back up to the map and off screen again
+  (measured 2026-09-05). So the sheet a **pin** opens sits on the map frame's
+  bottom edge; the sheet a **card** opens is centred on that card; a **toast an
+  open sheet raises** sits on the sheet's bottom edge rather than the map's.
+
+  Centred for a card because the ignorance is symmetric: the card is one point
+  known to be on screen and the screen may extend either way from it, so
+  centring keeps the most of the sheet near the tap without guessing which — it
+  is the placement that maximises the expected visible fraction when the tap
+  could be anywhere in the band. Positioned with `transform`, since the sheet's
+  height depends on the venue and is not known until it is laid out, and a sheet
+  painted in one place and moved after is a flash the visitor would see.
+
+  **Width and the height cap always come from the map frame**, whatever the
+  anchor: it is the embed's content column, and one size rule is enough. The
+  sheet is never taller than the frame — one that ran past the box the tap
+  proved is on screen would be heading back towards the edge of the screen. A
+  venue with a long list scrolls inside the sheet, which is what the app's own
+  `80vh` cap does on a small phone.
+
+  Not fixed here, and worth knowing before reading a toast's anchor as its
+  position: a toast raised while a sheet is open is **painted underneath it**,
+  because a modal `<dialog>` and its `::backdrop` are in the top layer and
+  `#toast-root` is not. That is the app's behaviour as much as the embed's and
+  predates both; BACKLOG holds it.
 
   **Where the host page is scrolled to is unknowable, and two ways of learning
   it were ruled out.** A cross-origin `IntersectionObserver` looks like the

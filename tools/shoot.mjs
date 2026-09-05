@@ -116,8 +116,19 @@ try {
         await page
           .waitForFunction(() => window.__mmafMap && window.__mmafMap.loaded(), { timeout: 20_000 })
           .catch(() => {});
+        // Settle after the last repaint — but `idle` is an event, not a state:
+        // if the map went idle before this listener attached, it never fires
+        // again and the wait hangs forever (no timeout on an evaluate). Racing
+        // it against a wall clock is what makes the tool return.
         await page
-          .evaluate(() => new Promise((r) => window.__mmafMap.once('idle', () => setTimeout(r, 400))))
+          .evaluate(
+            () =>
+              new Promise((r) => {
+                const done = () => setTimeout(r, 400);
+                window.__mmafMap.once('idle', done);
+                setTimeout(done, 3000);
+              }),
+          )
           .catch(() => {});
       }
       // --click '#zoom-out x3' presses a control before shooting, for states

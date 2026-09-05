@@ -13,15 +13,15 @@ import { test, expect } from '@playwright/test';
 import { gotoMap, mapEval, sheet, sourceFeatures, waitForMapIdle, SOURCE_FEATURES_FN } from './map-helpers.mjs';
 
 /**
- * Where the biggest thing in a composite icon sits, in CSS pixels from the
- * anchor the engine places on the feature's coordinate.
+ * Where the densest part of an icon sits, in CSS pixels from the anchor the
+ * engine places on the feature's coordinate.
  *
- * Both images are read the same way, on both axes: count opaque pixels per
- * column and per row, then take the middle of the band within 2 of the fullest.
- * That band is the diamond in a pin image (its sides fall away 2 px per step,
- * and the dot and the 2 px leader line are far thinner) and the ring in a halo
- * image, and it is symmetric about the shape's centre either way — a plain
- * index-of-maximum would pick whichever of two equal central lines came first.
+ * Counts opaque pixels per column and per row, then takes the middle of the
+ * band within 2 of the fullest. In a tether image that band is the dot — the
+ * line is 2 px thick and the dot is 7 — so the probe reports where the dot is,
+ * which is the claim worth checking: the dot marks the venue's real position,
+ * so it has to sit on the anchor. Taking the middle of the band rather than the
+ * first maximum keeps it symmetric about the shape's centre.
  *
  * Both axes matter now that a lane can run north–south: reading only columns
  * would call a vertically displaced pin undisplaced.
@@ -61,6 +61,22 @@ const LANE_OF = `(properties) => ({
   x: typeof properties.offsetX === 'number' ? properties.offsetX : 0,
   y: typeof properties.offsetY === 'number' ? properties.offsetY : 0,
 })`;
+
+/**
+ * What a layer's `icon-offset` resolves to for each of `lanes`.
+ *
+ * The diamond of a displaced pin is the ordinary pin image moved by this, so
+ * this is where the diamond is drawn relative to the venue's own coordinate.
+ */
+const ICON_OFFSET_FN = `(map, spec) => {
+  const expr = map.getLayoutProperty(spec.layer, 'icon-offset');
+  return spec.lanes.map((lane) => {
+    // ['match', ['get','lane'], key, ['literal',[x,y]], ..., fallback]
+    for (let i = 2; i < expr.length - 1; i += 2) if (expr[i] === lane) return expr[i + 1][1];
+    const last = expr[expr.length - 1];
+    return last[1];
+  });
+}`;
 
 /** Every venue symbol on screen, at the point it is actually drawn. */
 const DRAWN_SYMBOLS_FN = `(map) => {
@@ -138,14 +154,20 @@ test('coincident venues draw as separate numbered pins tethered to their true po
     'a stack still covers the pins it was replaced by',
   ).toBe(0);
 
-  // The icon states the true position by what it draws at its anchor: a dot in
-  // the middle, the numbered diamond a whole offset away from it.
+  // Two halves, since the composite was split (see tetherImage): the tether
+  // image puts the dot on the anchor, and the pin layer moves the ordinary
+  // diamond into the lane with icon-offset. Both have to be right or the
+  // diamond is tethered to the wrong point.
   for (const member of pair.members) {
-    const probe = await mapEval(page, IMAGE_PROBE_FN, member.icon);
-    expect(probe.centreColumn, `${member.name}: the diamond is not at its lane's x`).toBeCloseTo(member.offsetX, 0);
-    expect(probe.centreRow, `${member.name}: the diamond is not at its lane's y`).toBeCloseTo(member.offsetY, 0);
+    const probe = await mapEval(page, IMAGE_PROBE_FN, member.tether);
     expect(probe.opaqueAtAnchor, `${member.name}: nothing is drawn at the venue's own coordinate`).toBe(true);
+    expect(probe.centreColumn, `${member.name}: the tether's dot is not on the anchor`).toBeCloseTo(0, 0);
+    expect(probe.centreRow, `${member.name}: the tether's dot is not on the anchor`).toBeCloseTo(0, 0);
   }
+  const drawnAt = await mapEval(page, ICON_OFFSET_FN, { layer: 'venue-leader-pin', lanes: pair.members.map((m) => m.lane) });
+  pair.members.forEach((member, i) => {
+    expect(drawnAt[i], `${member.name}: the diamond is not drawn at its lane`).toEqual([member.offsetX, member.offsetY]);
+  });
 });
 
 // The hazard this treatment introduces, and the reason for the offset in
@@ -187,15 +209,13 @@ test('the tap highlight rings the displaced diamond, not the point it points at'
   }, member.id);
   expect(state, 'the displaced pin was not marked selected').toBe(true);
 
-  // The ring and the diamond are placed from one offset in two images, so the
-  // check is that both land on the same column: a ring at the image centre
-  // would be the failure this layer exists to avoid.
-  const ring = await mapEval(page, IMAGE_PROBE_FN, member.halo);
-  const pin = await mapEval(page, IMAGE_PROBE_FN, member.icon);
-  expect(ring.centreColumn, 'the ring sits at the coordinate, not at the diamond').toBeCloseTo(member.offsetX, 0);
-  expect(ring.centreRow, 'the ring sits at the coordinate, not at the diamond').toBeCloseTo(member.offsetY, 0);
-  expect(ring.centreColumn).toBeCloseTo(pin.centreColumn, 0);
-  expect(ring.centreRow).toBeCloseTo(pin.centreRow, 0);
+  // Ring and diamond are moved by one expression rather than two that have to
+  // agree, so the check is that it really is one expression: a ring left at the
+  // feature's own coordinate would ring the dot instead of the diamond.
+  const ring = await mapEval(page, ICON_OFFSET_FN, { layer: 'venue-leader-halo', lanes: [member.lane] });
+  const pin = await mapEval(page, ICON_OFFSET_FN, { layer: 'venue-leader-pin', lanes: [member.lane] });
+  expect(ring[0], 'the ring sits at the coordinate, not at the diamond').toEqual([member.offsetX, member.offsetY]);
+  expect(ring).toEqual(pin);
   expect(
     await mapEval(page, (map) => map.queryRenderedFeatures({ layers: ['venue-leader-halo'] }).length),
     'the halo layer draws nothing to ring the pin with',
@@ -370,10 +390,12 @@ test('a transit stop that cannot clear a venue pin draws displaced, with its own
   expect(stop.onLeaderLayer, 'the displaced stop is not drawn by its leader layer').toBe(true);
   expect(stop.onPlainLayer, 'the stop draws twice, plain and displaced').toBe(false);
   expect(Math.abs(stop.offsetX) + Math.abs(stop.offsetY), 'the stop is not displaced').toBeGreaterThan(0);
-  const probe = await mapEval(page, IMAGE_PROBE_FN, stop.icon);
-  expect(probe.centreColumn, "the diamond is not at its lane's x").toBeCloseTo(stop.offsetX, 0);
-  expect(probe.centreRow, "the diamond is not at its lane's y").toBeCloseTo(stop.offsetY, 0);
+  const probe = await mapEval(page, IMAGE_PROBE_FN, stop.tether);
   expect(probe.opaqueAtAnchor, "nothing is drawn at the stop's own coordinate").toBe(true);
+  expect(probe.centreColumn, "the tether's dot is not on the anchor").toBeCloseTo(0, 0);
+  expect(probe.centreRow, "the tether's dot is not on the anchor").toBeCloseTo(0, 0);
+  const stopDrawnAt = await mapEval(page, ICON_OFFSET_FN, { layer: 'transit-leader-pin', lanes: [stop.lane] });
+  expect(stopDrawnAt[0], 'the diamond is not drawn at its lane').toEqual([stop.offsetX, stop.offsetY]);
 
   // A tap on the displaced diamond opens that stop's sheet — identified by
   // name, read from the hidden keyboard list that shares the pinned subset.
@@ -543,18 +565,61 @@ test('a coincident group lanes on one axis, with every member on its own side of
       const off = axis === 'ew' ? member.offsetY : member.offsetX;
       expect(off, `${member.name} is displaced across its group's ${axis} axis`).toBe(0);
     }
-    // Sorted by where each member is drawn, the members come out in the order
-    // of their true positions: west to east, or north to south.
-    const drawn = [...members].sort((a, b) =>
-      axis === 'ew' ? a.offsetX - b.offsetX : a.offsetY - b.offsetY
-    );
-    const truth = [...members].sort((a, b) => (axis === 'ew' ? a.lng - b.lng : b.lat - a.lat));
-    expect(
-      drawn.map((m) => m.name),
-      `a ${axis} group's pins are not in the order of the venues they stand for`,
-    ).toEqual(truth.map((m) => m.name));
+    // Sorted by where each member is drawn, the members come out in the order of
+    // their true positions — west to east, or north to south. Below one
+    // plus-code cell of spread that order is rounding rather than geography and
+    // name rank assigns the lanes instead, which is tested on purpose-built
+    // geometry in map-collision-decisions.spec.mjs.
+    const along = members.map((m) => (axis === 'ew' ? m.lng : m.lat));
+    if (Math.max(...along) - Math.min(...along) > 1 / 8000) {
+      const drawn = [...members].sort((a, b) => (axis === 'ew' ? a.offsetX - b.offsetX : a.offsetY - b.offsetY));
+      const truth = [...members].sort((a, b) => (axis === 'ew' ? a.lng - b.lng : b.lat - a.lat));
+      expect(
+        drawn.map((m) => m.name),
+        `a ${axis} group's pins are not in the order of the venues they stand for`,
+      ).toEqual(truth.map((m) => m.name));
+    }
   }
   expect(checked, 'no group of two or more was found; this test proves nothing').toBeGreaterThan(0);
+});
+
+// A venue drawn at its own coordinate has no tether and no dot of its own, and
+// its diamond must not be parked on a neighbour's. "Most of the dot still
+// showing" is exactly "the dot's centre is outside the diamond", since a chord
+// through a circle's centre halves it — so the test is the diamond itself.
+test('no venue left at its own coordinate has a neighbour\'s dot under its diamond', async ({ page }) => {
+  await gotoMap(page);
+  const worst = await mapEval(page, async (map) => {
+    const raw = map.getSource('venue-groups')._data ?? {};
+    const features = (raw.geojson ?? raw).features ?? [];
+    map.jumpTo({ zoom: map.getLayer('venue-leader-pin').minzoom });
+    await new Promise((r) => (map.loaded() ? setTimeout(r, 250) : map.once('idle', () => setTimeout(r, 250))));
+    const image = map.style.getImage('pin-venue');
+    const radius = (image.data.width / image.pixelRatio - 4) / 2;
+    const at = (f) => map.project(f.geometry.coordinates);
+    let worst = null;
+    for (const pin of features) {
+      if (pin.properties.offsetX !== 0 || pin.properties.offsetY !== 0) continue;
+      for (const other of features) {
+        if (other === pin) continue;
+        // Every tethered member has a dot at its own coordinate.
+        if (other.properties.offsetX === 0 && other.properties.offsetY === 0) continue;
+        const a = at(pin);
+        const b = at(other);
+        const l1 = Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+        if (!worst || l1 < worst.l1) worst = { l1, pin: pin.properties.name, dot: other.properties.name };
+      }
+    }
+    return { worst, radius, tetherless: features.filter((f) => f.properties.offsetX === 0 && f.properties.offsetY === 0).length };
+  });
+  if (worst.worst === null) {
+    expect(worst.tetherless, 'no venue draws at its own coordinate; nothing to check').toBe(0);
+    return;
+  }
+  expect(
+    worst.worst.l1,
+    `${worst.worst.pin}'s diamond covers ${worst.worst.dot}'s dot`,
+  ).toBeGreaterThan(worst.radius);
 });
 
 test('every displaced venue is one of the venues the key list numbers', async ({ page }) => {

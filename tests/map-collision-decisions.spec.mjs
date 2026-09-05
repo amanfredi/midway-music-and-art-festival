@@ -186,3 +186,88 @@ test('venues with equal event counts are ranked by id, and identically on every 
   await gotoMap(page);
   expect((await rowNames(page)).named, 'the tiebreak is not stable across loads').toEqual(first.named);
 });
+
+// A plus code's last two digits name a cell 1/8000 of a degree on a side, so a
+// group spread less than that along its lane axis is spread by rounding: which
+// end of it a venue sits at is noise. The lanes then go by name rank instead.
+const CELL = 1 / 8000;
+
+/** Lane per venue id, and which venues draw at their own coordinate. */
+async function laneReport(page) {
+  const features = await sourceFeatures(page, 'venue-groups');
+  return {
+    lanes: Object.fromEntries(features.map((f) => [f.properties.id, f.properties.lane])),
+    tetherless: features
+      .filter((f) => f.properties.offsetX === 0 && f.properties.offsetY === 0)
+      .map((f) => f.properties.id),
+  };
+}
+
+test('a spread of one plus-code cell is treated as rounding, and rank orders the lanes', async ({ page }) => {
+  // One cell of latitude between them — the shape the Urban Lights row has,
+  // where the delta is which cell somebody clicked rather than where the doors
+  // are. The BUSY one is the southern one, so geography and rank disagree about
+  // who takes the northern lane.
+  //
+  // The small longitude difference is load-bearing. Rank order can send two
+  // members past each other, and lane offsets are static while true positions
+  // spread with zoom, so a crossed pair with nothing between them converges and
+  // the clearance search vetoes the whole axis (which is correct, and which is
+  // what an earlier version of this test hit). A few metres sideways keeps them
+  // apart at every zoom, exactly as the real trio's east–west spread does.
+  await withVenues(
+    page,
+    [
+      venue('quiet-north', 'Quiet North Hall', SOUTH_PAIR.lat + CELL, SOUTH_PAIR.lng),
+      venue('busy-south', 'Busy South Hall', SOUTH_PAIR.lat, SOUTH_PAIR.lng + 0.0001),
+    ],
+    [...Array(6)].map((_, k) => event(`b${k}`, 'busy-south')),
+  );
+  await gotoMap(page);
+
+  const { lanes } = await laneReport(page);
+  // Negative y is north. Geography would have put the northern venue there.
+  expect(lanes['busy-south'], 'geography ordered a spread that was only rounding').toBe('ns:0,-32');
+  expect(lanes['quiet-north']).toBe('ns:0,32');
+});
+
+test('a spread of several cells is real, and geography still orders the lanes', async ({ page }) => {
+  // The same two venues and the same ranks, eight cells apart instead of one.
+  await withVenues(
+    page,
+    [
+      venue('quiet-north', 'Quiet North Hall', SOUTH_PAIR.lat + 8 * CELL, SOUTH_PAIR.lng),
+      venue('busy-south', 'Busy South Hall', SOUTH_PAIR.lat, SOUTH_PAIR.lng),
+    ],
+    [...Array(6)].map((_, k) => event(`b${k}`, 'busy-south')),
+  );
+  await gotoMap(page);
+
+  const { lanes } = await laneReport(page);
+  expect(lanes['quiet-north'], 'rank overrode a spread that was real').toBe('ns:0,-32');
+  expect(lanes['busy-south']).toBe('ns:0,32');
+});
+
+test('where every member would bury a neighbour dot, nobody is left tetherless', async ({ page }) => {
+  // Three venues inside one plus-code cell. Whoever draws at their own
+  // coordinate puts their diamond on both of the other dots, so the group gives
+  // up its middle lane entirely and shifts half a lane: everybody tethered,
+  // nobody parked on a dot.
+  await withVenues(page, [
+    venue('cell-a', 'Cell A Hall', SOUTH_PAIR.lat, SOUTH_PAIR.lng),
+    venue('cell-b', 'Cell B Hall', SOUTH_PAIR.lat + CELL / 3, SOUTH_PAIR.lng + 0.00005),
+    venue('cell-c', 'Cell C Hall', SOUTH_PAIR.lat + (2 * CELL) / 3, SOUTH_PAIR.lng + 0.0001),
+  ]);
+  await gotoMap(page);
+
+  const { lanes, tetherless } = await laneReport(page);
+  expect(Object.keys(lanes)).toHaveLength(3);
+  expect(tetherless, 'a diamond is parked on a neighbour dot').toEqual([]);
+  // Half a lane off centre, so the three sit at -32, +32, +96 rather than
+  // -64, 0, +64.
+  expect(Object.values(lanes).sort(), 'the group did not shift off its own centre').toEqual([
+    'ns:0,-32',
+    'ns:0,32',
+    'ns:0,96',
+  ]);
+});

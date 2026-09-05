@@ -57,7 +57,10 @@ npm test                          # fixture build + unit tests + Playwright offl
 `npm test` needs no network: it builds `site/` from the local fixtures
 (`npm run build:fixtures`, content and service worker together) and serves that
 to Playwright, so the suite runs on a tree one build actually produced. Run
-`npm run build` afterwards to put the live sheet's content back.
+`npm run build` afterwards to put the live sheet's content back. The test
+server's port is derived from the checkout's path (printed in Playwright's
+output; `PW_PORT` overrides it), so suites in different checkouts or worktrees
+can run at the same time without fighting over a port.
 
 The Playwright suite is the automated acceptance test: it loads the site, waits
 for the service worker, stars an event, goes offline, reloads, and asserts

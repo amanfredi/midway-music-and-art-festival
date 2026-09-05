@@ -4,7 +4,13 @@
 import { test, expect } from '@playwright/test';
 
 const T = '?t=2026-10-03T15:00';
-const ORIGIN = 'http://localhost:4173/';
+
+// The test port is per-checkout (playwright.config.mjs), so the expected
+// share URLs must come from baseURL rather than a hardcoded origin.
+let ORIGIN;
+test.beforeEach(({ baseURL }) => {
+  ORIGIN = baseURL + '/';
+});
 
 async function stubShare(page, rejectName) {
   await page.addInitScript((name) => {

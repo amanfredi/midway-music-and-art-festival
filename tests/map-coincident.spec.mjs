@@ -421,21 +421,23 @@ test('a transit stop that cannot clear a venue pin draws displaced, with its own
 const TYPED_SYMBOLS_FN = `(map) => {
   const laneOf = ${LANE_OF};
   const out = [];
-  const grab = (layer, type) => {
+  const grab = (layer, type, shape) => {
     for (const f of map.queryRenderedFeatures({ layers: [layer] })) {
       const point = map.project(f.geometry.coordinates);
       const lane = layer.includes('-leader-') ? laneOf(f.properties) : { x: 0, y: 0 };
       const key = type + ':' + f.properties.id;
       if (out.some((s) => s.key === key)) continue;
-      out.push({ key, type, x: point.x + lane.x, y: point.y + lane.y });
+      out.push({ key, type, shape, x: point.x + lane.x, y: point.y + lane.y });
     }
   };
-  grab('venue-pin', 'venue');
-  grab('venue-leader-pin', 'venue');
-  grab('transit-pin', 'transit');
-  grab('transit-leader-pin', 'transit');
-  grab('sponsor-featured-pin', 'sponsor');
-  grab('sponsor-generic-pin', 'sponsor');
+  grab('venue-pin', 'venue', 'venue');
+  grab('venue-leader-pin', 'venue', 'venue');
+  grab('transit-pin', 'transit', 'transit');
+  grab('transit-leader-pin', 'transit', 'transit');
+  // Both are sponsors for the "different types must not overlap" rule, but
+  // they are different SHAPES and reserve different amounts of space.
+  grab('sponsor-featured-pin', 'sponsor', 'sponsorFeatured');
+  grab('sponsor-generic-pin', 'sponsor', 'sponsorGeneric');
   return out;
 }`;
 
@@ -453,11 +455,21 @@ async function expectNoCrossTypeOverlapFromLeaderZoom(page) {
       const centres = new Function('return ' + featuresFn)()(map, 'transit')
         .filter((f) => f.properties.grouped)
         .map((f) => f.geometry.coordinates);
-      const radius = (id) => {
+      // Every pin's L1 "radius": how far its ink reaches from its centre
+      // measured |dx| + |dy|, which is the measure the whole file uses. A
+      // diamond's is its half-diagonal (its tip IS the L1 extreme); an
+      // axis-aligned square's is its full side, since its corner is at
+      // (s/2, s/2). Two shapes clear when the distance is at least the sum.
+      const drawn = (id) => {
         const image = map.style.getImage(id);
-        return (image.data.width / image.pixelRatio - 4) / 2;
+        return image.data.width / image.pixelRatio - 4;
       };
-      const radii = { venue: radius('pin-venue'), transit: radius('pin-transit'), sponsor: radius('pin-transit') };
+      const radii = {
+        venue: drawn('pin-venue') / 2,
+        transit: drawn('pin-transit') / 2,
+        sponsorGeneric: drawn('pin-sponsor-generic') / 2,
+        sponsorFeatured: drawn('pin-sponsor-featured'),
+      };
       const settle = () =>
         new Promise((r) => (map.loaded() ? setTimeout(r, 150) : map.once('idle', () => setTimeout(r, 150))));
       let worst = null;
@@ -470,7 +482,7 @@ async function expectNoCrossTypeOverlapFromLeaderZoom(page) {
             for (let j = i + 1; j < pins.length; j++) {
               if (pins[i].type === pins[j].type) continue;
               const distance = Math.abs(pins[i].x - pins[j].x) + Math.abs(pins[i].y - pins[j].y);
-              const margin = distance - (radii[pins[i].type] + radii[pins[j].type]);
+              const margin = distance - (radii[pins[i].shape] + radii[pins[j].shape]);
               if (!worst || margin < worst.margin) {
                 worst = { margin, zoom: map.getZoom(), pair: [pins[i].key, pins[j].key] };
               }

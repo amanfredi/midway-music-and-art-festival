@@ -56,17 +56,32 @@ test('both venue name layers rank collisions by the venue sort key', async ({ pa
   }
 });
 
-test('names try above and below a pin before either side of it', async ({ page }) => {
+test('names try above and below a pin before either side, and the corners after', async ({ page }) => {
   await gotoMap(page);
   const orders = await mapEval(page, (map, ids) =>
-    ids.map((id) => [id, map.getLayoutProperty(id, 'text-variable-anchor')]),
+    ids.map((id) => {
+      const pairs = map.getLayoutProperty(id, 'text-variable-anchor-offset')[1];
+      const anchors = [];
+      for (let i = 0; i < pairs.length; i += 2) anchors.push(pairs[i]);
+      return [id, anchors];
+    }),
     ['venue-name-label', 'sponsor-name-label'],
   );
   for (const [id, order] of orders) {
     // `bottom` anchors the label's bottom edge, so the name sits above the pin;
     // `top` puts it below. Horizontal first aimed every name straight along
-    // University Avenue at its nearest neighbour.
-    expect(order, `${id} tries a horizontal side first`).toEqual(['bottom', 'top', 'left', 'right']);
+    // University Avenue at its nearest neighbour. The four corners come last:
+    // they are the only candidates left when all four sides are spoken for.
+    expect(order, `${id} does not try the sides in the intended order`).toEqual([
+      'bottom',
+      'top',
+      'left',
+      'right',
+      'bottom-left',
+      'bottom-right',
+      'top-left',
+      'top-right',
+    ]);
   }
 });
 
@@ -174,5 +189,40 @@ test("displaced venues' names ride their lanes: the coincident pair is named twi
   expect(pair, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
   for (const name of pair.names) {
     expect(pair.drawn, `"${name}" lost its label to its coincident neighbour`).toContain(name);
+  }
+});
+
+// A pin whose four sides are all spoken for still has its corners, and on this
+// map that is common. Corners only work with an offset per anchor: a single
+// radial distance puts a diagonal candidate at radius/sqrt(2) on each axis,
+// which is INSIDE the square collision box it is meant to clear, so the
+// placement pass rejects it and the candidate is decoration. Measured before
+// the offsets were split out: adding corners changed nothing at all.
+test('every name layer offers the four corners, cleared to the box corner', async ({ page }) => {
+  await gotoMap(page);
+  const layers = await mapEval(page, (map, ids) =>
+    ids.map((id) => {
+      const expr = map.getLayoutProperty(id, 'text-variable-anchor-offset');
+      // Constant layers hold ['literal', pairs]; the displaced layer holds a
+      // match, whose first branch value is what a lane resolves to.
+      const pairs = expr[0] === 'literal' ? expr[1] : expr[3][1];
+      const at = {};
+      for (let i = 0; i < pairs.length; i += 2) at[pairs[i]] = pairs[i + 1];
+      return [id, at];
+    }),
+    ['venue-name-label', 'sponsor-name-label', 'venue-leader-name-label'],
+  );
+
+  for (const [id, at] of layers) {
+    for (const anchor of ['bottom-left', 'bottom-right', 'top-left', 'top-right']) {
+      expect(at[anchor], `${id} offers no ${anchor} candidate`).toBeTruthy();
+    }
+    // `left` puts the name east of the pin and `bottom` puts it above, so the
+    // corner that does both must carry the full sideways clearance AND the full
+    // upward one — not a diagonal share of one radius.
+    const east = at['left'][0];
+    const above = at['bottom'][1];
+    expect(at['bottom-left'], `${id}'s upper-right corner is closer in than its sides`).toEqual([east, above]);
+    expect(at['top-right'], `${id}'s lower-left corner is closer in than its sides`).toEqual([at['right'][0], at['top'][1]]);
   }
 });

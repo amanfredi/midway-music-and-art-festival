@@ -17,11 +17,10 @@ import { gotoMap, mapEval, sheet, sourceFeatures, waitForMapIdle, SOURCE_FEATURE
  * engine places on the feature's coordinate.
  *
  * Counts opaque pixels per column and per row, then takes the middle of the
- * band within 2 of the fullest. In a tether image that band is the dot — the
- * line is 2 px thick and the dot is 7 — so the probe reports where the dot is,
- * which is the claim worth checking: the dot marks the venue's real position,
- * so it has to sit on the anchor. Taking the middle of the band rather than the
- * first maximum keeps it symmetric about the shape's centre.
+ * band within 2 of the fullest. In a leader-line image that band is the stroke
+ * itself, which runs from the feature's own coordinate out to the lane, so the
+ * probe reports where the line starts — and it has to start on the anchor, or
+ * the tether points from the wrong place.
  *
  * Both axes matter now that a lane can run north–south: reading only columns
  * would call a vertically displaced pin undisplaced.
@@ -52,6 +51,8 @@ const IMAGE_PROBE_FN = `(map, id) => {
     pixelRatio: image.pixelRatio,
     centreColumn: (middleOf(columns) - width / 2) / image.pixelRatio,
     centreRow: (middleOf(rows) - height / 2) / image.pixelRatio,
+    halfWidth: width / image.pixelRatio / 2,
+    halfHeight: height / image.pixelRatio / 2,
     opaqueAtAnchor,
   };
 }`;
@@ -154,15 +155,24 @@ test('coincident venues draw as separate numbered pins tethered to their true po
     'a stack still covers the pins it was replaced by',
   ).toBe(0);
 
-  // Two halves, since the composite was split (see tetherImage): the tether
-  // image puts the dot on the anchor, and the pin layer moves the ordinary
-  // diamond into the lane with icon-offset. Both have to be right or the
-  // diamond is tethered to the wrong point.
+  // Three parts, since the composite was split (see leaderLineImage): the line
+  // starts on the anchor, the dot sits on it as its own blocking symbol, and the
+  // pin layer moves the ordinary diamond into the lane with icon-offset. The
+  // first and last have to agree or the diamond is tethered to the wrong point.
   for (const member of pair.members) {
-    const probe = await mapEval(page, IMAGE_PROBE_FN, member.tether);
+    const probe = await mapEval(page, IMAGE_PROBE_FN, member.line);
+    // The line image is anchored on the venue's own coordinate and reaches
+    // exactly as far as the lane, so its half-extent is the lane plus the
+    // stroke width.
     expect(probe.opaqueAtAnchor, `${member.name}: nothing is drawn at the venue's own coordinate`).toBe(true);
-    expect(probe.centreColumn, `${member.name}: the tether's dot is not on the anchor`).toBeCloseTo(0, 0);
-    expect(probe.centreRow, `${member.name}: the tether's dot is not on the anchor`).toBeCloseTo(0, 0);
+    expect(probe.halfWidth, `${member.name}: the leader line does not reach its lane`).toBeCloseTo(
+      Math.abs(member.offsetX) + 2,
+      0,
+    );
+    expect(probe.halfHeight, `${member.name}: the leader line does not reach its lane`).toBeCloseTo(
+      Math.abs(member.offsetY) + 2,
+      0,
+    );
   }
   const drawnAt = await mapEval(page, ICON_OFFSET_FN, { layer: 'venue-leader-pin', lanes: pair.members.map((m) => m.lane) });
   pair.members.forEach((member, i) => {
@@ -390,10 +400,10 @@ test('a transit stop that cannot clear a venue pin draws displaced, with its own
   expect(stop.onLeaderLayer, 'the displaced stop is not drawn by its leader layer').toBe(true);
   expect(stop.onPlainLayer, 'the stop draws twice, plain and displaced').toBe(false);
   expect(Math.abs(stop.offsetX) + Math.abs(stop.offsetY), 'the stop is not displaced').toBeGreaterThan(0);
-  const probe = await mapEval(page, IMAGE_PROBE_FN, stop.tether);
+  const probe = await mapEval(page, IMAGE_PROBE_FN, stop.line);
   expect(probe.opaqueAtAnchor, "nothing is drawn at the stop's own coordinate").toBe(true);
-  expect(probe.centreColumn, "the tether's dot is not on the anchor").toBeCloseTo(0, 0);
-  expect(probe.centreRow, "the tether's dot is not on the anchor").toBeCloseTo(0, 0);
+  expect(probe.halfWidth, 'the leader line does not reach its lane').toBeCloseTo(Math.abs(stop.offsetX) + 2, 0);
+  expect(probe.halfHeight, 'the leader line does not reach its lane').toBeCloseTo(Math.abs(stop.offsetY) + 2, 0);
   const stopDrawnAt = await mapEval(page, ICON_OFFSET_FN, { layer: 'transit-leader-pin', lanes: [stop.lane] });
   expect(stopDrawnAt[0], 'the diamond is not drawn at its lane').toEqual([stop.offsetX, stop.offsetY]);
 
@@ -620,6 +630,48 @@ test('no venue left at its own coordinate has a neighbour\'s dot under its diamo
     worst.worst.l1,
     `${worst.worst.pin}'s diamond covers ${worst.worst.dot}'s dot`,
   ).toBeGreaterThan(worst.radius);
+});
+
+// The split that let names into the paper beside a leader line has one limit:
+// the dot. A line only joins two things that are already visible, so a label may
+// cross it; a dot is the only mark claiming where a venue really is, so a label
+// may not. That difference is two layout properties and one image size.
+test('a leader line reserves nothing and its dot reserves a dot-sized box', async ({ page }) => {
+  await gotoMap(page);
+  const state = await mapEval(page, (map) => {
+    const read = (id, prop) => {
+      const layer = map.getLayer(id);
+      return layer ? (map.getLayoutProperty(id, prop) ?? false) : null;
+    };
+    const width = (image) => {
+      const img = map.style.getImage(image);
+      return img && img.data.width / img.pixelRatio;
+    };
+    return {
+      lines: ['venue-leader-line', 'transit-leader-line'].map((id) => [id, read(id, 'icon-ignore-placement')]),
+      dots: ['venue-leader-dot', 'transit-leader-dot'].map((id) => [
+        id,
+        read(id, 'icon-ignore-placement'),
+        read(id, 'icon-allow-overlap'),
+      ]),
+      dotWidth: width('leader-dot'),
+      pinWidth: width('pin-venue'),
+    };
+  });
+
+  for (const [id, ignored] of state.lines) {
+    expect(ignored, `${id} is missing`).not.toBeNull();
+    expect(ignored, `${id} reserves space; a label can no longer cross a leader line`).toBe(true);
+  }
+  for (const [id, ignored, overlap] of state.dots) {
+    expect(ignored, `${id} is missing`).not.toBeNull();
+    expect(ignored, `${id} does not reserve space; a label can be drawn over a location dot`).toBe(false);
+    expect(overlap, `${id} can be hidden by the collision pass; the dot must always draw`).toBe(true);
+  }
+  // The point of the split: the footprint is the dot, not the composite. A dot
+  // that reserved a pin's worth of box would be the old behaviour by another
+  // name.
+  expect(state.dotWidth, 'the dot reserves as much room as a pin').toBeLessThan(state.pinWidth / 3);
 });
 
 test('every displaced venue is one of the venues the key list numbers', async ({ page }) => {

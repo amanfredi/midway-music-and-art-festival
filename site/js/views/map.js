@@ -195,17 +195,21 @@ const CLUSTER_TEXT_PX = 10;
 const NAME_TEXT_PX = 12;
 const SPONSOR_NAME_TEXT_PX = 11;
 const NAME_CLEAR_PX = 8;
-// The order `text-variable-anchor` tries for a name beside an undisplaced pin;
-// the engine keeps the first that fits. An anchor names the edge of the label
-// held at the offset point, so `bottom` puts the name ABOVE the pin and `top`
-// puts it below -- this order is above, below, then east, then west.
+// The order a name beside an undisplaced pin tries its positions in; the engine
+// keeps the first that fits. Named by where the label goes, not by the anchor
+// that puts it there -- `bottom` anchors the label's bottom edge, so it is the
+// one that puts the name ABOVE the pin, and that inversion is worth hiding.
 //
 // Vertical first because of where this festival is: its venues are strung along
 // University Avenue, so a pin's nearest neighbour is almost always due east or
 // west of it, and a horizontal-first order aims every name straight down the
-// row at the next pin. It also stopped compounding with the lane axis, which
-// used to be east-west for every group however the group was really shaped.
-const NAME_ANCHOR_ORDER = ['bottom', 'top', 'left', 'right'];
+// row at the next pin.
+//
+// The corners come last and were worth adding (2026-09-04): they are the only
+// candidates that fit beside a pin whose four sides are all spoken for, which
+// on this map is common. They only work with a per-anchor offset -- see
+// nameCandidates.
+const NAME_ANCHOR_ORDER = ['above', 'below', 'east', 'west', 'upRight', 'upLeft', 'downRight', 'downLeft'];
 // The tap-highlight halo extends this far beyond the pin it rings.
 const HALO_PAD = 6;
 // Displaced-pin geometry. Members of a coincident group sit in lanes a pin wide
@@ -334,7 +338,7 @@ function metersPerPixel(zoom, lat) {
  * The axis is whichever of latitude and longitude spreads further in meters,
  * not the group's principal axis: an axis-aligned lane keeps the leader line
  * horizontal or vertical, which is what lets it be baked into the pin image
- * (see tetherImage) and read as a tether rather than as a stray diagonal.
+ * (see leaderLineImage) and read as a tether rather than a stray diagonal.
  *
  * A group with **no spread at all** -- venues at one exact coordinate -- has no
  * side to stay on, so nothing is owed to either axis; it prefers north-south,
@@ -769,37 +773,51 @@ function clusterImage(radius, { fill, stroke }, dpr) {
 }
 
 /**
- * The tether of a displaced pin: the dot at the coordinate the venue really
- * occupies, and the line out to where its diamond is drawn. The diamond is NOT
- * in here -- it is the ordinary pin image, moved by `icon-offset`.
+ * The leader line of a displaced pin: the stroke from the coordinate the venue
+ * really occupies out to where its diamond is drawn. The dot at that coordinate
+ * and the diamond at the far end are separate symbols -- see leaderDotImage and
+ * the `icon-offset` on the pin layers.
  *
- * Splitting the composite is what stopped the treatment eating the map's label
- * space (Anthony, 2026-09-04). A symbol's collision box is its whole image
- * rect, so a single dot-line-diamond image 32 px wide reserved 110 x 46 px
- * where the diamond it protects is 46 x 46 -- and a displaced transit stop
- * reserved 116 x 30. Most of that box was the empty paper alongside the line,
- * and on a phone frame those boxes covered the middle of the map: three venues
- * with visible space around them went unnamed because of paper nothing was
- * drawn on (`reviews/2026-09-map-collisions/diag-*.png`).
+ * Three symbols rather than one is what stopped the treatment eating the map's
+ * label space (Anthony, 2026-09-04). A symbol's collision box is its whole image
+ * rect, so a single dot-line-diamond image 32 px wide reserved 110 x 46 px where
+ * the diamond it protects is 46 x 46 -- and a displaced transit stop reserved
+ * 116 x 30. Most of that box was the empty paper alongside the line, and on a
+ * phone frame those boxes covered the middle of the map: three venues with
+ * visible space around them went unnamed because of paper nothing was drawn on
+ * (`reviews/2026-09-map-collisions/diag-*.png`).
  *
- * So the tether is drawn but does not reserve anything (`icon-ignore-placement`
- * on its layer), and the diamond keeps its box. The cost is deliberate and was
- * accepted with the diagnosis: a label may now be drawn across a leader line.
- * It may still not be drawn across a diamond or its number.
+ * The line is the one part that reserves nothing (`icon-ignore-placement` on its
+ * layer), and that is the whole of what was given up: **a label may be drawn
+ * across a leader line. It may not be drawn across a diamond, its number, or a
+ * location dot.**
  */
-function tetherImage({ x, y }, { dot, line }, dpr) {
-  const half = LEADER_DOT_R + LEADER_LINE_W;
-  const { ctx, cx, cy } = pinCanvas(Math.abs(x) + half, Math.abs(y) + half, dpr);
-
+function leaderLineImage({ x, y }, { line }, dpr) {
+  const { ctx, cx, cy } = pinCanvas(Math.abs(x) + LEADER_LINE_W, Math.abs(y) + LEADER_LINE_W, dpr);
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(cx + x, cy + y);
   ctx.strokeStyle = line;
   ctx.lineWidth = LEADER_LINE_W;
   ctx.stroke();
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
+}
 
-  // Drawn last: the dot is the one part that must never be covered, since it is
-  // the only thing on the map claiming the venue's real position.
+/**
+ * The dot: the one mark on the map claiming where a displaced venue really is.
+ *
+ * Its own symbol, at the feature's own coordinate, so its collision box is the
+ * dot rather than the composite -- about 15 px square against the 110 x 46 the
+ * whole tether used to reserve. It blocks, unlike the line: with the line out of
+ * the index a name could be placed straight over the dots either side of it, and
+ * three venues' worth of tether then points at ink you cannot see (Anthony,
+ * 2026-09-04, reading after-fill-urban-lights-desktop.png). A dot identifies a
+ * place; a line only connects two things that are already visible.
+ *
+ * One image for every lane, since the dot never moves off the coordinate.
+ */
+function leaderDotImage({ dot }, dpr) {
+  const { ctx, cx, cy } = pinCanvas(LEADER_DOT_R + 2, LEADER_DOT_R + 2, dpr);
   ctx.beginPath();
   ctx.arc(cx, cy, LEADER_DOT_R, 0, Math.PI * 2);
   ctx.fillStyle = dot;
@@ -835,11 +853,11 @@ function ringImage(pinRadius, { fill, stroke }, dpr) {
 }
 
 /**
- * Image id for a tether. One per pin kind per distinct offset -- keyed on the
- * offset alone, not on laneKey: two groups that chose different axes and both
- * left a member at 0,0 need no tether at all.
+ * Image id for a leader line. One per pin kind per distinct offset -- keyed on
+ * the offset alone, not on laneKey: two groups that chose different axes and
+ * both left a member at 0,0 need no line at all.
  */
-const tetherIconId = (kind, { x, y }) => `tether-${kind}-${x}_${y}`;
+const leaderLineId = (kind, { x, y }) => `leader-line-${kind}-${x}_${y}`;
 
 // The three zooms every zoom-keyed stop below is pinned to: the full extent,
 // the home view, and the closest zoom. They follow from the calibration and the
@@ -1490,43 +1508,66 @@ function venueNameRanks(venues, events) {
 }
 
 /**
- * Where a displaced venue's name may sit, best first, as the flat
+ * Candidate positions for a name beside a pin, best first, as the flat
  * anchor/offset pairs `text-variable-anchor-offset` takes.
  *
- * The lane's own side stays the first preference: a name out past the diamond,
- * on the side the tether points, is part of what the displacement says. What
- * changed on 2026-09-04 is that being blocked there stopped being fatal. A
- * displaced name had exactly this one position and vanished if anything held
- * it, which is most of why five of the six displaced venues on a phone frame
- * went unnamed; now it falls back around the diamond.
+ * `clear` is how far past the pin's own collision box the label starts, and
+ * every offset is measured from the feature's geometry -- which for a displaced
+ * pin is the dot, so `lane` carries the label out to the diamond first.
  *
- * Every offset is measured from the feature's own geometry -- the dot -- so a
- * candidate carries the lane offset plus its own clearance. They are in ems of
- * NAME_TEXT_PX, which is the unit the property takes, and the coupling is a
- * trap worth naming: change the text size without dividing by the new one and
- * every name moves relative to its pin, and any that land inside the pin's own
- * collision box disappear (measured 2026-09-04: 12px -> 11px took the phone
- * frame from 8 names to 4, and 10px to none).
+ * The corners use `clear` on BOTH axes rather than `clear` along the diagonal.
+ * A pin's collision box is a square, so its corner is at (clear, clear) and a
+ * diagonal candidate has to clear the corner, not the edge. A radial distance
+ * would land the label inside its own pin's box, where the placement pass that
+ * is trying to seat it rejects it -- which is why corner anchors measured inert
+ * on this map before the offsets were given per anchor (2026-09-04).
  *
- * The far side is last rather than absent. It puts the name back across the
- * tether, which reads worse than the other three -- but since the tether stopped
- * reserving space (see tetherImage) a name there is legible, and a legible name
- * slightly out of place beats no name.
+ * Offsets are in **ems of the layer's own text size**, which is the unit the
+ * property takes, and the coupling is a trap worth naming: change the text size
+ * without dividing by the new one and every name moves relative to its pin, and
+ * any that land inside the pin's box disappear. Measured on a phone frame:
+ * 12px -> 11px took the placed names from 8 to 4, and 10px to none.
  */
-function laneNameCandidates(offset) {
-  const clear = VENUE_R + NAME_CLEAR_PX;
-  const ems = (px) => px / NAME_TEXT_PX;
-  const east = ['left', [ems(offset.x + clear), ems(offset.y)]];
-  const west = ['right', [ems(offset.x - clear), ems(offset.y)]];
-  const above = ['bottom', [ems(offset.x), ems(offset.y - clear)]];
-  const below = ['top', [ems(offset.x), ems(offset.y + clear)]];
-  if (offset.x > 0) return [east, above, below, west].flat();
-  if (offset.x < 0) return [west, above, below, east].flat();
-  if (offset.y > 0) return [below, east, west, above].flat();
-  if (offset.y < 0) return [above, east, west, below].flat();
+function nameCandidates({ clear, textPx, order, lane = NO_LANE }) {
+  const ems = (px) => px / textPx;
+  const at = {
+    east: ['left', [ems(lane.x + clear), ems(lane.y)]],
+    west: ['right', [ems(lane.x - clear), ems(lane.y)]],
+    above: ['bottom', [ems(lane.x), ems(lane.y - clear)]],
+    below: ['top', [ems(lane.x), ems(lane.y + clear)]],
+    upRight: ['bottom-left', [ems(lane.x + clear), ems(lane.y - clear)]],
+    upLeft: ['bottom-right', [ems(lane.x - clear), ems(lane.y - clear)]],
+    downRight: ['top-left', [ems(lane.x + clear), ems(lane.y + clear)]],
+    downLeft: ['top-right', [ems(lane.x - clear), ems(lane.y + clear)]],
+  };
+  return order.flatMap((where) => at[where]);
+}
+
+/**
+ * The order a displaced venue's name tries its positions in.
+ *
+ * The lane's own side leads: a name out past the diamond, on the side the
+ * tether points, is part of what the displacement says. What changed on
+ * 2026-09-04 is that being blocked there stopped being fatal. A displaced name
+ * had exactly this one position and vanished if anything held it, which is most
+ * of why five of the six displaced venues on a phone frame went unnamed; now it
+ * works its way round the diamond.
+ *
+ * The far side comes late rather than never. It puts the name back across the
+ * tether, which reads worse than the rest -- but since the line stopped
+ * reserving space a name there is legible, and a legible name slightly out of
+ * place beats no name.
+ */
+function laneNameOrder(offset) {
+  if (offset.x > 0) return ['east', 'above', 'below', 'upRight', 'downRight', 'west', 'upLeft', 'downLeft'];
+  if (offset.x < 0) return ['west', 'above', 'below', 'upLeft', 'downLeft', 'east', 'upRight', 'downRight'];
+  if (offset.y > 0) return ['below', 'east', 'west', 'downRight', 'downLeft', 'above', 'upRight', 'upLeft'];
+  if (offset.y < 0) return ['above', 'east', 'west', 'upRight', 'upLeft', 'below', 'downRight', 'downLeft'];
   // The middle lane of an odd group draws at its own coordinate, so its name
   // starts on the axis its neighbours did not take.
-  return offset.axis === 'ns' ? [east, west, above, below].flat() : [below, above, east, west].flat();
+  return offset.axis === 'ns'
+    ? ['east', 'west', 'upRight', 'downRight', 'upLeft', 'downLeft', 'above', 'below']
+    : ['below', 'above', 'downRight', 'downLeft', 'upRight', 'upLeft', 'east', 'west'];
 }
 
 function addPins(
@@ -1548,15 +1589,16 @@ function addPins(
   map.addImage('pin-venue', diamondImage(VENUE_R, { fill: colors.venue }, dpr).data, { pixelRatio: dpr });
   const haloColors = { fill: colors.accent, stroke: colors.accentDark };
   const tetherColors = { dot: colors.leaderDot, line: colors.leaderLine };
+  map.addImage('leader-dot', leaderDotImage(tetherColors, dpr).data, { pixelRatio: dpr });
   // One ring per pin size, moved onto the diamond by the same icon-offset the
   // diamond uses -- see the halo layers below.
   map.addImage('halo-venue', ringImage(VENUE_R, haloColors, dpr).data, { pixelRatio: dpr });
   map.addImage('halo-transit', ringImage(SMALL_R, haloColors, dpr).data, { pixelRatio: dpr });
   for (const offset of tethers(laneOffsets)) {
-    map.addImage(tetherIconId('venue', offset), tetherImage(offset, tetherColors, dpr).data, { pixelRatio: dpr });
+    map.addImage(leaderLineId('venue', offset), leaderLineImage(offset, tetherColors, dpr).data, { pixelRatio: dpr });
   }
   for (const offset of tethers(stopLaneOffsets)) {
-    map.addImage(tetherIconId('transit', offset), tetherImage(offset, tetherColors, dpr).data, { pixelRatio: dpr });
+    map.addImage(leaderLineId('transit', offset), leaderLineImage(offset, tetherColors, dpr).data, { pixelRatio: dpr });
   }
   /** The lane as an icon-offset, matched off the feature's lane key. */
   const laneIconOffset = (lanes) => [
@@ -1643,7 +1685,7 @@ function addPins(
           offsetX: d.offset.x,
           offsetY: d.offset.y,
           sortKey: d.sortKey ?? 0,
-          tether: tetherIconId('venue', d.offset),
+          line: leaderLineId('venue', d.offset),
           tethered: d.offset.x !== 0 || d.offset.y !== 0,
         },
         geometry: { type: 'Point', coordinates: [d.venue.lng, d.venue.lat] },
@@ -1670,7 +1712,7 @@ function addPins(
             lane: laneKey(displacedStops.get(i)),
             offsetX: displacedStops.get(i).x,
             offsetY: displacedStops.get(i).y,
-            tether: tetherIconId('transit', displacedStops.get(i)),
+            line: leaderLineId('transit', displacedStops.get(i)),
           }),
         },
         geometry: { type: 'Point', coordinates: [s.lng, s.lat] },
@@ -1736,25 +1778,43 @@ function addPins(
     filter: plainVenue,
     paint: haloPaint(VENUE_R),
   });
-  // The tethers: dot and leader line, drawn under everything else and reserving
-  // nothing. `icon-ignore-placement` is the whole point of splitting them out
-  // of the pin image -- see tetherImage.
+  // The leader lines, drawn under everything and reserving nothing. This is the
+  // one part of the old composite that gave up its collision box, and the whole
+  // of what "a label may cross a leader line" means -- see leaderLineImage.
   map.addLayer({
-    id: 'venue-leader-tether',
+    id: 'venue-leader-line',
     type: 'symbol',
     source: 'venue-groups',
     minzoom: leaderZoom,
     filter: ['==', ['get', 'tethered'], true],
-    layout: { ...pinLayout, 'icon-ignore-placement': true, 'icon-image': ['get', 'tether'] },
+    layout: { ...pinLayout, 'icon-ignore-placement': true, 'icon-image': ['get', 'line'] },
   });
   map.addLayer({
-    id: 'transit-leader-tether',
+    id: 'transit-leader-line',
     type: 'symbol',
     source: 'transit',
     minzoom: leaderZoom,
     filter: ['==', ['get', 'grouped'], true],
-    layout: { ...pinLayout, 'icon-ignore-placement': true, 'icon-image': ['get', 'tether'] },
+    layout: { ...pinLayout, 'icon-ignore-placement': true, 'icon-image': ['get', 'line'] },
   });
+
+  // The dots, over their own lines, reserving a box the size of a dot. These
+  // DO block. With the line out of the collision index a name could be placed
+  // straight across the dots either side of it, leaving three tethers pointing
+  // at ink you cannot see (Anthony, 2026-09-04). A dot identifies a place; a
+  // line only joins two things already visible. The box is ~15 px square,
+  // against the 110 x 46 the whole composite used to take.
+  const dotLayer = (id, source, filter) =>
+    map.addLayer({
+      id,
+      type: 'symbol',
+      source,
+      minzoom: leaderZoom,
+      filter,
+      layout: { ...pinLayout, 'icon-image': 'leader-dot' },
+    });
+  dotLayer('venue-leader-dot', 'venue-groups', ['==', ['get', 'tethered'], true]);
+  dotLayer('transit-leader-dot', 'transit', ['==', ['get', 'grouped'], true]);
 
   // A displaced pin's halo is a symbol rather than a circle, for the one reason
   // that a circle layer draws at the feature's geometry -- which for these pins
@@ -1955,10 +2015,16 @@ function addPins(
         'text-font': FONT_SEMIBOLD,
         'text-size': SPONSOR_NAME_TEXT_PX,
         // The engine tries each side in turn and keeps the first that fits.
-        'text-variable-anchor': NAME_ANCHOR_ORDER,
         // +3: the generic sponsor pin's stroke widens its image, and both
         // sponsor kinds share this layer, so both clear the wider box.
-        'text-radial-offset': (SMALL_R + 3 + NAME_CLEAR_PX) / SPONSOR_NAME_TEXT_PX,
+        'text-variable-anchor-offset': [
+          'literal',
+          nameCandidates({
+            clear: SMALL_R + 3 + NAME_CLEAR_PX,
+            textPx: SPONSOR_NAME_TEXT_PX,
+            order: NAME_ANCHOR_ORDER,
+          }),
+        ],
         'text-justify': 'auto',
       },
       paint: nameLabelPaint(colors.labelSponsor),
@@ -1976,8 +2042,10 @@ function addPins(
         'text-field': ['get', 'name'],
         'text-font': FONT_SEMIBOLD,
         'text-size': NAME_TEXT_PX,
-        'text-variable-anchor': NAME_ANCHOR_ORDER,
-        'text-radial-offset': (VENUE_R + NAME_CLEAR_PX) / NAME_TEXT_PX,
+        'text-variable-anchor-offset': [
+          'literal',
+          nameCandidates({ clear: VENUE_R + NAME_CLEAR_PX, textPx: NAME_TEXT_PX, order: NAME_ANCHOR_ORDER }),
+        ],
         'text-justify': 'auto',
         // Whose name survives a collision, decided rather than inherited from
         // sheet row order -- see venueNameRanks.
@@ -1992,7 +2060,7 @@ function addPins(
   // coincident pair, the same box twice, so collision would keep one name of
   // two). The lane's own outward side is still the first choice, so the name
   // reads as part of what the tether says; the rest of the way around the
-  // diamond is the fallback, in the order laneNameCandidates sets.
+  // diamond is the fallback, in the order laneNameOrder sets.
   //
   // `text-variable-anchor-offset` rather than `text-variable-anchor`, because
   // the plain variable anchor pairs one radial distance with every anchor and
@@ -2002,7 +2070,9 @@ function addPins(
   // against the vendored engine, 2026-09-04), so each lane gets its own
   // ordered list. It supersedes text-anchor, text-offset and
   // text-radial-offset on this layer; setting any of them here does nothing.
-  const laneNames = laneOffsets.map((offset) => ({ key: laneKey(offset), candidates: laneNameCandidates(offset) }));
+  const displacedName = (offset) =>
+    nameCandidates({ clear: VENUE_R + NAME_CLEAR_PX, textPx: NAME_TEXT_PX, order: laneNameOrder(offset), lane: offset });
+  const laneNames = laneOffsets.map((offset) => ({ key: laneKey(offset), candidates: displacedName(offset) }));
   map.addLayer(
     {
       id: 'venue-leader-name-label',
@@ -2019,7 +2089,7 @@ function addPins(
           'match',
           ['get', 'lane'],
           ...laneNames.flatMap((l) => [l.key, ['literal', l.candidates]]),
-          ['literal', laneNameCandidates(NO_LANE)],
+          ['literal', displacedName(NO_LANE)],
         ],
         'text-justify': 'auto',
         'symbol-sort-key': ['get', 'sortKey'],

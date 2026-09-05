@@ -379,19 +379,27 @@ this up, and never again for content.
 
 ### Setting it up
 
-Put a Code block in a **full-width** section of the map page — the heights below
-assume the embed gets most of the page's width — holding this:
+Put a Code block in a **full-width** section of the map page holding this:
 
 ```html
 <style>
-  .mmaf-map-embed { display: block; width: 100%; border: 0; height: 1600px; }
-  @media (max-width: 700px) { .mmaf-map-embed { height: 1950px; } }
+  .mmaf-map-embed { display: block; width: 100%; border: 0; height: 1400px; }
+  @media (max-width: 520px) { .mmaf-map-embed { height: 1810px; } }
 </style>
 <iframe class="mmaf-map-embed"
         src="https://go.midwaymusicandart.org/?embed=map"
         title="Midway Music &amp; Arts Fest map"
         loading="lazy"
         allow="geolocation"></iframe>
+<script>
+  window.addEventListener('message', function (event) {
+    var frame = document.querySelector('.mmaf-map-embed');
+    if (!frame || !event.data || event.data.type !== 'mmaf-embed-height') return;
+    if (event.source !== frame.contentWindow) return;
+    var height = Number(event.data.height);
+    if (height > 200 && height < 6000) frame.style.height = height + 'px';
+  });
+</script>
 ```
 
 `allow="geolocation"` is what lets the locate button work. Without it the button
@@ -405,35 +413,47 @@ schedule, starring and search only exist in the app, and a phone-sized iframe is
 a poor place to meet them. Keeping the link in Squarespace's own content means
 the organizers can reword it without a deploy.
 
-### The two heights
+### Why there is a script, and what happens without it
 
-An iframe is exactly as tall as the number in that snippet, and anything the map
-page draws past it scrolls *inside* the iframe — which strands a visitor between
-two scrollbars. So the number has to cover the whole embed: the map frame, the
-legend, and the venue list under them.
+An iframe is exactly as tall as you tell it to be, and this one cannot be told
+once. The venue list under the map lays out in as many columns as the iframe is
+wide enough for, so the height it needs steps as the width crosses each column
+boundary — measured at 21 venues, roughly 1060 px at four columns, 1110 at
+three, 1340 at two, 1780 at one. A stylesheet here can only ask about *this
+page's* width, while the column count follows the *iframe's* width, which
+Squarespace decides from whatever section the block is in. Any fixed number can
+therefore land on the wrong step, and landing short puts a second scrollbar
+inside the map block.
 
-The venue list is laid out in as many columns as the iframe is wide enough for —
-five at 1440 px, two at 700, one on a phone — so the embed is tallest at the
-narrow end of each branch. Measured at 21 venues: 1060 px at 1440 wide, 1430 px
-just above the phone breakpoint, and 1800 px at 430. That is what the 1600 and
-1950 above are sized against, with room for several more venues at each width.
-If the venues tab grows a lot, raise both and re-check with step 3 below. Extra
-height costs only blank space; too little costs the trap.
+So the map measures itself and posts its height to this page, and the listener
+applies it. Nothing else is sent, ever, and the listener ignores messages from
+anywhere but this iframe.
+
+The two heights in the `<style>` block are the fallback for a visitor whose
+browser blocks the script: generous enough that nothing scrolls inside the
+iframe at any width, at the cost of some blank space under the venue list. If
+the venues tab grows a lot, those two numbers are the only thing to revisit —
+and only for that fallback. Step 3 below is the check either way.
 
 ### Verifying after a paste
 
 Load the published page in an ordinary tab, not the Squarespace editor.
 
 1. The map draws, with numbered venue pins on it, a legend under it and the
-   numbered venue list under that. No Midway header bar, no row of app tabs.
+   numbered venue list under that. No Midway header bar, no row of app tabs, and
+   no notice bar above the map — the app's banner is deliberately left out of
+   the embed, so anything the organizers need to announce here belongs in the
+   Squarespace page itself.
 2. Put the pointer over the map and scroll: the **page** scrolls and the map
    stays put. Hold Ctrl (Cmd on a Mac won't do it) and scroll: now the map
    zooms. That swap is deliberate — without it, scrolling down the page stops
    dead on the map.
 3. Scroll to the bottom of the embed: the last venue in the list should be
    followed by the page's own content, with no scrollbar of its own down the
-   side of the map block. A scrollbar there means the height in the snippet is
-   too small; raise it.
+   side of the map block and no band of blank space under the last venue. Either
+   one means the height message is not getting through — check that the
+   `<script>` half of the snippet was pasted, and that the class on the iframe
+   still matches the one the listener looks for.
 4. Click a pin, or a venue in the list: the venue sheet opens over the map.
    Escape or the × closes it.
 5. Click one of the events inside that sheet: it opens the full app in a new

@@ -977,12 +977,42 @@ hash is required and none should be pasted.
 - **An unknown value is not an embed.** `?embed=schedule` renders the full app,
   chrome and all. Failing back to too much chrome beats failing into a page with
   no navigation.
-- **What is suppressed is the shell, and only the shell**: `.app-header` and
-  `.tab-bar`, via `body.is-embed` in `app.css`. The map, its controls, the
-  legend and the venue key keep app styling — the embed inherits nothing from
-  the host page's theme, so restyling that site can never break this one. The
-  notice banner stays: it is organizer content, and a same-day change has to
-  reach the people reading the map on the organizers' own site too.
+- **What is suppressed is the shell**: `.app-header` and `.tab-bar` via
+  `body.is-embed` in `app.css`, and the notice banner, which `app.js` declines
+  to render at all rather than hiding — so the embed carries no dismiss button
+  in the tab order and writes no dismissal to storage. The map, its controls,
+  the legend and the venue key keep app styling — the embed inherits nothing
+  from the host page's theme, so restyling that site can never break this one.
+
+  The banner went the other way when this was built (organizer content, and a
+  same-day change should reach people reading the map on the organizers' own
+  site too) and was **reversed on live review, 2026-09-05**: inside somebody
+  else's page a dismissible bar reads as the embed malfunctioning rather than as
+  the festival announcing something, and anything urgent can be said in the
+  Squarespace page, where it looks like it belongs.
+- **The embed reports its own height**, and the iframe is sized from it. The
+  message is a binding interface, since the listener lives in a Squarespace code
+  block: `{ type: 'mmaf-embed-height', height: <integer px> }`, posted to
+  `window.parent` on load and on every reflow, target origin `*` — the embed
+  does not know what page holds it, and one integer already visible to anyone
+  who can see the iframe is not worth a configuration knob. The listener is the
+  half that checks, and README's snippet verifies `event.source` against its own
+  iframe before believing anything.
+
+  A fixed height cannot do this job. The venue key lays out in as many columns
+  as the iframe is wide enough for, so the content height steps — at 21 venues,
+  ~1060 px at four columns, ~1110 at three, ~1340 at two, ~1780 at one — and a
+  stylesheet in the host page can only branch on the *host's* viewport while the
+  column count follows the *iframe's* width, which the host's own layout
+  decides. Any breakpoint can land on the wrong step, and landing short is a
+  scrollbar inside somebody else's page. The heights in the snippet remain as a
+  no-JS fallback.
+
+  Two app-side properties this depends on, both of which used to be false:
+  `body.is-embed` drops the app's `min-height: 100dvh`, or the document could
+  never measure shorter than the frame it is in and the reported height could
+  only ever grow; and the measurement reads the **body's** box rather than
+  `documentElement.scrollHeight`, which never reports less than the viewport.
 - **Cooperative gestures are on in the embed and off in the app**
   (`cooperativeGestures: isEmbed()`): ctrl+wheel to zoom, two fingers to pan.
   On the app's own page the map is the page and a plain wheel should zoom it;

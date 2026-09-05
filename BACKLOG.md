@@ -94,11 +94,12 @@ and re-spec. The 4.5:1 small-text requirement is unchanged.
 
 ## Squarespace umbrella site
 
-**Paste the map embed onto the Squarespace map page** (added 2026-09-04). The
-app side landed the same day — `?embed=map`, the contract in CONTRACTS.md, the
-iframe snippet and the verification walk-through in README. What is left is
-Anthony's: paste it, add the text block linking phone visitors to the full
-guide, and walk the seven checks. Nothing in this repo changes when he does.
+**Re-paste the map embed snippet** (added 2026-09-05). The embed is live, but
+the snippet gained a `<script>` half on 2026-09-05: the map now posts its height
+and the listener sizes the iframe from it, which is what removed the blank space
+under the venue list. Until the block is re-pasted the live page runs on the
+fallback heights alone, which is the state Anthony saw. The snippet is in
+README, and step 3 of the walk-through is the check that it took.
 
 **Performers embed follow-ups** (added 2026-09-04). The embed ignores the
 accordion block's "expand first item" setting (`data-is-expanded-first-item`) —

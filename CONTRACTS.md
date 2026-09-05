@@ -683,18 +683,26 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   coordinates and a fixed group order, so the answer is identical on every
   device.
 
-  **The tether does not reserve space; the diamond does.** Dot and line are one
-  image per lane on their own layer (`venue-leader-tether`,
-  `transit-leader-tether`) with `icon-ignore-placement`, and the diamond is the
-  ordinary pin image moved into the lane by `icon-offset`. Until 2026-09-04 all
-  three were one image, which made the leader line untrespassable — and made the
-  treatment reserve the paper alongside it: a symbol's collision box is its
-  whole image rect, so a 32 px lane reserved 110 × 46 px to protect a 46 × 46
-  diamond, and a displaced transit stop reserved 116 × 30. On a phone frame
-  those boxes covered the middle of the map and three venues with visible space
-  around them went unnamed (`reviews/2026-09-map-collisions/diag-*.png`). So the
-  line gave way and the diamond did not: **a label may be drawn across a leader
-  line, and may not be drawn across a diamond or its number.**
+  **The line reserves nothing; the dot and the diamond do.** A displaced pin is
+  three symbols, not one image: the leader line (`venue-leader-line`,
+  `transit-leader-line`, with `icon-ignore-placement`), the dot at the venue's
+  own coordinate (`venue-leader-dot`, `transit-leader-dot`), and the ordinary
+  pin image moved into the lane by `icon-offset`.
+
+  Until 2026-09-04 all three were one image, which made the leader line
+  untrespassable — and made the treatment reserve the paper alongside it: a
+  symbol's collision box is its whole image rect, so a 32 px lane reserved
+  110 × 46 px to protect a 46 × 46 diamond, and a displaced transit stop
+  reserved 116 × 30. On a phone frame those boxes covered the middle of the map
+  and three venues with visible space around them went unnamed
+  (`reviews/2026-09-map-collisions/diag-*.png`).
+
+  The line gave way; the dot did not. A line only joins two things that are
+  already visible, so crossing it costs little; a dot is the only mark on the
+  map claiming where a venue really is, and a name across it leaves a tether
+  pointing at ink you cannot see. Its own box is about 15 px square, the dot
+  rather than the composite. So, in full: **a label may be drawn across a leader
+  line. It may not be drawn across a diamond, its number, or a location dot.**
 
   The displaced pins come from their own
   unclustered `venue-groups` source, because the clustered one hides them inside
@@ -806,15 +814,27 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   diamond.** The lane's outward side is the first candidate — a name at the true
   coordinate labels the empty paper beside the tether, and an exactly coincident
   pair's names would want the identical box and collide down to one — then the
-  two perpendicular sides, then the far side across the tether. Before
-  2026-09-04 there was only the first, and a displaced name blocked there simply
-  vanished; that was most of why five of the six displaced venues on a phone
-  frame went unnamed. The layer uses `text-variable-anchor-offset`, which pairs
+  two perpendicular sides, then the corners, then the far side across the
+  tether. Before 2026-09-04 there was only the first, and a displaced name
+  blocked there simply vanished; that was most of why five of the six displaced
+  venues on a phone frame went unnamed. The layer uses
+  `text-variable-anchor-offset`, which pairs
   an offset with each anchor and **is data-driven**, so each lane carries its own
   ordered list; plain `text-variable-anchor` cannot express it, because its one
   radial distance is measured from the feature, which for these pins is the dot
   a whole lane away from the diamond. That property supersedes `text-anchor`,
   `text-offset` and `text-radial-offset` on this layer.
+
+  **Every name layer offers the four corners, and they carry the full clearance
+  on both axes.** A pin whose four sides are all spoken for still has its
+  corners, and on this map that is the common case. They are only usable with an
+  offset per anchor: a single `text-radial-offset` places a diagonal candidate
+  at radius/√2 on each axis, which is *inside* the square collision box it is
+  meant to clear, so the placement pass rejects it and the candidate is
+  decoration — measured, adding corner anchors to a radial-offset layer changed
+  nothing at all. This is why the plain venue and sponsor name layers use
+  `text-variable-anchor-offset` too, with a constant list rather than a
+  data-driven one.
 
   Its offsets are in **ems of the layer's own text size**, and that coupling is
   binding: changing a name layer's `text-size` without dividing the offsets by
@@ -1178,8 +1198,8 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   `queryRenderedFeatures` only once placement has put it on screen.
   Layer ids are part of the hook: `venue-pin`, `venue-leader-pin`,
   `venue-cluster`, `transit-pin`, `transit-leader-pin`, `sponsor-featured-pin`,
-  `sponsor-generic-pin`, the dot-and-line layers `venue-leader-tether` and
-  `transit-leader-tether`,
+  `sponsor-generic-pin`, the tether layers `venue-leader-line`,
+  `transit-leader-line`, `venue-leader-dot` and `transit-leader-dot`,
   the tap-highlight halos `venue-highlight`, `venue-leader-halo`,
   `transit-highlight`, `sponsor-highlight`, the name layers `venue-name-label`,
   `venue-leader-name-label`, `sponsor-name-label`, and for the ground
@@ -1198,7 +1218,7 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   `match` expressions switch on, e.g. `ns:0,-32`), `offsetX`/`offsetY` (the
   pixels the diamond is drawn from the coordinate, which is what the tap
   resolver measures with and what a test should add to `map.project`), plus
-  `tether` (its dot-and-line image id) and, on venues, `tethered`. Where the
+  `line` (its leader-line image id) and, on venues, `tethered`. Where the
   diamond is drawn is `icon-offset` on the pin layer, so a test that wants the
   drawn position reads that rather than probing a composite image — there is no
   longer one to probe.

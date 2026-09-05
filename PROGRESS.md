@@ -45,6 +45,21 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-04 — the Playwright port is per-checkout, so concurrent suites stop fighting
+
+`playwright.config.mjs` pinned the test server to 4173 with
+`reuseExistingServer` outside CI, so two sessions running suites at once either
+had one silently reuse the other checkout's server (testing the wrong tree) or,
+under `CI=1`, refuse to start and wait. The port is now derived from a hash of
+the checkout's path: stable for a given checkout, different across worktrees.
+Deterministic rather than a random free port because Playwright re-evaluates
+the config in each worker process, and every process must agree on the port.
+`PW_PORT` overrides it in the unlikely event two checkouts hash together.
+`share.spec.mjs` was the one spec that hardcoded the origin; its expected share
+URLs now come from the `baseURL` fixture. Concurrent suites in the *same*
+checkout remain unsupported — they'd fight over the `site/` build output, not
+the port. Full suite green under `CI=1` (174 unit + 148 Playwright).
+
 ### 2026-09-04 — every content view is a 560px column
 
 The Support cap (below) made that one page fixed-width while the rest of the
@@ -77,6 +92,44 @@ widened the window. `auto-fit` collapses the empty tracks so the cards
 stretch to fill their row instead. Measured after the fix: from ~600px of
 window width up the tab no longer changes at all — sapphire cards hold 274px,
 topaz 179px — and the phone layout is untouched.
+
+### 2026-09-04 — dots earn their own collision box, and names get the corners
+
+Two refinements to the entry below, from Anthony reading
+`after-fill-urban-lights-desktop.png`. Both are his rulings.
+
+**A leader line may be crossed; a location dot may not.** Taking the whole
+tether out of the collision index went one step too far: with nothing reserved
+along it, Black Hart of Saint Paul's name was placed straight across the dots of
+the two venues either side of it, leaving three tethers pointing at ink you
+could not see. Dot and line are now separate symbols. The line still reserves
+nothing — that was the whole point of the split — and the dot reserves a box the
+size of a dot, about 15 px square against the 110 × 46 the composite used to
+take. The ruling in full: a label may cross a leader line; it may not cover a
+diamond, its number, or a location dot.
+
+**Names can now use the corners.** A pin whose four sides are spoken for still
+has its corners, and on this map that is the common case. The reason they
+measured inert in the diagnosis was not crowding: a single `text-radial-offset`
+puts a diagonal candidate at radius/√2 on each axis, which is *inside* the
+square collision box it is meant to clear, so the placement pass rejects it
+before crowding is even consulted. With an offset per anchor they carry the full
+clearance on both axes and become real candidates, so every name layer moved to
+`text-variable-anchor-offset`.
+
+On desktop the corners recover exactly the venue the dot rule costs, and put it
+where Anthony placed it by hand: Black Hart top-right of its pin, Mosaic on a
+Stick upper-left. Measured at the leader zoom on the content the captures use,
+nothing is lost and desktop gains one — phone holds at 11 of 14, desktop goes
+17 to 18. On today's shipping content, which differs only in the sponsors tab,
+the phone loses Black Hart (11 to 10) and desktop holds at 17 of 20.
+
+That phone loss is the camera, not the rule. At the home view Black Hart sits
+26 px from the frame's right edge; west is where both neighbours' dots now are,
+its own group's diamonds hold north and south, and its only unblocked candidates
+are past the edge — where MapLibre will still place a label, invisibly, because
+off-screen placements are legal. Centred on Black Hart it is named. Captures
+under the `after-dots-` prefix.
 
 ### 2026-09-04 — the displaced-pin treatment stops eating the map's label space
 

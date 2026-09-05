@@ -144,12 +144,23 @@ the lever is a shorter lane step for cramped groups (the floor is 2 × `VENUE_R`
 = 38 px, against today's 64), which would cost every displaced pin its visible
 leader run and so needs its own look.
 
-Same neighbourhood, same cause: **Mosaic on a Stick and Fluid Ink Tattoos are
-the two venues still unnamed** on a phone frame at the leader zoom after the
-2026-09-04 fill-rate work took the frame from 8 names of 14 to 11. Every one of
-their name's four candidate positions is inside a neighbour's *diamond* rather
-than inside the empty paper the tether used to reserve, so nothing short of
-moving a pin will seat them. A shorter lane step is the same lever.
+Same neighbourhood, same cause: **Fluid Ink Tattoos is the venue still
+unnamed** at the leader zoom after the 2026-09-04 fill-rate work took a phone
+frame from 8 names of 14 to 11. Corner candidates seated Mosaic on a Stick on
+desktop; Fluid Ink's eight candidates are all inside a neighbour's *diamond*
+rather than inside the empty paper the tether used to reserve, so nothing short
+of moving a pin will seat it. A shorter lane step is the same lever.
+
+**Black Hart of Saint Paul goes unnamed at the phone home view** (added
+2026-09-04, the one loss from making location dots block labels). It sits 26 px
+from that frame's right edge; west is where both its neighbours' dots are, its
+own group's diamonds hold north and south, and its only unblocked candidates are
+past the edge — where MapLibre places a label anyway, invisibly, since
+off-screen placements are legal. Centred on it, or on desktop, it is named. Two
+possible levers if it matters: preferring on-screen candidates (the engine
+offers no such control, so this would mean placing names ourselves), or a
+shorter lane step here as above. Neither is worth it for one venue at one camera
+position.
 
 **Sponsor and street labels were never re-measured after the tether split**
 (added 2026-09-04). Taking the leader composites out of the collision index

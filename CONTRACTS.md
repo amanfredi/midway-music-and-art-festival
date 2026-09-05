@@ -1510,7 +1510,8 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - **Target size** is 44px+ for app-shell controls and 24px minimum for
   everything else, unless targets are spaced 24px apart centre-to-centre or
   the same function is reachable from an equivalent full-size control. Known
-  deviation, tracked in BACKLOG: transit and sponsor pins draw at 22px, and
+  deviation, tracked in BACKLOG: transit and generic sponsor pins draw at 22px
+  (the featured square is 27 and clears it), and
   the ±10px tap box around a touch point means the drawn symbol and the
   effective target are no longer the same thing. Which one 2.5.8 measures here
   is unsettled and is part of the map re-audit.

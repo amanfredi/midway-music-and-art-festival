@@ -63,6 +63,43 @@ where the card was tapped.
 Every shot is the whole host-page viewport rather than the iframe, because the
 point of the set is where the overlay lands *on the visitor's screen*.
 
+## Round three: does the sheet say it scrolls?
+
+`node reviews/2026-09-embed-sheet/shoot-sheet-cue.mjs`, eight shots, same build.
+The question `after-sheet-phone.png` raised and Anthony ruled on: the sheet is
+confined to the map frame and scrolls inside itself, and the only sign of it was
+content clipped at the border, which reads as a layout bug. The cramping stays;
+the missing affordance was the defect.
+
+| prefix | state |
+|---|---|
+| `before-cue-` | the sheet as it shipped — content clipped at the border |
+| `after-cue-` | the same sheet with the cue at the edge that has more behind it |
+| `end-cue-` | the same sheet scrolled to its end |
+
+`-phone` is the embed on a phone inside the host page, sheet opened by a pin tap
+so it sits on the map frame's bottom edge — directly comparable with
+`after-sheet-phone.png`, and it lands on the same venue (Hive Collaborative).
+`-app` is the app's own bottom sheet at 393 × 480, which is the other surface
+that overflows: 80 vh of a short window is no roomier than the embed's frame.
+
+| | sheet | runs past its edge by |
+|---|---|---|
+| `-phone` (embed, map frame) | 361 px | 155 px |
+| `-app` (80 vh of a 480 px window) | 384 px | 261 px |
+
+**`before-cue-phone-edge.png` against `after-cue-phone-edge.png` is the pair to
+look at**, and the only one that answers the question. The cue occupies the last
+~35 px of a 361 px sheet, which is precisely the band a whole-screen shot at 1x
+loses — judged from the full shots the change looks like nothing happened. These
+two are the same 56 px strip of the same sheet at 3x, with and without it: a
+Share button sliced through by a hard border, against a button dissolving into
+the surface under a shaded edge.
+
+`end-cue-app.png` is the other half of the claim. At the end of the scroll the
+bottom edge is clean — last button whole, padding below it, no cue — and the top
+edge has taken the cue instead.
+
 ## How the earlier state in each pair was produced
 
 All four prefixes come out of **one browser session** from the same working
@@ -77,6 +114,10 @@ tree, because the CSS font stack resolves differently between headless launches
   never shipped.
 - `frame-` puts the sheet back on the map frame once it is open, which is what
   the previous code computed.
+- `before-cue-` removes the two `.sheet__fade` elements from the open dialog.
+  Those are the whole of the visible change — the dialog/scroller split behind
+  them moved no padding and no pixel — so this is the previous state rather than
+  an approximation of it.
 
 What neither method captures is `preventScroll` on the sheet's focus call, which
 is JS. Nothing is lost: no engine available here performs that scroll in either
@@ -107,7 +148,11 @@ fixtures. Nothing in the repo ships a config for that; write one pointing at
 ```sh
 node scripts/build.mjs --config /tmp/snapshot-config.json && node scripts/build-sw.mjs
 node reviews/2026-09-embed-sheet/shoot-embed-overlays.mjs
+node reviews/2026-09-embed-sheet/shoot-sheet-cue.mjs
 ```
+
+The two harnesses bind different ports (4187 and 4189) so they can be run
+concurrently, or from two checkouts at once.
 
 The build must print version `8dead5e026f7` — 21 venues, 34 events, 6 sponsors.
 Anything else means the content has moved and the shots are not comparable with

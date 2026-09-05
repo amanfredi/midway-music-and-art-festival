@@ -16,6 +16,12 @@
      shadow alone. */
   --color-bg: #ffffff;
   --color-surface: #f6f6f6;
+  /* The same gray at zero alpha, for gradients that fade a panel's content out
+     at a scrollable edge (see .sheet__fade). Spelled out rather than reaching
+     for the `transparent` keyword: `transparent` is transparent *black*, so an
+     engine interpolating the ramp without premultiplying alpha runs it through
+     gray and the fade reads as a smudge. Move the two literals together. */
+  --color-surface-fade: rgba(246, 246, 246, 0);
   --color-text: #1d2a33;
   /* Darkened twice from #5a6b74. First because the kind tints put this ink on
      grounds darker than the white card it was chosen against (#5a6b74 fell to
@@ -793,7 +799,14 @@ img {
 /* A native modal <dialog>, so the focus trap, background inertness and scroll
    lock come from the browser. Its UA defaults (centered, bordered, auto
    margins, fit-content sizing) are all overridden here to keep the
-   bottom-sheet shape. */
+   bottom-sheet shape.
+
+   The dialog is the box and `.sheet__scroll` inside it is the scroller. They
+   were one element until 2026-09-05; the split is what lets the scroll cue hold
+   still while the content moves under it, since an absolutely positioned child
+   of a scroll container scrolls with that container's content and so cannot be
+   pinned to its edge. All the padding moved to the scroller, so the split
+   changes nothing visible: content still runs to the sheet's own edges. */
 .sheet {
   position: fixed;
   inset: auto 0 0;
@@ -801,13 +814,73 @@ img {
   width: 100%;
   max-width: 100%;
   max-height: 80vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: none;
   background: var(--color-surface);
   color: var(--color-text);
   border-radius: var(--radius) var(--radius) 0 0;
   box-shadow: var(--shadow-raised);
+  padding: 0;
+}
+
+.sheet__scroll {
+  overflow-y: auto;
+  /* A flex item's min-height is `auto`, which refuses to shrink below its
+     content — the sheet would grow past its own max-height instead of
+     scrolling. */
+  min-height: 0;
+  /* The close button is absolute against this box rather than against the
+     dialog, so it keeps scrolling away with the content exactly as it did when
+     the two were one element. */
+  position: relative;
   padding: 1.25rem 1.25rem calc(1.5rem + var(--safe-bottom));
+}
+
+/* -- the scroll cue --
+
+   The sheet is confined: to 80vh in the app, to the map frame in the embed. On
+   a phone that frame is a ~361px square and a typical venue wants ~500, so
+   scrolling inside itself is the ordinary case rather than the edge one
+   (reported 2026-09-05 from the live embed). The only thing saying so was
+   content clipped mid-glyph at the border, which reads as a layout bug rather
+   than as an invitation to keep reading.
+
+   A native scrollbar cannot carry the signal. iOS hides overlay scrollbars
+   until a finger is already moving, and iOS Safari is this app's reference
+   browser — the affordance would be missing exactly where the sheet is
+   smallest. So the content dissolves into the sheet's own surface at whichever
+   edge still has something behind it.
+
+   Purely visual: aria-hidden in the markup, pointer-events: none here, and
+   outside the scroller entirely, so the dialog's semantics, reading order,
+   focus behaviour and hit-testing are all untouched. js/views/sheet.js
+   publishes which edges are live as `data-sheet-scroll`; nothing else decides
+   when a fade shows. */
+.sheet__fade {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2.25rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.sheet__fade--top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-surface) 20%, var(--color-surface-fade));
+}
+
+.sheet__fade--bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-surface) 20%, var(--color-surface-fade));
+}
+
+.sheet:is([data-sheet-scroll='up'], [data-sheet-scroll='both']) .sheet__fade--top,
+.sheet:is([data-sheet-scroll='down'], [data-sheet-scroll='both']) .sheet__fade--bottom {
+  opacity: 1;
 }
 
 .sheet::backdrop {
@@ -829,8 +902,12 @@ html:has(dialog.sheet[open]) {
   gap: 0.5rem;
 }
 
+/* Above the fades: it is the sheet's one control, and a control wiped by a
+   decoration in the two pixels before it scrolls out of reach reads as broken.
+   Everything else in the sheet is text, and text is what the fade is for. */
 .sheet__close {
   position: absolute;
+  z-index: 1;
   top: 0.5rem;
   right: 0.5rem;
   width: 44px;
@@ -1456,7 +1533,8 @@ body.is-embed .venue-key-list {
 }
 
 /* -- reduced motion: the only non-essential animation/transitions in the app
-   are the you-are-here pulse and the toast fade/slide-in -- */
+   are the you-are-here pulse, the toast fade/slide-in, and the sheet's scroll
+   cue fading in and out -- */
 @media (prefers-reduced-motion: reduce) {
   .you-are-here__pulse,
   .you-are-here-gl__pulse {
@@ -1464,6 +1542,13 @@ body.is-embed .venue-key-list {
   }
 
   .toast {
+    transition: none;
+  }
+
+  /* The cue itself stays — it is information, not decoration, and the whole
+     point is that it appears and disappears with the scroll. What goes is the
+     crossfade: it snaps instead. */
+  .sheet__fade {
     transition: none;
   }
 }

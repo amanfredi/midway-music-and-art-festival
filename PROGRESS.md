@@ -46,6 +46,49 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-05 — the sheet admits it scrolls
+
+Reported from the live embed on a phone: the venue sheet is capped to the map
+frame, a ~361 px square, and a typical venue's content wants ~500, so it scrolls
+inside itself with the last button sliced mid-height at the border
+(`reviews/2026-09-embed-sheet/after-sheet-phone.png`). Anthony's ruling: the
+cramping is acceptable and stays — it is what keeps the sheet always visible,
+the trade recorded when the confinement was chosen — but a cut edge is not an
+affordance. It reads as a layout bug, and the visitor's conclusion is that the
+rest of the venue's page is broken rather than that it is one drag away.
+
+The content now dissolves into the sheet's own surface at whichever edge still
+has something behind it, and stops dissolving at the end of the scroll.
+`views/sheet.js` publishes `data-sheet-scroll` (`none`/`up`/`down`/`both`) on
+the dialog and `app.css` fades each live edge from it. Both surfaces get it from
+one code path — the app's own 80 vh bottom sheet overflows too, which was
+checked rather than assumed: at 393 × 480 it needs a scroll for every venue in
+the sheet.
+
+Two alternatives lost. **A styled scrollbar** fails on the one browser that
+matters most: iOS hides overlay scrollbars until a finger is already moving, so
+the cue would be absent exactly where the sheet is smallest and the reference
+device is the one that cannot see it. **A deliberate partial-content peek** —
+sizing so a row is visibly half-shown — has nothing to size against: the sheet's
+content height is the venue's, not the layout's, so which element lands at the
+fold is whatever the description's line count makes it.
+
+One structural change made it possible: the dialog and its scroller are now two
+elements (`.sheet__scroll` inside `.sheet`). An absolutely positioned child of a
+scroll container scrolls with that container's content, so a cue held at the
+scroller's edge needs a non-scrolling parent to hang on, and there was not one.
+All the padding moved onto the scroller, so nothing visible moved and the close
+button still scrolls away with the content. The one deliberate exception is that
+the close button now paints above the fades: it is the sheet's only control, and
+a control wiped by a decoration in the two pixels before it leaves reads as
+broken.
+
+Cheap and worth writing down: a gradient to the `transparent` keyword is a
+gradient to transparent *black*, so the fade is spelled `--color-surface-fade`
+(the same gray at zero alpha) rather than left to an engine's alpha
+interpolation. And a test that reads the fade's opacity the instant the sheet
+opens measures the crossfade, not its destination — poll it.
+
 ### 2026-09-05 — the toast climbs out from under the sheet
 
 The venue sheet's share button is the app's main way to share a venue, and its

@@ -1000,6 +1000,42 @@ CDNs, no analytics.
   a hit test answers "is the toast interactive" (it never was — the root is
   `pointer-events: none`) rather than "is the toast on top". What the tests
   assert is the mechanism: in the top layer, and entered after the dialog.
+- **A confined sheet says what lies past its edges.** The venue sheet is capped
+  at 80vh, and at the map frame in the embed, so a venue whose content outgrows
+  that box scrolls inside itself — the ordinary case on a phone, where the
+  embed's frame is a ~361 px square and a typical venue wants ~500. Until
+  2026-09-05 the only sign of it was content clipped mid-glyph at the border,
+  which reads as a layout bug rather than as an invitation to keep reading.
+
+  **The dialog is the box; `.sheet__scroll` inside it is the scroller**, and the
+  split is load-bearing rather than tidiness: an absolutely positioned child of
+  a scroll container scrolls with that container's content, so a cue pinned to
+  the scroller's own edge cannot be expressed without a non-scrolling parent to
+  hang it on. All of the sheet's padding moved onto the scroller, so the split
+  changes nothing visible — content still runs to the sheet's own edges — and
+  the close button stays inside the scroller, where it goes on scrolling away
+  with the content as it always did.
+
+  `views/sheet.js` publishes `data-sheet-scroll` on the dialog — `none`, `up`,
+  `down` or `both` — from the scroller's own geometry, recomputed on scroll and
+  on resize (the sheet's height is not settled when it opens: the embed caps it
+  to a frame that reflows, and the app to a window that rotates). `app.css`
+  draws `.sheet__fade--top`/`--bottom` at each live edge, dissolving the content
+  into the sheet's own surface. Both directions, because "there is more below"
+  and "there is more above" are different facts; and the cue goes out at the end
+  of the scroll, because one that survives the end stops meaning anything.
+
+  **A native scrollbar cannot carry this.** iOS hides overlay scrollbars until a
+  finger is already moving, and iOS Safari is this app's reference browser — the
+  affordance would be missing exactly where the sheet is smallest. Nor can a
+  deliberate partial-content peek: the sheet's content height is the venue's,
+  not the layout's, so there is no row to half-show on purpose.
+
+  The cue is **visual only**: `aria-hidden`, `pointer-events: none`, and outside
+  the scroller, so the dialog's semantics, reading order, focus behaviour and
+  hit-testing are exactly what they were. Under `prefers-reduced-motion` the
+  crossfade between states is dropped and the cue snaps; the cue itself stays,
+  being information rather than decoration.
 - `index.html` head must include exactly these integration points (owner: orchestrator):
   `<link rel="manifest" href="manifest.webmanifest">`,
   `<meta name="theme-color" content="#10577b">`,
@@ -1431,6 +1467,14 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - `.pin-alt-btn[data-kind="transit"|"sponsor"][data-id="<id>"]` on each button
   in the visually-hidden pin list, one per drawn transit and sponsor pin
 - `.venue-key-btn[data-venue-id="<id>"]` on each venue card in the key list
+- `[data-testid="sheet-scroll"]` on the venue sheet's scroll container, and
+  `data-sheet-scroll` on the dialog itself — `none`, `up`, `down` or `both`,
+  the edges that still have content behind them. It is what the fade cue is
+  drawn from, so a test that wants the cue must assert the attribute **and** the
+  fade's computed opacity: the attribute alone goes on being true if the CSS
+  stops drawing anything. Read the opacity by polling, not once — the cue
+  crossfades, so a single read taken as the sheet opens catches the transition
+  rather than its destination
 - `#locate-btn` on the map's locate control, and `#toast-root` / `.toast` on the
   live region and the messages in it. In the embed both the sheet and the toast
   root carry `data-embed-anchor` (`bottom` or `middle`), which is how a test

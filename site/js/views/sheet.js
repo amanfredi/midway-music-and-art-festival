@@ -28,6 +28,44 @@ function onBackdropClick(ev) {
   if (outside) dialog.close();
 }
 
+/**
+ * Publishes which edges of the sheet still have content behind them, as
+ * `data-sheet-scroll` on the dialog: `none`, `up`, `down` or `both`. The CSS
+ * draws a fade at each live edge (app.css, "the scroll cue"); this is the only
+ * thing that decides when one shows.
+ *
+ * The sheet is confined — 80vh in the app, the map frame in the embed — so
+ * overflowing is the ordinary case, and until 2026-09-05 the only sign of it
+ * was content clipped mid-glyph at the border, which reads as a layout bug.
+ * A native scrollbar cannot say it instead: iOS hides overlay scrollbars until
+ * a finger is already moving, and iOS Safari is this app's reference browser,
+ * so the affordance would be absent exactly where the sheet is smallest.
+ *
+ * State rather than a static "it scrolls" mark, because "there is more *below*"
+ * and "there is more *above*" are different facts and a cue still showing at
+ * the end of a scroll stops meaning anything at all.
+ */
+function watchSheetScroll(dialog) {
+  const scroller = dialog.querySelector('.sheet__scroll');
+  if (!scroller) return;
+  const update = () => {
+    // A pixel of slack at each end: fractional layout and browser zoom leave
+    // scrollTop a hair short of its maximum at the bottom of a scroll, and a
+    // cue that never quite goes out is worse than no cue.
+    const above = scroller.scrollTop > 1;
+    const below = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop > 1;
+    dialog.dataset.sheetScroll = above ? (below ? 'both' : 'up') : below ? 'down' : 'none';
+  };
+  scroller.addEventListener('scroll', update, { passive: true });
+  // The sheet's height is not settled when it opens: in the embed it is capped
+  // to a map frame that reflows with the iframe, and in the app to a viewport
+  // that rotates.
+  const observer = new ResizeObserver(update);
+  observer.observe(scroller);
+  dialog.addEventListener('close', () => observer.disconnect());
+  update();
+}
+
 // showModal() is what supplies the focus trap, background inertness, scroll
 // lock and Escape-to-close; all four were previously missing or hand-rolled.
 function open(innerHtml, { openedBy } = {}) {
@@ -36,10 +74,20 @@ function open(innerHtml, { openedBy } = {}) {
   closeSheet();
   // The pin/button that opened the sheet, so focus can return there on close.
   const trigger = document.activeElement;
+  // The dialog is the box; `.sheet__scroll` inside it is what scrolls. The two
+  // fades are siblings of the scroller rather than children of it, because an
+  // absolutely positioned child of a scroll container scrolls with its content
+  // and so cannot be pinned to its edge. They carry no text and no role:
+  // aria-hidden and pointer-events: none, so the dialog's semantics and focus
+  // behaviour are exactly what they were.
   r.innerHTML = `
     <dialog class="sheet" role="dialog" aria-labelledby="sheet-title" tabindex="-1">
-      <button type="button" class="sheet__close" id="sheet-close" aria-label="Close">&times;</button>
-      ${innerHtml}
+      <div class="sheet__scroll" data-testid="sheet-scroll">
+        <button type="button" class="sheet__close" id="sheet-close" aria-label="Close">&times;</button>
+        ${innerHtml}
+      </div>
+      <div class="sheet__fade sheet__fade--top" aria-hidden="true"></div>
+      <div class="sheet__fade sheet__fade--bottom" aria-hidden="true"></div>
     </dialog>`;
   const dialog = r.querySelector('dialog.sheet');
   dialog.addEventListener('click', onBackdropClick);
@@ -63,6 +111,9 @@ function open(innerHtml, { openedBy } = {}) {
   // in and fall back to the map frame on iOS Safari.
   anchorEmbedOverlay(dialog, openedBy ? { centreOn: openedBy } : {});
   dialog.showModal();
+  // After showModal, never before: a closed dialog is display:none, so every
+  // scroll measurement off it reads zero and the cue would start out wrong.
+  watchSheetScroll(dialog);
   // Focus the dialog itself (not the close button showModal would pick): its
   // aria-labelledby announces the sheet's title first, before a screen reader
   // user tabs into its content.

@@ -94,17 +94,17 @@ and re-spec. The 4.5:1 small-text requirement is unchanged.
 
 ## Squarespace umbrella site
 
-**Does the embed's venue sheet read as cramped on a phone?** (added 2026-09-05,
-for Anthony's eye rather than an engineer's). The sheet is confined to the map
-frame and never taller than it — on a phone that is a 361 px square, and a
-typical venue's sheet wants about 500, so it scrolls inside itself with the last
-button cut off mid-height: `reviews/2026-09-embed-sheet/after-sheet-phone.png`.
-The alternative is to start it at the frame's *top* and let it grow downward to
-its natural height, which fits on screen in every case measured — but only while
-the visitor has the map near the top of their screen, and the embed has no way
-to know whether they do (CONTRACTS.md, "Map embed"). Confinement was chosen
-because it is always visible, not because it is prettier. The picture is what to
-judge it on.
+**The sheet's close button scrolls out of reach** (added 2026-09-05, noticed
+while giving the sheet its scroll cue; not fixed there because it is a different
+question). `.sheet__close` lives inside `.sheet__scroll`, so on a sheet that
+overflows — the ordinary case in the embed on a phone — reading to the bottom
+takes the × off the top of the box. Escape and a tap on the backdrop both still
+close it, and the backdrop in the embed is the whole iframe, so nobody is
+trapped; the button is just gone when it is most wanted. The fix is one line
+(move it out of the scroller, where the fades already are) and it costs
+something: content would then scroll *underneath* a fixed ×. Worth a decision
+rather than a reflex, and worth taking after the phone pass below says whether
+the fade alone settled the report.
 
 **Performers embed follow-ups** (added 2026-09-04). The embed ignores the
 accordion block's "expand first item" setting (`data-is-expanded-first-item`) —
@@ -458,6 +458,15 @@ None of these can be checked from the screenshot harness or the test suite.
       never reproduced off-device, so this is a diagnosis, not a confirmed
       fix. If the digits still read serif, run the canvas probe in the
       2026-08-11 PROGRESS entry and report what it prints.
+- [ ] Judge the venue sheet's scroll cue on a phone, in the embed (added
+      2026-09-05, the surface the report came from). The content now dissolves
+      into the sheet's surface at whichever edge has more behind it
+      (`reviews/2026-09-embed-sheet/after-cue-*.png`). Two things only a device
+      answers: does the fade read as "keep going" rather than as a rendering
+      artefact, and does it survive iOS's own rubber-band overscroll, where the
+      scroller briefly reports past its own end. If the fade reads too quiet,
+      the escalation already considered is an explicit chevron at the live edge;
+      what will not work is a native scrollbar, which iOS hides.
 - [ ] Install button on Android Chrome (native prompt).
 - [ ] Splash screens render on iOS launch.
 - [ ] Nav fits and reads at 320 px with six tabs.

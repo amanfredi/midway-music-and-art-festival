@@ -417,6 +417,26 @@ follow-through:
       worth writing, since proper names are exempt and cover the realistic
       cases.
 
+## Docs
+
+**Split CONTRACTS.md for progressive disclosure** (added 2026-09-05, Anthony's
+call after a token audit of an agent dispatch). The file is ~97k chars (~24k
+tokens) and lopsided — the Map + geo contract alone is a third of it — so every
+zero-context agent pays for the whole file while typically needing two or three
+sections, and irrelevant context degrades performance beyond what it costs.
+Shape agreed with Anthony: root CONTRACTS.md keeps the directory layout,
+conventions, and an index whose entries each state the *binding rule* in one
+line (not just the topic), so an index scan still surfaces contracts an agent
+is about to violate — that discoverability is the file's whole function and the
+main risk of a naive split. Five topic files along the existing section seams:
+content pipeline (config/snapshot/CSV schemas/validation/content.json), map +
+geo, UI, the two embeds, and SW + accessibility + test hooks. Constraints:
+content-preserving moves only (the wording is binding and was fought for —
+restructure must not reword), grep and fix inbound section references
+(README, tests, PROGRESS), and dispatch prompts thereafter name the in-scope
+contract files. PROGRESS.md is bigger but newest-first already limits what
+agents read; it needs nothing beyond an eventual archive split.
+
 ## Needs a real device
 
 None of these can be checked from the screenshot harness or the test suite.

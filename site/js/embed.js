@@ -46,6 +46,45 @@ export function fullAppUrl(hash) {
 }
 
 /**
+ * Anchors an overlay to the map frame instead of to the viewport, and says
+ * whether it did.
+ *
+ * `position: fixed` means "the bottom of the screen" in the app and "the bottom
+ * of the whole embed" in an iframe -- and the embed's iframe is deliberately as
+ * tall as its content (see EMBED_HEIGHT_MESSAGE), so those are 1200 px apart on
+ * a phone. Measured against the live page 2026-09-05: a venue sheet opened at
+ * y=1122 in a 1661 px iframe while the visitor was looking at y=40..704. The
+ * overlay is not merely misplaced, it is off the bottom of the screen, and a
+ * browser that then scrolls it into view drags the host page down with it.
+ *
+ * The map frame is the anchor because it is the one box the visitor is
+ * demonstrably looking at: an overlay only opens in response to a tap on it.
+ *
+ * Asking the host page where it is scrolled to would be better still, and there
+ * is no way to. A cross-origin IntersectionObserver looks like the answer --
+ * `intersectionRect` is populated where `rootBounds` is null -- but it only
+ * delivers on a threshold crossing, and a band of fixed height sliding down a
+ * taller iframe never changes the ratio. Measured 2026-09-05 on the live page:
+ * WebKit reported the same stale band at three different host scroll positions
+ * where Chromium tracked it. The remaining option, having the host post its
+ * scroll position, would need the snippet in somebody else's CMS re-pasted for
+ * every fix; that is the cost this whole design exists to avoid.
+ */
+export function anchorToEmbedFrame(el) {
+  if (!isEmbed()) return false;
+  const frame = document.querySelector('.map-frame');
+  if (!frame) return false;
+  const box = frame.getBoundingClientRect();
+  // Rounded so a fractional layout can't leave a hairline of map showing under
+  // an overlay that is supposed to sit on the frame's edge.
+  el.style.setProperty('--embed-anchor-left', `${Math.round(box.left)}px`);
+  el.style.setProperty('--embed-anchor-width', `${Math.round(box.width)}px`);
+  el.style.setProperty('--embed-anchor-bottom', `${Math.round(window.innerHeight - box.bottom)}px`);
+  el.style.setProperty('--embed-anchor-height', `${Math.round(box.height)}px`);
+  return true;
+}
+
+/**
  * The message an embed posts to the page holding it, so the iframe can be the
  * height of its content.
  *

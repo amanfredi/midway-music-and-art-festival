@@ -4,6 +4,7 @@
 import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT, wireShareButton } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
 import { findVenue, findSponsor, eventsForVenue } from '../store.js';
+import { anchorToEmbedFrame } from '../embed.js';
 import { kindTintClass } from './event-row.js';
 
 function root() {
@@ -50,11 +51,20 @@ function open(innerHtml) {
   });
   r.querySelector('#sheet-close').addEventListener('click', () => dialog.close());
   r.querySelectorAll('[data-close-sheet]').forEach((el) => el.addEventListener('click', () => dialog.close()));
+  // Before showModal, so the sheet is never painted at the app's position and
+  // then moved. A no-op outside the embed.
+  anchorToEmbedFrame(dialog);
   dialog.showModal();
   // Focus the dialog itself (not the close button showModal would pick): its
   // aria-labelledby announces the sheet's title first, before a screen reader
   // user tabs into its content.
-  dialog.focus();
+  //
+  // preventScroll because focus otherwise scrolls its target into view, and
+  // inside an iframe that scroll is the *host page's*. Nothing to scroll to now
+  // that the sheet opens where the visitor is looking, and no way to undo it if
+  // a browser disagrees: the embed cannot read, let alone restore, a scroll
+  // position it is not allowed to see.
+  dialog.focus({ preventScroll: true });
 }
 
 export function closeSheet() {

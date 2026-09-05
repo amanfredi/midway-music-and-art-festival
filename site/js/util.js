@@ -1,4 +1,6 @@
-// Small, dependency-free helpers shared across views.
+// Small helpers shared across views, with no third-party dependencies.
+
+import { anchorToEmbedFrame } from './embed.js';
 
 const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -54,6 +56,12 @@ export function groupBy(items, keyFn) {
 export function showToast(message, duration = 3200) {
   const root = document.getElementById('toast-root');
   if (!root) return;
+  // Same reason the sheet does it: a toast pinned to the bottom of a
+  // content-height iframe confirms the copy a screen below the map. Both toasts
+  // reachable from the embed -- "Link copied" from the sheet's share button, and
+  // the locate button's failures -- are ones a visitor has to see to know the
+  // tap did anything.
+  anchorToEmbedFrame(root);
   // No role/aria-live on the toast itself: #toast-root is already the live
   // region, and a nested one makes screen readers announce twice.
   const el = document.createElement('div');

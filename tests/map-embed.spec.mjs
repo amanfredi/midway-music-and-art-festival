@@ -46,6 +46,38 @@ const HOST_PAGE = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Host<
 </script>
 </body></html>`;
 
+/**
+ * A venue pin's position on the canvas, well inside it so a tap can't miss.
+ * Topmost first: a pin near the top of the map is the worst case for an overlay
+ * that opens at the bottom of the embed.
+ */
+const TOPMOST_PIN_FN = `() => {
+  const map = window.__mmafMap;
+  const canvas = map.getCanvas().getBoundingClientRect();
+  const inside = map
+    .queryRenderedFeatures({ layers: ['venue-pin'] })
+    .map((f) => ({ id: f.properties.id, p: map.project(f.geometry.coordinates) }))
+    .filter((f) => f.p.x > 40 && f.p.x < canvas.width - 40 && f.p.y > 30 && f.p.y < canvas.height - 40)
+    .sort((a, b) => a.p.y - b.p.y);
+  return inside.length ? { id: inside[0].id, x: Math.round(inside[0].p.x), y: Math.round(inside[0].p.y) } : null;
+}`;
+
+/** The sheet's box and the map frame's, in the embed's own client coordinates. */
+const OVERLAY_BOXES_FN = `() => {
+  const round = (r) => ({
+    top: Math.round(r.top),
+    bottom: Math.round(r.bottom),
+    left: Math.round(r.left),
+    right: Math.round(r.right),
+  });
+  const sheet = document.querySelector('dialog.sheet');
+  return {
+    sheet: sheet ? round(sheet.getBoundingClientRect()) : null,
+    frame: round(document.querySelector('.map-frame').getBoundingClientRect()),
+    innerHeight: window.innerHeight,
+  };
+}`;
+
 /** Resolves once the embedded map has drawn. */
 async function waitForEmbeddedMap(frame) {
   await frame.waitForFunction(() => window.__mmafMap && window.__mmafMap.loaded(), null, { timeout: 30_000 });
@@ -115,6 +147,31 @@ test('the app itself is untouched by the embed mode', async ({ page }) => {
   expect(state.banner, 'the app itself lost its notice banner').toBe(true);
   expect(state.cooperative).toBe(false);
   expect(state.embedClass).toBe(false);
+});
+
+// The other half of "only the embed changes": the app's sheet is still the
+// window's bottom sheet, full width and flush with the bottom edge, which is
+// what the embed's anchoring must not leak into.
+test('the app’s own sheet is still the window’s bottom sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto('/#/map');
+  await waitForEmbeddedMap(page);
+  await page.locator('.venue-key-btn').first().click();
+  await expect(page.locator('.sheet[role="dialog"]')).toBeVisible();
+
+  const box = await page.evaluate(() => {
+    const r = document.querySelector('dialog.sheet').getBoundingClientRect();
+    return {
+      left: Math.round(r.left),
+      width: Math.round(r.width),
+      bottom: Math.round(r.bottom),
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
+    };
+  });
+  expect(box.left).toBe(0);
+  expect(box.width).toBe(box.innerWidth);
+  expect(box.bottom).toBe(box.innerHeight);
 });
 
 test('the embed asks for ctrl before it takes the wheel', async ({ page }) => {
@@ -205,6 +262,93 @@ test('an iframe of the embed scrolls the host page and never scrolls inside itse
   await key.click();
   await expect(frame.locator('.sheet[role="dialog"]')).toBeVisible();
   await expect(frame.locator('#sheet-title')).toHaveText(name);
+});
+
+// Reported from the live page 2026-09-05: tapping a pin scrolled the host page
+// down to the bottom of the iframe instead of popping the sheet up in place.
+// Measured cause: the sheet is `position: fixed` to the bottom of the viewport,
+// and the embed's viewport is the whole content-height iframe -- so it opened at
+// y=1122 in a 1661px iframe while the visitor was looking at y=40..704. Neither
+// Chromium nor WebKit performs that scroll headless (measured against the live
+// page, both engines, 0px), so what this pins is the cause rather than the
+// symptom: the sheet opens inside the map frame, where there is nothing
+// off-screen for any browser to scroll to.
+test('a pin tap in the embed opens the sheet over the map, and the host page stays put', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.route('**/embed-host.html', (route) =>
+    route.fulfill({ contentType: 'text/html; charset=utf-8', body: HOST_PAGE }),
+  );
+  await page.goto('/embed-host.html');
+  const embed = page.frames().find((f) => f.url().includes('embed=map'));
+  expect(embed, 'the embed iframe never loaded').toBeTruthy();
+  await waitForEmbeddedMap(embed);
+  await expect
+    .poll(async () => (await page.locator('#map').boundingBox()).height, { timeout: 10_000 })
+    .not.toBe(IFRAME_HEIGHT);
+
+  // Scrolled so the map is at the top of the visitor's screen and most of the
+  // iframe is below it -- the position the report describes.
+  const iframeBox = await page.locator('#map').boundingBox();
+  const mapTop = await embed.evaluate(
+    () => document.querySelector('#map-svg-wrap').getBoundingClientRect().top + window.scrollY,
+  );
+  await page.evaluate((y) => window.scrollTo(0, y), iframeBox.y + (await page.evaluate(() => window.scrollY)) + mapTop);
+  await page.waitForTimeout(200);
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+
+  const pin = await embed.evaluate(new Function('return ' + TOPMOST_PIN_FN)());
+  expect(pin, 'no venue pin is clear of the canvas edges; this test has lost its subject').not.toBeNull();
+  await page.frameLocator('#map').locator('.maplibregl-canvas').click({ position: { x: pin.x, y: pin.y } });
+  await expect(page.frameLocator('#map').locator('.sheet[role="dialog"]')).toBeVisible();
+
+  const boxes = await embed.evaluate(new Function('return ' + OVERLAY_BOXES_FN)());
+  expect(await page.evaluate(() => window.scrollY), 'opening the sheet scrolled the host page').toBe(scrollBefore);
+
+  // Confined to the frame: on its bottom edge, no wider, no taller. A sheet that
+  // ran past the frame would be running back towards the edge of the screen.
+  const { sheet, frame } = boxes;
+  expect(sheet.bottom, 'the sheet is not sitting on the frame’s bottom edge').toBe(frame.bottom);
+  expect(sheet.left).toBe(frame.left);
+  expect(sheet.right).toBe(frame.right);
+  expect(sheet.top, 'the sheet is taller than the map frame').toBeGreaterThanOrEqual(frame.top);
+
+  // And therefore on screen: the band of the iframe the host page is showing.
+  const after = await page.locator('#map').boundingBox();
+  const bandTop = Math.max(0, -after.y);
+  const bandBottom = Math.min(after.height, (await page.evaluate(() => window.innerHeight)) - after.y);
+  expect(sheet.top, `the sheet opens above the visible band (${bandTop}..${bandBottom})`).toBeGreaterThanOrEqual(
+    bandTop,
+  );
+  expect(sheet.bottom, `the sheet opens below the visible band (${bandTop}..${bandBottom})`).toBeLessThanOrEqual(
+    bandBottom,
+  );
+});
+
+// The same fault, the same fix, a different overlay: a toast pinned to the
+// bottom of the viewport confirms a copied link a screen below the map. Both
+// toasts the embed can raise -- the sheet's share button and the locate button's
+// failures -- are ones a visitor has to see to know their tap did anything.
+test('a toast in the embed appears over the map, not at the bottom of the iframe', async ({ page, context }) => {
+  await context.clearPermissions();
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto(EMBED_URL);
+  await waitForEmbeddedMap(page);
+
+  // Geolocation is denied, so the locate button's answer is a toast.
+  await page.locator('#locate-btn').click();
+  const toast = page.locator('.toast');
+  await expect(toast).toBeVisible();
+
+  const { toastBox, frame } = await page.evaluate(() => {
+    const t = document.querySelector('.toast').getBoundingClientRect();
+    const f = document.querySelector('.map-frame').getBoundingClientRect();
+    return {
+      toastBox: { top: Math.round(t.top), bottom: Math.round(t.bottom) },
+      frame: { top: Math.round(f.top), bottom: Math.round(f.bottom) },
+    };
+  });
+  expect(toastBox.bottom, 'the toast is below the map frame').toBeLessThanOrEqual(frame.bottom);
+  expect(toastBox.top, 'the toast is above the map frame').toBeGreaterThanOrEqual(frame.top);
 });
 
 // With no tab bar there is no way back, so a link out of the map must not

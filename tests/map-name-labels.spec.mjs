@@ -58,16 +58,30 @@ test('both venue name layers rank collisions by the venue sort key', async ({ pa
 
 test('names try above and below a pin before either side, and the corners after', async ({ page }) => {
   await gotoMap(page);
-  const orders = await mapEval(page, (map, ids) =>
+  const state = await mapEval(page, (map, ids) =>
     ids.map((id) => {
-      const pairs = map.getLayoutProperty(id, 'text-variable-anchor-offset')[1];
+      const expr = map.getLayoutProperty(id, 'text-variable-anchor-offset');
+      // A constant layer holds ['literal', pairs]; the venue layers hold a match
+      // over venue id, whose LAST element is the fallback list. The fallback is
+      // the order before any per-venue reshuffling, which is what this pins.
+      const pairs = expr[0] === 'literal' ? expr[1] : expr[expr.length - 1][1];
       const anchors = [];
       for (let i = 0; i < pairs.length; i += 2) anchors.push(pairs[i]);
-      return [id, anchors];
+      // Every per-venue list must offer the same positions, whatever the order.
+      const branches = [];
+      if (expr[0] === 'match') {
+        for (let i = 3; i < expr.length - 1; i += 2) {
+          const list = [];
+          for (let k = 0; k < expr[i][1].length; k += 2) list.push(expr[i][1][k]);
+          branches.push(list);
+        }
+      }
+      return [id, anchors, branches];
     }),
     ['venue-name-label', 'sponsor-name-label'],
   );
-  for (const [id, order] of orders) {
+
+  for (const [id, order, branches] of state) {
     // `bottom` anchors the label's bottom edge, so the name sits above the pin;
     // `top` puts it below. Horizontal first aimed every name straight along
     // University Avenue at its nearest neighbour. The four corners come last:
@@ -82,6 +96,12 @@ test('names try above and below a pin before either side, and the corners after'
       'top-left',
       'top-right',
     ]);
+    // Per-venue reordering may move a position down the list; it may never drop
+    // one, or a crowded venue would end up with fewer places to go than a
+    // lonely one.
+    for (const branch of branches) {
+      expect(branch.slice().sort(), `${id} drops a candidate for one of its venues`).toEqual(order.slice().sort());
+    }
   }
 });
 
@@ -249,23 +269,26 @@ test("displaced venues' names ride their lanes: the coincident pair is named twi
 // corner clearance is smaller than the cardinal one -- a corner name sits as
 // close as a side name looks, instead of standing off at the bounding box's
 // corner, 1.41R out where the ink stopped at 0.71R.
-test('every name layer offers the four corners, cleared to what the pin reserves', async ({ page }) => {
+test('every name layer offers the four corners, and diagonals clear the ink not the box', async ({ page }) => {
   await gotoMap(page);
   const layers = await mapEval(page, (map, ids) =>
     ids.map((id) => {
       const expr = map.getLayoutProperty(id, 'text-variable-anchor-offset');
-      // Constant layers hold ['literal', pairs]; the displaced layer holds a
-      // match, whose first branch value is what a lane resolves to.
-      const pairs = expr[0] === 'literal' ? expr[1] : expr[3][1];
+      // The fallback branch: no lane offset folded in, so the numbers are the
+      // clearances themselves.
+      const pairs = expr[0] === 'literal' ? expr[1] : expr[expr.length - 1][1];
       const at = {};
       for (let i = 0; i < pairs.length; i += 2) at[pairs[i]] = pairs[i + 1];
-      const blocker = map.style.getImage(id === 'sponsor-name-label' ? 'pin-sponsor-featured' : 'pin-venue-block');
-      return [id, at, blocker && blocker.data.width / blocker.pixelRatio / 2 + 2];
+      const image = (name) => {
+        const img = map.style.getImage(name);
+        return img && img.data.width / img.pixelRatio;
+      };
+      return [id, at, image('pin-venue-block') / 2 + 2, image('pin-venue') / 2 - 2];
     }),
     ['venue-name-label', 'sponsor-name-label', 'venue-leader-name-label'],
   );
 
-  for (const [id, at, blockHalf] of layers) {
+  for (const [id, at, blockHalf, pinRadius] of layers) {
     for (const anchor of ['bottom-left', 'bottom-right', 'top-left', 'top-right']) {
       expect(at[anchor], `${id} offers no ${anchor} candidate`).toBeTruthy();
     }
@@ -278,18 +301,24 @@ test('every name layer offers the four corners, cleared to what the pin reserves
     expect(at['top-right'][0], `${id}'s corners are not symmetric`).toBeCloseTo(-cornerX, 3);
     expect(at['top-right'][1], `${id}'s corners are not symmetric`).toBeCloseTo(cornerY, 3);
 
-    // And the corner has to sit outside what the pin reserves, or the pin's own
-    // box rejects its own name — the failure that made corners inert before.
     const textPx = id === 'sponsor-name-label' ? 11 : 12;
-    expect(cornerX * textPx, `${id}'s corner candidate is inside the pin's own box`).toBeGreaterThan(blockHalf);
+    // It still has to clear what the pin reserves, or the pin's own box rejects
+    // its own name — the failure that made corners inert before they had their
+    // own offsets.
+    if (id !== 'sponsor-name-label') {
+      expect(cornerX * textPx - 2, `${id}'s corner candidate is inside the pin's own box`).toBeGreaterThan(blockHalf);
+    }
   }
 
-  // The venue layers' corners pull in closer than their sides, because a venue
-  // pin reserves less than it draws. A sponsor pin has no blocker of its own, so
-  // its corners stay at the side clearance.
+  // The venue layers measure a diagonal to the INK, not to the reserved box: a
+  // diamond's edge crosses the 45-degree ray at R/2 per axis, and the gap past
+  // it is the same NAME_CLEAR_PX a side gets. Measuring to the box corner
+  // instead left 0.2R of visible emptiness (Anthony, 2026-09-04).
   const [venue] = layers;
+  const pinRadius = venue[3];
+  const sideClear = Math.abs(venue[1]['left'][0]) * 12 - pinRadius;
   expect(
-    Math.abs(venue[1]['bottom-left'][0]),
-    'venue corners stand off as far as the sides; the box shrink is not being used',
-  ).toBeLessThan(Math.abs(venue[1]['left'][0]));
+    Math.abs(venue[1]['bottom-left'][0]) * 12,
+    'venue corners are measured to the reserved box rather than to the diamond edge',
+  ).toBeCloseTo(pinRadius / 2 + sideClear, 1);
 });

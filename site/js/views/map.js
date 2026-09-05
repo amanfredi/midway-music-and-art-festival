@@ -210,6 +210,14 @@ const CLUSTER_TEXT_PX = 10;
 const NAME_TEXT_PX = 12;
 const SPONSOR_NAME_TEXT_PX = 11;
 const NAME_CLEAR_PX = 8;
+// How far out a diagonal name starts, per axis. The diamond's edge crosses the
+// 45-degree ray at R/2 on each axis -- half as far as the box corner the name
+// used to clear -- so measuring the gap from the ink instead of from the box
+// pulls every corner name in by 0.2R and closes the reserved emptiness Anthony
+// could see (2026-09-04). It still clears the box: the label's own padded
+// corner lands ~2 px outside PIN_BLOCK_HALF, so no name is rejected by the pin
+// it belongs to.
+const CORNER_CLEAR_PX = VENUE_R / 2 + NAME_CLEAR_PX;
 // The order a name beside an undisplaced pin tries its positions in; the engine
 // keeps the first that fits. Named by where the label goes, not by the anchor
 // that puts it there -- `bottom` anchors the label's bottom edge, so it is the
@@ -1275,11 +1283,25 @@ export async function renderMap(container, content) {
   // at different moments and briefly draw both.
   const splitZoom = Math.round(zoomForMeters(SPLIT_VIEW_M, PIN_GEOMETRY_REF_PX, lat));
   const nameRank = venueNameRanks(venues, content.events);
+  // Name box sizes, measured in the layer's own font. MapLibre wraps at
+  // text-max-width (10 em), so a long name is capped in width and grows in
+  // lines; close enough to order candidates by, which is all this feeds.
+  const widthOf = (() => {
+    const probe = document.createElement('canvas').getContext('2d');
+    probe.font = `600 ${NAME_TEXT_PX}px ${UI_FONT_STACK}`;
+    const maxWidth = 10 * NAME_TEXT_PX;
+    return (name) => {
+      const measured = probe.measureText(name).width;
+      const lines = Math.max(1, Math.ceil(measured / maxWidth));
+      return { width: Math.min(measured, maxWidth), height: lines * NAME_TEXT_PX * 1.2 };
+    };
+  })();
   const groupOffsets = coincidentGroups(venues, { splitZoom, maxZoom, lat, nameRank });
   const leaderZoom = leaderStartZoom(venues, groupOffsets, { splitZoom, maxZoom, lat });
   const displaced = [...groupOffsets.entries()]
     .sort(([a], [b]) => a - b)
     .map(([index, offset]) => ({
+      index,
       venue: venues[index],
       label: String(index + 1),
       offset,
@@ -1397,6 +1419,19 @@ export async function renderMap(container, content) {
     lat,
   });
 
+  // Which order each venue tries its name positions in -- see nameOrders. Done
+  // here rather than in addPins because it needs the projection, and the answer
+  // is one static list per venue.
+  const nameOrder = nameOrders(venues, {
+    groupOffsets,
+    stops: pinnedStops,
+    displacedStops,
+    sponsors: pinnedSponsors,
+    leaderZoom,
+    lat,
+    widthOf,
+  });
+
   const transitById = new Map(pinnedStops.map((s) => [s.id, s]));
 
   // Tap highlight: one selected pin at a time, marked through feature-state.
@@ -1429,6 +1464,7 @@ export async function renderMap(container, content) {
       displacedStops,
       leaderZoom,
       nameRank,
+      nameOrder,
     });
     wirePinTaps(map, { transitById, maxZoom, selectPin });
     // A venue card in the key list behaves as though its pin was tapped:
@@ -1602,9 +1638,103 @@ function laneNameOrder(offset) {
     : ['below', 'above', 'downRight', 'downLeft', 'upRight', 'upLeft', 'east', 'west'];
 }
 
+/**
+ * Where a name would sit for one candidate direction, as a screen-pixel box
+ * relative to the feature's own coordinate.
+ *
+ * The anchor names the edge of the label held at the offset point, so this
+ * mirrors nameCandidates: the offset positions one edge or corner, and the
+ * label grows away from the pin from there.
+ */
+function candidateBox(where, { lane, clear, cornerClear, width, height }) {
+  const w = width / 2;
+  const h = height / 2;
+  const spot = {
+    east: [lane.x + clear + w, lane.y],
+    west: [lane.x - clear - w, lane.y],
+    above: [lane.x, lane.y - clear - h],
+    below: [lane.x, lane.y + clear + h],
+    upRight: [lane.x + cornerClear + w, lane.y - cornerClear - h],
+    upLeft: [lane.x - cornerClear - w, lane.y - cornerClear - h],
+    downRight: [lane.x + cornerClear + w, lane.y + cornerClear + h],
+    downLeft: [lane.x - cornerClear - w, lane.y + cornerClear + h],
+  }[where];
+  return { x0: spot[0] - w, x1: spot[0] + w, y0: spot[1] - h, y1: spot[1] + h };
+}
+
+/** Euclidean distance from a point to the nearest point of a box. */
+function distanceToBox(box, x, y) {
+  const dx = Math.max(box.x0 - x, 0, x - box.x1);
+  const dy = Math.max(box.y0 - y, 0, y - box.y1);
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * The order each venue tries its name positions in, with the placements that
+ * would read as labelling somebody else's pin pushed to the back.
+ *
+ * MapLibre's placement pass is ambiguity-blind: it takes the first candidate
+ * whose box is free, and a box can be free while sitting directly over a
+ * neighbouring pin. That is how "Anderson Center" came to sit on top of the
+ * Creative Writing House pin with open paper to its own left (Anthony,
+ * 2026-09-04).
+ *
+ * A candidate is ambiguous when **any other mark on the map is nearer to the
+ * label than the label's own pin is** — which is what the reader is doing when
+ * they decide which pin a name belongs to, and needs no threshold to tune. The
+ * ambiguous candidates are not dropped, only demoted: a name in an ambiguous
+ * place still beats no name, and on a crowded map every position is sometimes
+ * the last one left.
+ *
+ * Scored once, at the leader zoom, because the answer has to be a static list
+ * per feature and that is the widest view the names draw at — the crowded one.
+ * Zooming in only spreads the marks apart, which can retire an ambiguity but
+ * never creates one.
+ */
+function nameOrders(venues, { groupOffsets, stops, displacedStops, sponsors, leaderZoom, lat, widthOf }) {
+  const venuePx = pxAtZoom(venues, leaderZoom, lat);
+  const stopPx = pxAtZoom(stops, leaderZoom, lat);
+  const sponsorPx = pxAtZoom(sponsors, leaderZoom, lat);
+
+  // Every mark a name could be mistaken for labelling: the diamonds where they
+  // are drawn, the dots that stand for a displaced venue's real position, and
+  // the smaller pins. `owner` keeps a venue's own marks from counting against
+  // its own name.
+  const marks = [];
+  venuePx.forEach((p, i) => {
+    const lane = groupOffsets.get(i) ?? NO_LANE;
+    marks.push({ owner: i, x: p.x + lane.x, y: p.y + lane.y });
+    if (lane.x !== 0 || lane.y !== 0) marks.push({ owner: i, x: p.x, y: p.y });
+  });
+  stopPx.forEach((p, i) => {
+    const lane = displacedStops.get(i) ?? NO_LANE;
+    marks.push({ owner: -1, x: p.x + lane.x, y: p.y + lane.y });
+  });
+  sponsorPx.forEach((p) => marks.push({ owner: -1, x: p.x, y: p.y }));
+
+  const orders = new Map();
+  venues.forEach((venue, i) => {
+    const lane = groupOffsets.get(i) ?? NO_LANE;
+    const base = groupOffsets.has(i) ? laneNameOrder(lane) : NAME_ANCHOR_ORDER;
+    const { width, height } = widthOf(venue.name);
+    const own = { x: venuePx[i].x + lane.x, y: venuePx[i].y + lane.y };
+    const clear = { lane, clear: VENUE_R + NAME_CLEAR_PX, cornerClear: CORNER_CLEAR_PX, width, height };
+    const ambiguous = (where) => {
+      const box = candidateBox(where, clear);
+      const toOwn = distanceToBox(box, lane.x, lane.y);
+      return marks.some(
+        (m) => m.owner !== i && distanceToBox(box, m.x - venuePx[i].x, m.y - venuePx[i].y) < toOwn
+      );
+    };
+    const clean = base.filter((where) => !ambiguous(where));
+    orders.set(i, [...clean, ...base.filter((where) => !clean.includes(where))]);
+  });
+  return orders;
+}
+
 function addPins(
   map,
-  { venues, stops, sponsors, clusterMaxZoom, colors, displaced, displacedStops, leaderZoom, nameRank }
+  { venues, stops, sponsors, clusterMaxZoom, colors, displaced, displacedStops, leaderZoom, nameRank, nameOrder }
 ) {
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
   // The distinct lanes in play, deduplicated by laneKey. NO_LANE is always
@@ -2098,16 +2228,33 @@ function addPins(
         'text-field': ['get', 'name'],
         'text-font': FONT_SEMIBOLD,
         'text-size': NAME_TEXT_PX,
+        // One ordered list per venue: the order is what nameOrders worked out
+        // for that pin's own surroundings, so a name that would sit on a
+        // neighbour's diamond tries somewhere else first.
         'text-variable-anchor-offset': [
-          'literal',
-          nameCandidates({
-            clear: VENUE_R + NAME_CLEAR_PX,
-            // Measured to what the pin reserves, not to its bounding box, so a
-            // corner-placed name sits as close as a side-placed one looks.
-            cornerClear: PIN_BLOCK_HALF + NAME_CLEAR_PX,
-            textPx: NAME_TEXT_PX,
-            order: NAME_ANCHOR_ORDER,
-          }),
+          'match',
+          ['get', 'id'],
+          ...venues.flatMap((venue, i) => [
+            venue.id,
+            [
+              'literal',
+              nameCandidates({
+                clear: VENUE_R + NAME_CLEAR_PX,
+                cornerClear: CORNER_CLEAR_PX,
+                textPx: NAME_TEXT_PX,
+                order: nameOrder.get(i) ?? NAME_ANCHOR_ORDER,
+              }),
+            ],
+          ]),
+          [
+            'literal',
+            nameCandidates({
+              clear: VENUE_R + NAME_CLEAR_PX,
+              cornerClear: CORNER_CLEAR_PX,
+              textPx: NAME_TEXT_PX,
+              order: NAME_ANCHOR_ORDER,
+            }),
+          ],
         ],
         'text-justify': 'auto',
         // Whose name survives a collision, decided rather than inherited from
@@ -2133,15 +2280,14 @@ function addPins(
   // against the vendored engine, 2026-09-04), so each lane gets its own
   // ordered list. It supersedes text-anchor, text-offset and
   // text-radial-offset on this layer; setting any of them here does nothing.
-  const displacedName = (offset) =>
+  const displacedName = (offset, order) =>
     nameCandidates({
       clear: VENUE_R + NAME_CLEAR_PX,
-      cornerClear: PIN_BLOCK_HALF + NAME_CLEAR_PX,
+      cornerClear: CORNER_CLEAR_PX,
       textPx: NAME_TEXT_PX,
-      order: laneNameOrder(offset),
+      order: order ?? laneNameOrder(offset),
       lane: offset,
     });
-  const laneNames = laneOffsets.map((offset) => ({ key: laneKey(offset), candidates: displacedName(offset) }));
   map.addLayer(
     {
       id: 'venue-leader-name-label',
@@ -2154,10 +2300,13 @@ function addPins(
         'text-size': NAME_TEXT_PX,
         // A match over the lanes for the same stringification reason as the
         // number layer above.
+        // Keyed on the venue rather than on the lane, because the order now
+        // depends on what is around that particular pin as well as on which way
+        // its tether points -- see nameOrders.
         'text-variable-anchor-offset': [
           'match',
-          ['get', 'lane'],
-          ...laneNames.flatMap((l) => [l.key, ['literal', l.candidates]]),
+          ['get', 'id'],
+          ...displaced.flatMap((d) => [d.venue.id, ['literal', displacedName(d.offset, nameOrder.get(d.index))]]),
           ['literal', displacedName(NO_LANE)],
         ],
         'text-justify': 'auto',

@@ -271,3 +271,65 @@ test('where every member would bury a neighbour dot, nobody is left tetherless',
     'ns:0,96',
   ]);
 });
+
+// MapLibre's placement pass is ambiguity-blind: it takes the first candidate
+// whose box is free, and a box can be perfectly free while sitting directly over
+// a neighbouring pin. That is how "Anderson Center" came to sit on top of the
+// Creative Writing House pin with open paper to its own left (Anthony,
+// 2026-09-04). So the candidate order is worked out per venue, and a placement
+// that would put the name nearer to somebody else's pin than to its own goes to
+// the back of that venue's list.
+
+/** The order one venue tries its name positions in, read off the layer. */
+async function candidateOrder(page, venueId) {
+  return mapEval(
+    page,
+    (map, id) => {
+      const expr = map.getLayoutProperty('venue-name-label', 'text-variable-anchor-offset');
+      for (let i = 2; i < expr.length - 1; i += 2) {
+        if (expr[i] !== id) continue;
+        const anchors = [];
+        for (let k = 0; k < expr[i + 1][1].length; k += 2) anchors.push(expr[i + 1][1][k]);
+        return anchors;
+      }
+      return null;
+    },
+    venueId,
+  );
+}
+
+test('a venue whose favourite spot sits on a neighbour tries elsewhere first', async ({ page }) => {
+  // Crowded sits far enough from Neighbour not to be grouped with it, and close
+  // enough that its first-choice position — above its own pin — would put its
+  // name nearer to Neighbour's pin than to its own. `bottom` is the anchor that
+  // places a name above.
+  await withVenues(page, [
+    venue('crowded-hall', 'Crowded Hall', SOUTH_PAIR.lat, SOUTH_PAIR.lng),
+    venue('neighbour-hall', 'Neighbour Hall', SOUTH_PAIR.lat + 0.0004, SOUTH_PAIR.lng + 0.0008),
+  ]);
+  await gotoMap(page);
+
+  const order = await candidateOrder(page, 'crowded-hall');
+  expect(order, 'crowded-hall is not in the per-venue candidate list').not.toBeNull();
+  expect(order[0], 'the crowded venue still leads with the position that sits on its neighbour').not.toBe('bottom');
+  // Demoted, not dropped: on a full map an ambiguous place still beats no name.
+  expect(order, 'the ambiguous position was dropped rather than demoted').toContain('bottom');
+  expect(order.slice().sort(), 'the venue lost candidates').toEqual(
+    ['bottom', 'top', 'left', 'right', 'bottom-left', 'bottom-right', 'top-left', 'top-right'].sort(),
+  );
+});
+
+test('the same venue keeps its first choice once the neighbour moves away', async ({ page }) => {
+  // The same venue at the same point, with only the neighbour moved. Anything
+  // else near it — a transit stop, say — is still there and may still demote a
+  // position or two, which is the rule working; what must come back is the
+  // first choice.
+  await withVenues(page, [
+    venue('crowded-hall', 'Crowded Hall', SOUTH_PAIR.lat, SOUTH_PAIR.lng),
+    venue('neighbour-hall', 'Neighbour Hall', SOUTH_PAIR.lat + 0.004, SOUTH_PAIR.lng + 0.008),
+  ]);
+  await gotoMap(page);
+
+  const order = await candidateOrder(page, 'crowded-hall');
+  expect(order[0], 'the venue does not lead with its first choice even with the neighbour gone').toBe('bottom');
+});

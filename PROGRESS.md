@@ -78,6 +78,67 @@ stretch to fill their row instead. Measured after the fix: from ~600px of
 window width up the tab no longer changes at all — sapphire cards hold 274px,
 topaz 179px — and the phone layout is untouched.
 
+### 2026-09-04 — the displaced-pin treatment stops eating the map's label space
+
+Follow-on from the entry below, and a correction to it. Anthony read the
+before/after phone captures and found the fix hadn't moved what he cared about:
+the same venue names were missing, three of them with visible free space around
+them. He was right. That work made the sacrifice *order* deliberate and left the
+*fill rate* where it was — 8 of 14 venue names on a phone frame at the leader
+zoom.
+
+The diagnosis (`reviews/2026-09-map-collisions/diag-*.png`, with
+`showCollisionBoxes` on) is that the free paper was not free. A symbol's
+collision box is its whole image rect, and dot, line and diamond were one image,
+so a pin displaced 32 px reserved 110 × 46 px to protect a 46 × 46 diamond — a
+displaced transit stop reserved 116 × 30. Most of every one of those boxes was
+the blank paper beside the leader line, and on a phone frame they covered the
+middle of the map. Blockers were named by taking one layer at a time out of the
+collision index rather than by eye.
+
+Anthony's ruling, four parts, now landed. Fill went **8 of 14 to 11 of 14** on
+the phone and 17 of 20 on desktop, one behaviour at a time:
+
+- **The composite is split** (+1, Ginkgo Coffeehouse). Dot and line are their
+  own layer and reserve nothing; the diamond is the ordinary pin image moved by
+  `icon-offset` and still reserves its box. The 2026-08 ruling that baking the
+  line into the icon made it untrespassable is **reversed for the line and kept
+  for the diamond**: a label may cross a leader line, and may not cross a
+  diamond or its number.
+- **Displaced names got fallback positions** (+1, Urban Lights). The lane's side
+  is still the first choice, so the name still says which way the tether points,
+  but blocked there it now works round the diamond instead of vanishing. This
+  needed `text-variable-anchor-offset`, which pairs an offset with each anchor
+  and is data-driven; plain `text-variable-anchor` measures one radial distance
+  from the feature, which for these pins is the dot, a whole lane from the
+  diamond.
+- **Nothing may park a diamond on a dot** (+1, Black Hart of Saint Paul). The
+  dot is the only thing claiming where a venue really is. "Most of the dot still
+  visible" turned out to need no calibration at all: a chord through a circle's
+  centre halves it, so majority-visible is exactly "the dot's centre is outside
+  the diamond", and the threshold is the diamond.
+- **Lanes go by name rank where geography is rounding.** A 10-digit plus code
+  names a cell 1/8000° across, and the Urban Lights row differs by exactly one
+  cell of latitude — three buildings on one sidewalk, entrances on University
+  Avenue, the delta being which cell somebody clicked. Groups inside a cell hand
+  their lanes out by rank, middle lane first, since it draws at its own
+  coordinate and is the worst place for a name. Sundin and Soeffker, three cells
+  apart, keep geographic order.
+
+Two things worth knowing before touching this again. Name offsets are in **ems
+of the layer's text size**, so changing the size without dividing the offsets by
+the new one walks every name into its own pin's box: measured, 12 px → 11 px cut
+the phone frame from 8 names to 4, and 10 px to none. And rank ordering can send
+two members past each other; lane offsets are static while true positions spread
+with zoom, so a crossed pair converges and the clearance search vetoes that axis
+— the rank regime survives in the real trio only because it is 108 m wide on its
+*other* axis.
+
+Still unnamed on the phone: Mosaic on a Stick and Fluid Ink Tattoos, whose one
+free side is inside a neighbour's diamond rather than inside empty paper, and
+Elsa's House of Sleep, which is the lowest-ranked of its trio. Captures under
+the `after-fill-` prefix.
+
 ### 2026-09-04 — deliberate label collisions, a desktop map frame, and a map embed
 
 `definitions/squarespace-map-embed.md`, in three stages. The suite is green at

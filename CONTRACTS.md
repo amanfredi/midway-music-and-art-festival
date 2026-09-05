@@ -683,11 +683,20 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   coordinates and a fixed group order, so the answer is identical on every
   device.
 
-  Dot, line and diamond are **one canvas image per lane**, anchored on the dot.
-  MapLibre has no leader-line primitive, and its collision handling hides
-  symbols rather than moving them, so the displacement is precomputed and static
-  — and baking the line into the icon is what makes it impossible for another
-  label to be placed across it. The displaced pins come from their own
+  **The tether does not reserve space; the diamond does.** Dot and line are one
+  image per lane on their own layer (`venue-leader-tether`,
+  `transit-leader-tether`) with `icon-ignore-placement`, and the diamond is the
+  ordinary pin image moved into the lane by `icon-offset`. Until 2026-09-04 all
+  three were one image, which made the leader line untrespassable — and made the
+  treatment reserve the paper alongside it: a symbol's collision box is its
+  whole image rect, so a 32 px lane reserved 110 × 46 px to protect a 46 × 46
+  diamond, and a displaced transit stop reserved 116 × 30. On a phone frame
+  those boxes covered the middle of the map and three venues with visible space
+  around them went unnamed (`reviews/2026-09-map-collisions/diag-*.png`). So the
+  line gave way and the diamond did not: **a label may be drawn across a leader
+  line, and may not be drawn across a diamond or its number.**
+
+  The displaced pins come from their own
   unclustered `venue-groups` source, because the clustered one hides them inside
   a stack for most of this range; a stack whose every member is displaced drops
   out of `venue-cluster` here, which is why the leader zoom has to be a whole
@@ -695,10 +704,44 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   only at integer zooms). Their tap halo is a symbol layer, `venue-leader-halo`, rather
   than a circle: a circle layer draws at the feature's geometry, which here is
   the dot, so the ring would mark empty paper beside the diamond. Ring and
-  diamond are placed inside their two images from the same offset. Dot and
+  diamond ride the **same** `icon-offset` expression, so they are moved by one
+  thing rather than by two that have to agree. Dot and
   line colors are `--map-leader-dot` and `--map-leader-line` in `app.css` —
   graphics, not type, so 3:1 against `--map-paper` is the floor; they hold
   6.77:1 and 4.77:1.
+
+  **Nothing may park a diamond on a dot.** A member the lane layout leaves at
+  offset 0 draws at its own coordinate with no tether, which is the best place
+  for a pin and the worst for its name. It may hold that lane only if its
+  diamond does not cover the centre of another member's dot. "Most of the dot
+  still visible" reduces to exactly that test — a chord through a circle's
+  centre halves it — so the threshold is the diamond itself
+  (|dx| + |dy| ≤ `VENUE_R`, measured at the split zoom, the widest view the
+  treatment draws at and so the one where members are closest). If no member can
+  hold the middle lane, the group shifts half a lane so every member is tethered
+  and no dot has a diamond on it. That removes the tetherless case rather than
+  proving no diamond covers any dot; a group where every member buries every
+  other would need a search over assignments, and no venue set has been that
+  tight.
+
+  **Where the group's spread is rounding, name rank orders the lanes.** A
+  10-digit Open Location Code — the form a Google Maps place card copies —
+  names a cell 1/8000 of a degree on a side, 13.9 m of latitude. A group whose
+  spread **along its lane axis** is within one cell is spread by quantization,
+  not by where its doors are, and ordering it geographically orders noise:
+  Urban Lights, Elsa's House of Sleep and Black Hart of Saint Paul differ by
+  exactly one cell of latitude and are a row of buildings on the north side of
+  University Avenue with their entrances on one sidewalk (ruled 2026-09-04).
+  Those groups hand their lanes out by name rank, middle lane first, subject to
+  the dot rule above. Compared in degrees, not metres, because that is the shape
+  of the quantization and the two axes round to different distances. Sundin
+  Music Hall and Soeffker Gallery, three cells apart, keep geographic order.
+
+  Rank order can send two members past each other. Lane offsets are static while
+  true positions spread with zoom, so a crossed pair converges, and the
+  clearance search above vetoes an axis when it does — which is why the rank
+  regime survives in a group that is separated on its *other* axis (the real
+  trio is 108 m apart east–west) and gets refused in one that is not.
 
   **A transit stop that cannot clear a venue pin is displaced the same way,
   from the leader zoom inward.** The venue never moves — it is the primary
@@ -751,16 +794,33 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   outward side, which variable anchoring would discard.
 
   The visible pin layers register their collision boxes
-  (`icon-ignore-placement` off; the two invisible-until-selected halo layers
-  stay out of the index), so no label — name or street — can be placed across
-  a diamond, a number or a leader line; label offsets are therefore measured
+  (`icon-ignore-placement` off; the invisible-until-selected halo layers and the
+  two tether layers stay out of the index), so no label — name or street — can
+  be placed across a diamond or a number, though one may now cross a leader
+  line; label offsets are therefore measured
   to the pin's collision box (image rect + the engine's default 2 px icon-
   and text-padding), not its drawn shape, or the pin's own box rejects its
-  own name. A displaced venue's name rides its lane — offset to the drawn
-  diamond and anchored on the lane's outward side, and for the middle lane of
-  an odd group on the axis its neighbours did not take — because a name at the
-  true coordinate labels the empty paper beside the leader line, and an exactly
-  coincident pair's names would want the identical box and collide down to one.
+  own name.
+
+  **A displaced venue's name rides its lane, and falls back around the
+  diamond.** The lane's outward side is the first candidate — a name at the true
+  coordinate labels the empty paper beside the tether, and an exactly coincident
+  pair's names would want the identical box and collide down to one — then the
+  two perpendicular sides, then the far side across the tether. Before
+  2026-09-04 there was only the first, and a displaced name blocked there simply
+  vanished; that was most of why five of the six displaced venues on a phone
+  frame went unnamed. The layer uses `text-variable-anchor-offset`, which pairs
+  an offset with each anchor and **is data-driven**, so each lane carries its own
+  ordered list; plain `text-variable-anchor` cannot express it, because its one
+  radial distance is measured from the feature, which for these pins is the dot
+  a whole lane away from the diamond. That property supersedes `text-anchor`,
+  `text-offset` and `text-radial-offset` on this layer.
+
+  Its offsets are in **ems of the layer's own text size**, and that coupling is
+  binding: changing a name layer's `text-size` without dividing the offsets by
+  the new one moves every name relative to its pin, and any that land inside the
+  pin's own collision box disappear. Measured 2026-09-04 on a phone frame:
+  12 px → 11 px took the placed names from 8 to 4, and 10 px to none.
 
   Vendor pins are removed from the map entirely (vendors moved to the
   `#/vendors` list view — see UI contract). Sponsor pins exist **only** for
@@ -1117,9 +1177,13 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   stronger check than a DOM query, since a symbol appears in
   `queryRenderedFeatures` only once placement has put it on screen.
   Layer ids are part of the hook: `venue-pin`, `venue-leader-pin`,
-  `venue-cluster`, `transit-pin`, `sponsor-featured-pin`, `sponsor-generic-pin`,
+  `venue-cluster`, `transit-pin`, `transit-leader-pin`, `sponsor-featured-pin`,
+  `sponsor-generic-pin`, the dot-and-line layers `venue-leader-tether` and
+  `transit-leader-tether`,
   the tap-highlight halos `venue-highlight`, `venue-leader-halo`,
-  `transit-highlight`, `sponsor-highlight`, and for the ground `arterial-fill`,
+  `transit-highlight`, `sponsor-highlight`, the name layers `venue-name-label`,
+  `venue-leader-name-label`, `sponsor-name-label`, and for the ground
+  `arterial-fill`,
   `spine-fill`, `rail-green`, `rail-blue`, `bus-route`, `street-label-spine`,
   `street-label-arterial`, `station-label`. `venue-leader-pin` and
   `venue-leader-halo` carry the split zoom as their `minzoom`, which is how a
@@ -1128,6 +1192,16 @@ UI code never needs to know about it beyond `js/sw-register.js`.
   five pin sources are id'd by their index, which is what `setFeatureState`
   addresses — a displaced venue is addressed in `venue-groups`, since that is
   the feature on screen.
+
+  A displaced feature carries its lane as three scalars, because the
+  GeoJSON-to-tile conversion stringifies anything else: `lane` (the key the
+  `match` expressions switch on, e.g. `ns:0,-32`), `offsetX`/`offsetY` (the
+  pixels the diamond is drawn from the coordinate, which is what the tap
+  resolver measures with and what a test should add to `map.project`), plus
+  `tether` (its dot-and-line image id) and, on venues, `tethered`. Where the
+  diamond is drawn is `icon-offset` on the pin layer, so a test that wants the
+  drawn position reads that rather than probing a composite image — there is no
+  longer one to probe.
   `tests/map-helpers.mjs` wraps the waiting and querying; map tests should use
   it rather than reaching for the global directly.
 - `#pan-up`, `#pan-down`, `#pan-left`, `#pan-right` on the pan d-pad, and

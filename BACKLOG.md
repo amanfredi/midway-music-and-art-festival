@@ -144,6 +144,19 @@ the lever is a shorter lane step for cramped groups (the floor is 2 × `VENUE_R`
 = 38 px, against today's 64), which would cost every displaced pin its visible
 leader run and so needs its own look.
 
+Same neighbourhood, same cause: **Mosaic on a Stick and Fluid Ink Tattoos are
+the two venues still unnamed** on a phone frame at the leader zoom after the
+2026-09-04 fill-rate work took the frame from 8 names of 14 to 11. Every one of
+their name's four candidate positions is inside a neighbour's *diamond* rather
+than inside the empty paper the tether used to reserve, so nothing short of
+moving a pin will seat them. A shorter lane step is the same lever.
+
+**Sponsor and street labels were never re-measured after the tether split**
+(added 2026-09-04). Taking the leader composites out of the collision index
+freed space for every symbol layer placed after the venue names, not just for
+them — sponsor names and street names both place later and should have gained
+room. Nobody counted. Worth a look only if the map starts to read busy.
+
 **Map presentation is CI-validated against fixtures only** (added 2026-08-23).
 The venues sheet is live, and pin-collision outcomes (group membership, the
 leader-zoom guard, displaced-stop lanes) are data-dependent with margins as

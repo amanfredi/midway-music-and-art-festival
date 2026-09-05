@@ -11,20 +11,23 @@ import { gotoMap, mapEval, findPin, findEmptySpot, sheet, sourceFeatures } from 
 
 const T = '?t=2026-10-03T15:00';
 
-// --- Item: keyboard/AT path to transit and sponsor pin sheets ---------------
+// --- Item: keyboard/AT path to transit pin sheets ---------------------------
 
-test('the hidden pin list has one button per pinned transit stop and sponsor', async ({ page }) => {
+test('the hidden pin list holds transit stops only, one button each', async ({ page }) => {
   await gotoMap(page);
 
-  // The button list and the pin layers are built from the same subsets, so the
-  // engine's own sources are the expected counts.
+  // The button list and the pin layers are built from the same subset, so the
+  // engine's own source is the expected count.
   const stops = await sourceFeatures(page, 'transit');
   const sponsors = await sourceFeatures(page, 'sponsors');
   expect(stops.length).toBeGreaterThan(0);
-  expect(sponsors.length).toBeGreaterThan(0);
+  expect(sponsors.length, 'no sponsor draws a pin, so the exclusion below proves nothing').toBeGreaterThan(0);
 
   await expect(page.locator('.pin-alt-btn[data-kind="transit"]')).toHaveCount(stops.length);
-  await expect(page.locator('.pin-alt-btn[data-kind="sponsor"]')).toHaveCount(sponsors.length);
+  // Sponsors have visible key-list buttons now (2026-09-05). A sponsor in both
+  // places is announced twice, once visibly and once not.
+  await expect(page.locator('.pin-alt-btn[data-kind="sponsor"]')).toHaveCount(0);
+  await expect(page.locator('.pin-alt-btn')).toHaveCount(stops.length);
 
   // Visually hidden until focused, then revealed (skip-link style) so a
   // sighted keyboard user can see where focus is.
@@ -55,10 +58,10 @@ test('keyboard activation of a transit button opens that stop sheet; focus retur
   await expect(btn).toBeFocused();
 });
 
-test('keyboard activation of a sponsor button opens that sponsor sheet; focus returns on close', async ({ page }) => {
+test('keyboard activation of a sponsor card opens that sponsor sheet; focus returns on close', async ({ page }) => {
   await gotoMap(page);
 
-  const btn = page.locator('.pin-alt-btn[data-kind="sponsor"][data-id="shortline-credit-union"]');
+  const btn = page.locator('.sponsor-key-btn[data-sponsor-id="shortline-credit-union"]');
   await expect(btn).toHaveAccessibleName(/Shortline Credit Union/);
 
   await btn.focus();
@@ -243,8 +246,9 @@ test('the scale bar is present, readable, and fetches nothing', async ({ page })
 /** The CSS-pixel size of a drawn pin icon, read back from the engine's own image registry. */
 const PIN_SIZE_FN = (map, id) => {
   const img = map.style.getImage(id);
-  // The canvas image carries 2 px of padding per side (diamondImage); the
-  // drawn diamond is the rest.
+  // The canvas image carries 2 px of padding per side (diamondImage,
+  // squareMarkImage); the drawn shape is the rest — a diamond's full diagonal
+  // or a square's side.
   return img.data.width / img.pixelRatio - 4;
 };
 
@@ -296,13 +300,75 @@ test('legend swatches are the size of the pins they key', async ({ page }) => {
 
   const venuePin = await mapEval(page, PIN_SIZE_FN, 'pin-venue');
   const transitPin = await mapEval(page, PIN_SIZE_FN, 'pin-transit');
+  const featuredPin = await mapEval(page, PIN_SIZE_FN, 'pin-sponsor-featured');
+  const genericPin = await mapEval(page, PIN_SIZE_FN, 'pin-sponsor-generic');
 
-  // The drawn diamond inside a legend swatch's 32-unit viewBox spans 28 units.
+  // The drawn shape inside a legend swatch's 32-unit viewBox spans 28 units —
+  // the diamonds by their points, the featured square by the outer edge of its
+  // inset-3 stroked rect.
   const drawnSwatch = (selector) =>
     page.locator(selector).evaluate((el) => (el.getBoundingClientRect().width * 28) / 32);
 
   expect(await drawnSwatch('.legend-icon--venue')).toBeCloseTo(venuePin, 0);
   expect(await drawnSwatch('.legend-icon--transit')).toBeCloseTo(transitPin, 0);
+  expect(await drawnSwatch('.legend-icon--sponsor-featured')).toBeCloseTo(featuredPin, 0);
+  expect(await drawnSwatch('.legend-icon--sponsor-generic')).toBeCloseTo(genericPin, 0);
+});
+
+// The two shapes are one rotated from the other, and that is the claim the
+// legend makes about the hierarchy: a Featured Destination weighs what a venue
+// weighs. Equal ink, not equal bounding box — the 38 px box reading would
+// double it.
+test('the featured square carries the venue diamond ink, unrotated', async ({ page }) => {
+  await gotoMap(page);
+
+  const venue = await mapEval(page, PIN_SIZE_FN, 'pin-venue');
+  const featuredSide = await mapEval(page, PIN_SIZE_FN, 'pin-sponsor-featured');
+
+  // A diamond of half-diagonal R has area 2R^2; the square with that area has
+  // side R * sqrt(2), rounded to a whole pixel.
+  expect(featuredSide, 'the featured square is not the venue diamond unrotated').toBe(
+    Math.round((venue / 2) * Math.SQRT2),
+  );
+  expect(featuredSide, 'the featured pin lost its 27 px side').toBe(27);
+});
+
+// Featured squares are the largest sponsor pin and are drawn with a mark inside
+// them; a square overlapping a venue diamond is the failure the size was chosen
+// to avoid. Measured, not assumed — the definition's live-data measurement
+// (>= 443 m from anything) has no authority over the fixtures.
+test('no featured sponsor pin overlaps a venue pin at the home view', async ({ page }) => {
+  await gotoMap(page);
+
+  const { closest, needed, pair, seen } = await page.evaluate(() => {
+    const map = window.__mmafMap;
+    const at = (layer) =>
+      map.queryRenderedFeatures({ layers: [layer] }).map((f) => {
+        const p = map.project(f.geometry.coordinates);
+        return { x: p.x, y: p.y, label: f.properties.name ?? f.properties.id };
+      });
+    const size = (id) => map.style.getImage(id).data.width / map.style.getImage(id).pixelRatio - 4;
+    // L1 clearance: a diamond of half-diagonal R contributes R, an
+    // axis-aligned square of side s contributes s (its corner, s/2 + s/2).
+    const needed = size('pin-venue') / 2 + size('pin-sponsor-featured');
+    let closest = Infinity;
+    let pair = null;
+    const featured = at('sponsor-featured-pin');
+    for (const s of featured) {
+      for (const v of at('venue-pin')) {
+        const d = Math.abs(s.x - v.x) + Math.abs(s.y - v.y);
+        if (d < closest) [closest, pair] = [d, [s.label, v.label]];
+      }
+    }
+    return { closest, needed, pair, seen: featured.length };
+  });
+
+  expect(seen, 'no featured sponsor pin is on screen; the check proves nothing').toBeGreaterThan(0);
+  // Measured 2026-09-05 at the default 1280 px viewport (the map frame caps at
+  // 560 px, the tight case): fixtures 62.1 px against the 46 needed (Twin
+  // Cities Harvest Co-op / Urban Lights), live sheet 157.5 px (Platform / Hive
+  // Collaborative). Both are properties of today's data, not floors.
+  expect(closest, `featured pin ${pair?.join(' overlaps venue ')} at the home view`).toBeGreaterThanOrEqual(needed);
 });
 
 // --- Item: locate denial copy -----------------------------------------------

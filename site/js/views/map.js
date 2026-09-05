@@ -190,6 +190,23 @@ const VENUE_R = 19;
 const PIN_BLOCK_HALF = VENUE_R / Math.SQRT2;
 const SMALL_R = 11;
 const CLUSTER_R = 17;
+// The Featured Destination pin: **the venue diamond unrotated**, 27 px. Same
+// ink as a venue pin (a diamond of half-diagonal R has area 2R^2, and so does a
+// square of side R * sqrt(2)), which is the point -- a featured sponsor is as
+// important as a venue and no more, so it gets the venue pin's weight and a
+// different shape rather than a bigger one. The alternative reading, a square
+// filling the diamond's 38 px bounding box, doubles the ink and puts sponsors
+// above venues in the hierarchy.
+//
+// One constant to change: the outline, the mark's inset, the halo, the name
+// offsets and the clearance inequalities below are all derived from it.
+const FEATURED_SIDE = Math.round(VENUE_R * Math.SQRT2);
+// The red keyline, drawn INSIDE the square's 27 px so the outer extent is
+// exactly FEATURED_SIDE, and a 1 px of paper between it and the mark so a mark
+// with ink at its own edge doesn't read as part of the outline. What is left
+// for the mark is 27 - 2*2 - 2*1 = 21 px.
+const FEATURED_STROKE = 2;
+const FEATURED_MARK_INSET = 1;
 // The number inside the venue diamond, sized so a two-digit label still clears
 // the diamond's sloping sides: at the label's cap height the diamond is about
 // 2 * (VENUE_R - 6) = 26 px wide, and "11" sets to ~20 px here.
@@ -685,7 +702,33 @@ function displacedStopOffsets(stops, venues, groupOffsets, sponsors, { leaderZoo
     off: groupOffsets.get(i) ?? NO_LANE,
     clear: VENUE_R + SMALL_R,
   }));
-  const sponsorPins = pxAtZoom(sponsors, leaderZoom, lat).map((p) => ({ ...p, off: NO_LANE, clear: 2 * SMALL_R }));
+  // What a stop must keep between itself and each sponsor pin, measured the one
+  // way this file measures anything: |dx| + |dy|.
+  //
+  // Two shapes are disjoint exactly when the offset between their centres lies
+  // outside the Minkowski sum of the two, so the clearance is that sum's
+  // extent along the measure in use. For an L1 measure that is the sum's own L1
+  // radius, and it adds:
+  //
+  //   diamond of half-diagonal R -> L1 radius R      (its tip IS the L1 extreme)
+  //   axis-aligned square, side s -> L1 radius s     (its corner: s/2 + s/2)
+  //
+  // So, against a stop's diamond (SMALL_R):
+  //   vs a generic sponsor diamond (SMALL_R): 2 * SMALL_R, as before.
+  //   vs a featured sponsor square (FEATURED_SIDE): SMALL_R + FEATURED_SIDE.
+  // and, for completeness, two featured squares would need 2 * FEATURED_SIDE.
+  //
+  // The L1 test is sufficient but not tight for a square: two squares also
+  // clear at max(|dx|,|dy|) >= side, which |dx| + |dy| >= 2 * side does not
+  // capture, so a stop can be pushed further than it strictly had to be. That
+  // is the right way to be wrong here -- it costs a few pixels of displacement
+  // and never lets a mark end up under a transit diamond -- and it keeps one
+  // measure across the whole file rather than two that must agree.
+  const sponsorPins = pxAtZoom(sponsors, leaderZoom, lat).map((p, i) => ({
+    ...p,
+    off: NO_LANE,
+    clear: SMALL_R + (FEATURED_SPONSOR_TIERS.has(sponsors[i].tier_slug) ? FEATURED_SIDE : SMALL_R),
+  }));
   const stopPins = pxAtZoom(stops, leaderZoom, lat).map((p) => ({ ...p, off: NO_LANE }));
 
   const offsets = new Map();
@@ -759,6 +802,81 @@ function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
     ctx.stroke();
   }
   return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
+}
+
+/**
+ * The Featured Destination pin: an axis-aligned square of paper, red-keylined,
+ * carrying the sponsor's own square mark.
+ *
+ * `mark` is a loaded `Image` or null. Null is not an error case to be avoided —
+ * it is what draws while the marks are still loading, and what stays if one of
+ * them never arrives. An empty red square is a legible pin; waiting for a file
+ * before drawing any of the layer would let one bad asset empty it.
+ *
+ * The mark is drawn **contain-fit**: scaled to fit inside the inner box without
+ * cropping and centred, so a mark of any aspect keeps its proportions and a
+ * wide one simply uses less of the square. Cover-fit would crop somebody's
+ * brand, and stretching it is worse than either.
+ */
+function squareMarkImage(side, mark, { stroke, fill }, dpr) {
+  // The same 2 px of canvas bleed diamondImage leaves, so the tests' shared
+  // "image width minus 4 is the drawn size" reading holds for this pin too.
+  const half = side / 2 + 2;
+  const { ctx, cx, cy } = pinCanvas(half, half, dpr);
+  const left = cx - side / 2;
+  const top = cy - side / 2;
+
+  ctx.fillStyle = fill;
+  ctx.fillRect(left, top, side, side);
+  // Stroked on the inset rectangle, not on the outline of the fill: a canvas
+  // stroke straddles its path, so stroking the full square would put half the
+  // keyline outside the 27 px and make the pin 29.
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = FEATURED_STROKE;
+  ctx.strokeRect(
+    left + FEATURED_STROKE / 2,
+    top + FEATURED_STROKE / 2,
+    side - FEATURED_STROKE,
+    side - FEATURED_STROKE
+  );
+
+  if (mark && mark.width > 0 && mark.height > 0) {
+    const box = side - 2 * (FEATURED_STROKE + FEATURED_MARK_INSET);
+    const scale = Math.min(box / mark.width, box / mark.height);
+    const width = mark.width * scale;
+    const height = mark.height * scale;
+    ctx.drawImage(mark, cx - width / 2, cy - height / 2, width, height);
+  }
+  return { data: ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height), pixelRatio: dpr };
+}
+
+/** The image id a featured sponsor's own pin is registered under. */
+const featuredPinId = (sponsorId) => `pin-sponsor-featured-${sponsorId}`;
+
+/**
+ * Loads every featured sponsor's mark, and calls back with the ones that
+ * arrived. Never rejects: a mark is one sponsor's picture, and losing it must
+ * not take the map's whole pin layer with it.
+ *
+ * The marks come from the precache like every other asset, so this works
+ * offline; a failure here means the file is missing or corrupt, not that the
+ * phone is off the network, and that is worth a console warning.
+ */
+function loadSponsorMarks(sponsors) {
+  return Promise.all(
+    sponsors.map(
+      (sponsor) =>
+        new Promise((resolve) => {
+          const image = new Image();
+          image.onload = () => resolve({ sponsor, image });
+          image.onerror = () => {
+            console.warn(`[map] sponsor mark failed to load: ${sponsor.mark} (${sponsor.id}); pin drawn empty`);
+            resolve(null);
+          };
+          image.src = sponsor.mark;
+        })
+    )
+  ).then((loaded) => loaded.filter(Boolean));
 }
 
 /**
@@ -1161,8 +1279,12 @@ export async function renderMap(container, content) {
              there. -->
         <ul class="map-legend__list">
           <li><svg class="legend-icon legend-icon--venue" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Venue</li>
-          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Featured Destination</li>
-          <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,4 28,16 16,28 4,16"></polygon></svg> Sponsor</li>
+          <!-- The featured swatch is a square and the venue swatch a diamond of
+               the same ink: same area, one rotated from the other, which is what
+               the two pins are. The rect is inset 3 and stroked 2, so its outer
+               edge spans the same 28 of 32 units the polygons do. -->
+          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26"></rect></svg> Featured Destination</li>
+          <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Sponsor</li>
           <li><svg class="legend-icon legend-icon--transit" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Transit</li>
           <!-- The two rail lines draw at the same weight in different colors,
                so their names live here or nowhere: the Blue Line has no
@@ -1178,8 +1300,7 @@ export async function renderMap(container, content) {
         </ul>
       </div>
       ${content.settings.map_attribution ? `<p class="map-attribution">${esc(content.settings.map_attribution)}</p>` : ''}
-      <h2 class="view-subtitle">Venues</h2>
-      <ol class="venue-key-list" id="venue-key-list"></ol>
+      <div class="map-key" id="map-key"></div>
       <div id="map-pin-alt"></div>
     </section>`;
 
@@ -1189,17 +1310,29 @@ export async function renderMap(container, content) {
   const mapWrap = () => (generation === renderGeneration ? container.querySelector('#map-svg-wrap') : null);
 
   const venues = content.venues.filter((v) => Number.isFinite(v.lat) && Number.isFinite(v.lng));
+  // The sponsors that draw a pin, and therefore the sponsors the key list
+  // holds: the list under the map is a map key, so it mirrors the pins exactly.
+  // Computed here rather than beside the pin layers because the key list is
+  // rendered before the engine exists and has to say the same thing.
+  const pinnedSponsors = pinnedSponsorsOf(content.sponsors);
   // Reassigned once the engine map exists; until then a key-list tap only opens
   // the sheet, exactly as it does on a device that never gets a map at all.
   let linkVenueToMap = () => {};
+  let linkSponsorToMap = () => {};
   // Rendered before the engine is loaded, and left in place if it never is:
   // on a device without WebGL2 this list is the map view.
   // The card comes back with the id because in the embed it is where the sheet
   // opens: a tap on it is the only proof of where the visitor is looking, and by
   // the time they are reading this list the map frame may be well off screen.
-  renderVenueKeyList(container, venues, (venueId, card) => {
-    linkVenueToMap(venueId);
-    openVenueSheet(venueId, { openedBy: card });
+  renderMapKeyList(container, venues, pinnedSponsors, {
+    onVenue: (venueId, card) => {
+      linkVenueToMap(venueId);
+      openVenueSheet(venueId, { openedBy: card });
+    },
+    onSponsor: (sponsorId) => {
+      linkSponsorToMap(sponsorId);
+      openSponsorSheet(sponsorId);
+    },
   });
 
   if (!hasWebGl2()) {
@@ -1395,10 +1528,10 @@ export async function renderMap(container, content) {
     return NO_CLEANUP;
   }
 
-  // The same subsets the pin layers draw (see addPins): transit stops within
-  // the pin radius, sponsor tiers that get a pin at all. Computed here so the
-  // visually-hidden button list and the map itself can't disagree about what
-  // is on the map.
+  // The same subset the transit pin layers draw (see addPins): stops within the
+  // pin radius. Computed here so the visually-hidden button list and the map
+  // itself can't disagree about what is on the map. (Sponsors get the same
+  // treatment further up, where the key list needs them.)
   const nearFestival = makeTransitFilter(home);
   const pinnedStops = stops.filter(
     (s) =>
@@ -1408,13 +1541,7 @@ export async function renderMap(container, content) {
       s.lines.length > 0 &&
       nearFestival(s.lat, s.lng)
   );
-  const pinnedSponsors = content.sponsors.filter(
-    (s) =>
-      (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') &&
-      Number.isFinite(s.lat) &&
-      Number.isFinite(s.lng)
-  );
-  renderPinAltList(container, pinnedStops, pinnedSponsors);
+  renderPinAltList(container, pinnedStops);
 
   const displacedStops = displacedStopOffsets(pinnedStops, venues, groupOffsets, pinnedSponsors, {
     leaderZoom,
@@ -1478,6 +1605,22 @@ export async function renderMap(container, content) {
       selectPin(ref.source, ref.id);
       revealPin(map, { venueId, center: ref.center, floor: leaderZoom, maxZoom });
     };
+    // A sponsor card does the same, with the simpler camera a sponsor pin
+    // allows: sponsors never cluster and are never displaced, so a sponsor
+    // always has a pin of its own and there is nothing to check afterwards.
+    // The leader zoom is still the floor -- it is where sponsor names appear,
+    // so it is the view where the recentred pin is identifiable.
+    linkSponsorToMap = (sponsorId) => {
+      const index = pinnedSponsors.findIndex((s) => s.id === sponsorId);
+      if (index === -1) return;
+      const sponsor = pinnedSponsors[index];
+      selectPin('sponsors', index);
+      map.easeTo({
+        center: [sponsor.lng, sponsor.lat],
+        zoom: Math.max(map.getZoom(), leaderZoom),
+        duration: cameraDuration(450),
+      });
+    };
   });
 
   wireControls(container, map, { home, homeZoom, maxZoom, cleanupFns });
@@ -1488,41 +1631,115 @@ export async function renderMap(container, content) {
   return cleanup;
 }
 
-function renderVenueKeyList(container, venues, onSelect) {
-  const keyList = container.querySelector('#venue-key-list');
+/**
+ * The sponsors that draw a pin: tiers emerald–topaz, and only with a location
+ * (Map contract). `quartz` never gets one whatever its location says.
+ *
+ * One function because three places have to agree about it — the pin source,
+ * the clearance checks, and the key list — and the day they disagree is the day
+ * a sponsor is in the list with no pin to point at.
+ */
+function pinnedSponsorsOf(sponsors) {
+  return sponsors.filter(
+    (s) =>
+      (FEATURED_SPONSOR_TIERS.has(s.tier_slug) || s.tier_slug === 'topaz') &&
+      Number.isFinite(s.lat) &&
+      Number.isFinite(s.lng)
+  );
+}
+
+/**
+ * The key below the map: Featured Destinations, Venues, Sponsors, in that
+ * order, each under a visible heading.
+ *
+ * It is a **map key**, so it holds exactly what the map draws: the sponsors are
+ * the pinned ones and nobody else, and a section with nothing in it renders
+ * nothing at all rather than a heading over empty space — an empty "Sponsors"
+ * heading is a claim that there are sponsors on the map.
+ *
+ * The headings are visible text rather than `aria-label`s because the list is
+ * read by sighted people too, and because the three card shapes (numbered
+ * diamond, mark thumbnail, red diamond) are the same argument as the legend:
+ * shape and word together, never colour alone.
+ *
+ * `#venue-key-list` keeps its id and its `<ol>`: the numbering is the venue
+ * pins' own vocabulary, the embed styles it by that id, and tests address it.
+ */
+function renderMapKeyList(container, venues, sponsors, { onVenue, onSponsor }) {
+  const host = container.querySelector('#map-key');
+  if (!host) return;
+  const featured = sponsors.filter((s) => FEATURED_SPONSOR_TIERS.has(s.tier_slug));
+  const generic = sponsors.filter((s) => !FEATURED_SPONSOR_TIERS.has(s.tier_slug));
+
   // "Venue N" is in the accessible name, not only in the aria-hidden SVG: a
   // screen-reader user has to be able to cross-reference the number a sighted
   // companion reads off the map.
-  keyList.innerHTML = venues
-    .map(
-      (v, i) => `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}">
+  const venueCard = (v, i) =>
+    `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}">
         <svg class="venue-key-btn__pin" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
           <polygon points="16,1 31,16 16,31 1,16"></polygon>
           <text x="16" y="16">${i + 1}</text>
-        </svg><span class="sr-only">Venue ${i + 1}: </span>${esc(v.name)}</button></li>`
-    )
-    .join('');
-  keyList.querySelectorAll('.venue-key-btn').forEach((btn) => {
-    btn.addEventListener('click', () => onSelect(btn.dataset.venueId, btn));
+        </svg><span class="sr-only">Venue ${i + 1}: </span>${esc(v.name)}</button></li>`;
+
+  // The mark is the pin's own picture at a size that can actually be read, and
+  // it is decorative here: the sponsor's name is right beside it in text.
+  const featuredCard = (s) =>
+    `<li class="venue-key-item"><button type="button" class="sponsor-key-btn" data-sponsor-id="${esc(s.id)}" data-featured="true">
+        ${
+          s.mark
+            ? `<img class="sponsor-key-btn__mark" src="${esc(s.mark)}" alt="" width="28" height="28">`
+            : `<svg class="sponsor-key-btn__square" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><rect x="3" y="3" width="26" height="26"></rect></svg>`
+        }${esc(s.name)}</button></li>`;
+
+  const sponsorCard = (s) =>
+    `<li class="venue-key-item"><button type="button" class="sponsor-key-btn" data-sponsor-id="${esc(s.id)}" data-featured="false">
+        <svg class="sponsor-key-btn__pin" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <polygon points="16,2 30,16 16,30 2,16"></polygon>
+        </svg>${esc(s.name)}</button></li>`;
+
+  const section = (heading, tag, id, cards) =>
+    cards.length
+      ? `<h2 class="view-subtitle">${heading}</h2>
+         <${tag} class="venue-key-list"${id ? ` id="${id}"` : ''}>${cards.join('')}</${tag}>`
+      : '';
+
+  host.innerHTML = [
+    section('Featured Destinations', 'ul', 'featured-key-list', featured.map(featuredCard)),
+    section('Venues', 'ol', 'venue-key-list', venues.map(venueCard)),
+    section('Sponsors', 'ul', 'sponsor-key-list', generic.map(sponsorCard)),
+  ].join('');
+
+  // `.venue-key-btn` means a venue card and nothing else — it is what the
+  // contract's test hook names and what every test selects on, so the sponsor
+  // cards get their own class and share only the CSS.
+  host.querySelectorAll('.venue-key-btn[data-venue-id]').forEach((btn) => {
+    btn.addEventListener('click', () => onVenue(btn.dataset.venueId, btn));
+  });
+  host.querySelectorAll('.sponsor-key-btn[data-sponsor-id]').forEach((btn) => {
+    btn.addEventListener('click', () => onSponsor(btn.dataset.sponsorId, btn));
   });
 }
 
 /**
- * Keyboard/AT path to the canvas pins (Accessibility contract). Pins are drawn
- * into WebGL, so transit and sponsor pins have no DOM presence a keyboard or
- * screen reader could reach — venues are covered by the key list above. The
- * fix is a visually-hidden button per pinned transit stop and sponsor, opening
+ * Keyboard/AT path to the canvas transit pins (Accessibility contract). Pins
+ * are drawn into WebGL, so a transit pin has no DOM presence a keyboard or
+ * screen reader could reach — venues and sponsors are covered by the visible
+ * key list above. The fix is a visually-hidden button per pinned stop, opening
  * the same sheet a tap on the pin would. Each button un-hides while focused
  * (skip-link style) so sighted keyboard users can see where focus is; focus
  * returns to the button when the sheet closes, per the sheet's own contract.
+ *
+ * Sponsors left this list when they gained key-list cards (2026-09-05): a
+ * sponsor with both would be announced twice, once visibly and once not, and
+ * two buttons for one pin is worse than none.
  */
-function renderPinAltList(container, stops, sponsors) {
+function renderPinAltList(container, stops) {
   const host = container.querySelector('#map-pin-alt');
-  if (!host || (!stops.length && !sponsors.length)) return;
+  if (!host || !stops.length) return;
   const stopLabel = (s) =>
     [s.name, s.lines.map((l) => TRANSIT_LINE_NAME[l] || l).join(', ')].filter(Boolean).join(' — ');
   host.innerHTML = `
-    <h2 class="sr-only">Transit stops and sponsor locations on the map</h2>
+    <h2 class="sr-only">Transit stops on the map</h2>
     <ul class="pin-alt-list">
       ${stops
         .map(
@@ -1530,22 +1747,12 @@ function renderPinAltList(container, stops, sponsors) {
             `<li><button type="button" class="pin-alt-btn" data-kind="transit" data-id="${esc(s.id)}">${esc(stopLabel(s))}</button></li>`
         )
         .join('')}
-      ${sponsors
-        .map(
-          (s) =>
-            `<li><button type="button" class="pin-alt-btn" data-kind="sponsor" data-id="${esc(s.id)}">${esc(s.name)}</button></li>`
-        )
-        .join('')}
     </ul>`;
   const stopById = new Map(stops.map((s) => [s.id, s]));
   host.querySelectorAll('.pin-alt-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.kind === 'transit') {
-        const stop = stopById.get(btn.dataset.id);
-        if (stop) openTransitSheet(stop, stop.lines.map((l) => TRANSIT_LINE_NAME[l] || l));
-      } else {
-        openSponsorSheet(btn.dataset.id);
-      }
+      const stop = stopById.get(btn.dataset.id);
+      if (stop) openTransitSheet(stop, stop.lines.map((l) => TRANSIT_LINE_NAME[l] || l));
     });
   });
 }
@@ -1779,13 +1986,22 @@ function addPins(
     pixelRatio: dpr,
   });
   map.addImage('pin-transit', diamondImage(SMALL_R, { fill: colors.transit }, dpr).data, { pixelRatio: dpr });
-  map.addImage('pin-sponsor-featured', diamondImage(SMALL_R, { fill: colors.sponsor }, dpr).data, { pixelRatio: dpr });
-  // Generic sponsor pins are outlined rather than filled, as in the SVG map.
+  // The featured square with nothing in it. Registered synchronously and used
+  // as the layer's icon-image from the start, so the pins are on screen in the
+  // same frame as every other pin; the marks replace it below when they arrive,
+  // and it stays under any sponsor whose mark never does.
   map.addImage(
-    'pin-sponsor-generic',
-    diamondImage(SMALL_R, { fill: colors.surface, stroke: colors.sponsor, strokeWidth: 3 }, dpr).data,
+    'pin-sponsor-featured',
+    squareMarkImage(FEATURED_SIDE, null, { stroke: colors.sponsor, fill: colors.paper }, dpr).data,
     { pixelRatio: dpr }
   );
+  // Generic sponsor pins are solid, and the featured pin carries its weight
+  // through size and a mark instead. The old convention was inverted --
+  // featured filled, generic outlined, at one size -- so the heavier-looking
+  // pin was the lesser sponsor.
+  map.addImage('pin-sponsor-generic', diamondImage(SMALL_R, { fill: colors.sponsor }, dpr).data, {
+    pixelRatio: dpr,
+  });
 
   // Every feature carries a numeric feature id (its index) so feature-state
   // can address it — the tap highlight is a paint expression keyed on
@@ -1935,7 +2151,27 @@ function addPins(
   // in one source since transit never clusters.
   const plainTransit = ['any', ['<', ['zoom'], leaderZoom], ['==', ['get', 'grouped'], false]];
   map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', filter: plainTransit, paint: haloPaint(SMALL_R) });
-  map.addLayer({ id: 'sponsor-highlight', type: 'circle', source: 'sponsors', paint: haloPaint(SMALL_R) });
+  // One halo layer for both sponsor shapes, with the radius switched per
+  // feature: a ring has to enclose the pin it rings, and the featured square's
+  // furthest ink is its CORNER, at side/sqrt(2) from the centre. That lands on
+  // VENUE_R but for the rounding (19.09 against 19) -- the square and the venue
+  // diamond are the same shape rotated, so they share a circumradius -- and the
+  // two halos therefore match, which is what "same weight in the hierarchy"
+  // looks like when a pin is lit.
+  map.addLayer({
+    id: 'sponsor-highlight',
+    type: 'circle',
+    source: 'sponsors',
+    paint: {
+      ...haloPaint(SMALL_R),
+      'circle-radius': [
+        'case',
+        ['boolean', ['get', 'featured'], false],
+        FEATURED_SIDE / Math.SQRT2 + HALO_PAD,
+        SMALL_R + HALO_PAD,
+      ],
+    },
+  });
   // The individual venues this source still draws: not a stack, and not one of
   // the venues whose own source draws it displaced.
   const plainVenue = ['all', ['!', ['has', 'point_count']], ['==', ['get', 'grouped'], false]];
@@ -2078,6 +2314,38 @@ function addPins(
     filter: ['==', ['get', 'featured'], false],
     layout: { ...pinLayout, 'icon-image': 'pin-sponsor-generic' },
   });
+  // Each featured sponsor's mark, drawn into its own copy of the square. This is
+  // the only asynchronous thing on the map, and it is deliberately after the
+  // fact: the layer above is already drawing empty squares, and this swaps in
+  // the marks that loaded. Nothing waits on it, so a mark that 404s costs that
+  // one sponsor its picture and no more.
+  const featuredSponsors = sponsors.filter((s) => FEATURED_SPONSOR_TIERS.has(s.tier_slug) && s.mark);
+  if (featuredSponsors.length) {
+    loadSponsorMarks(featuredSponsors).then((loaded) => {
+      if (!loaded.length) return;
+      // The view may have been torn down while the marks were in flight -- a
+      // route change removes the map, and every call below then reaches into a
+      // style that no longer exists. Caught rather than checked: `getLayer`
+      // itself throws on a removed map, so there is no test to run first.
+      try {
+        for (const { sponsor, image } of loaded) {
+          map.addImage(
+            featuredPinId(sponsor.id),
+            squareMarkImage(FEATURED_SIDE, image, { stroke: colors.sponsor, fill: colors.paper }, dpr).data,
+            { pixelRatio: dpr }
+          );
+        }
+        map.setLayoutProperty('sponsor-featured-pin', 'icon-image', [
+          'match',
+          ['get', 'id'],
+          ...loaded.flatMap(({ sponsor }) => [sponsor.id, featuredPinId(sponsor.id)]),
+          'pin-sponsor-featured',
+        ]);
+      } catch {
+        /* the map went away; the empty squares it was drawing went with it */
+      }
+    });
+  }
   map.addLayer({
     id: 'venue-cluster',
     type: 'symbol',
@@ -2204,12 +2472,24 @@ function addPins(
         'text-font': FONT_SEMIBOLD,
         'text-size': SPONSOR_NAME_TEXT_PX,
         // The engine tries each side in turn and keeps the first that fits.
-        // +3: the generic sponsor pin's stroke widens its image, and both
-        // sponsor kinds share this layer, so both clear the wider box.
+        //
+        // Measured to the FEATURED square, the wider of the two boxes this
+        // layer serves (the generic diamond would want SMALL_R + 8 = 19). A
+        // name stood off a 27 px square by the 22 px a diamond of the same ink
+        // wanted lands inside the square's own collision box, and the placement
+        // pass then rejects it: the diamond's tip is a point, the square's
+        // corner is the whole corner.
+        //
+        // And for the same reason the corner offset is NOT pulled in the way
+        // the venue pin's is. That trick works because a diamond's edge crosses
+        // the 45-degree ray at half its radius; a square's ink goes all the way
+        // to (side/2, side/2), so `cornerClear` stays equal to `clear` — which
+        // is nameCandidates' default, stated here because it looks like an
+        // omission next to the venue layer.
         'text-variable-anchor-offset': [
           'literal',
           nameCandidates({
-            clear: SMALL_R + 3 + NAME_CLEAR_PX,
+            clear: FEATURED_SIDE / 2 + NAME_CLEAR_PX,
             textPx: SPONSOR_NAME_TEXT_PX,
             order: NAME_ANCHOR_ORDER,
           }),

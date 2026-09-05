@@ -1472,16 +1472,22 @@ body.is-embed .venue-key-list {
   stroke: var(--bus-route-local);
 }
 
-.legend-icon--sponsor-featured polygon {
-  fill: var(--pin-sponsor);
-  stroke: #fff;
-  stroke-width: 1.5;
+/* The Featured Destination pin is the venue diamond unrotated: a 27 px square
+   of the same ink (FEATURED_SIDE = round(VENUE_R * sqrt(2)) in map.js). The
+   swatch carries no mark — a legend entry stands for the category, and one
+   sponsor's mark inside it would read as that sponsor. */
+.legend-icon--sponsor-featured {
+  --swatch-pin-size: 27px;
+}
+
+.legend-icon--sponsor-featured rect {
+  fill: var(--map-paper);
+  stroke: var(--pin-sponsor);
+  stroke-width: 2;
 }
 
 .legend-icon--sponsor-generic polygon {
-  fill: var(--color-surface);
-  stroke: var(--pin-sponsor);
-  stroke-width: 3;
+  fill: var(--pin-sponsor);
 }
 
 .map-attribution {
@@ -1499,7 +1505,11 @@ body.is-embed .venue-key-list {
   gap: 0.4rem;
 }
 
-.venue-key-btn {
+/* One card for all three sections of the key. The classes stay apart rather
+   than sharing one: `.venue-key-btn` is a published test hook that means a
+   venue card, and a sponsor card wearing it would quietly answer to it. */
+.venue-key-btn,
+.sponsor-key-btn {
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -1533,11 +1543,41 @@ body.is-embed .venue-key-list {
   dominant-baseline: central;
 }
 
+/* Sponsor cards, in the Featured Destinations and Sponsors sections of the key.
+   Same card as a venue's, different thing in the slot the numbered diamond
+   occupies: the sponsor's own mark, or the small red diamond its pin draws. */
+.sponsor-key-btn__mark,
+.sponsor-key-btn__square,
+.sponsor-key-btn__pin {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
+/* contain, not cover: the mark is somebody's brand and must not be cropped —
+   the same fit the pin draws it with. */
+.sponsor-key-btn__mark {
+  object-fit: contain;
+}
+
+.sponsor-key-btn__pin polygon {
+  fill: var(--pin-sponsor);
+}
+
+/* The empty square, for a featured sponsor whose mark is missing. Matches what
+   the map draws in the same case. */
+.sponsor-key-btn__square rect {
+  fill: var(--map-paper);
+  stroke: var(--pin-sponsor);
+  stroke-width: 2;
+}
+
 /* Map pins are drawn into the WebGL canvas by MapLibre, not styled here: their
    shapes are canvas images built in map.js and their colors are the custom
    properties at the top of this file, which the legend swatches below share.
-   The only pin-shaped things left in CSS are those swatches and the numbered
-   diamond in the venue key list. */
+   The only pin-shaped things left in CSS are those swatches and the key list's
+   own repeats of them — the numbered venue diamond, the sponsor diamond, and
+   the square a featured sponsor's mark sits in. */
 
 @keyframes pulse {
   0% { transform: scale(0.6); opacity: 0.9; }

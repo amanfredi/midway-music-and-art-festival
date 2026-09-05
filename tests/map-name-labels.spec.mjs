@@ -283,7 +283,12 @@ test('every name layer offers the four corners, and diagonals clear the ink not 
         const img = map.style.getImage(name);
         return img && img.data.width / img.pixelRatio;
       };
-      return [id, at, image('pin-venue-block') / 2 + 2, image('pin-venue') / 2 - 2];
+      // The sponsor layer serves both sponsor shapes and is measured to the
+      // wider box, the featured square's: its image rect plus the engine's own
+      // 2 px icon padding.
+      const boxHalf =
+        id === 'sponsor-name-label' ? image('pin-sponsor-featured') / 2 + 2 : image('pin-venue-block') / 2 + 2;
+      return [id, at, boxHalf, image('pin-venue') / 2 - 2];
     }),
     ['venue-name-label', 'sponsor-name-label', 'venue-leader-name-label'],
   );
@@ -304,10 +309,10 @@ test('every name layer offers the four corners, and diagonals clear the ink not 
     const textPx = id === 'sponsor-name-label' ? 11 : 12;
     // It still has to clear what the pin reserves, or the pin's own box rejects
     // its own name — the failure that made corners inert before they had their
-    // own offsets.
-    if (id !== 'sponsor-name-label') {
-      expect(cornerX * textPx - 2, `${id}'s corner candidate is inside the pin's own box`).toBeGreaterThan(blockHalf);
-    }
+    // own offsets. The sponsor layer is in this check now (2026-09-05): a
+    // square's ink runs all the way to its corner, so a corner offset that a
+    // diamond of the same ink could afford to pull in lands inside the square.
+    expect(cornerX * textPx - 2, `${id}'s corner candidate is inside the pin's own box`).toBeGreaterThan(blockHalf);
   }
 
   // The venue layers measure a diagonal to the INK, not to the reserved box: a

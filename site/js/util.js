@@ -1,6 +1,6 @@
 // Small helpers shared across views, with no third-party dependencies.
 
-import { anchorToEmbedFrame } from './embed.js';
+import { anchorEmbedOverlay } from './embed.js';
 
 const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -61,7 +61,18 @@ export function showToast(message, duration = 3200) {
   // reachable from the embed -- "Link copied" from the sheet's share button, and
   // the locate button's failures -- are ones a visitor has to see to know the
   // tap did anything.
-  anchorToEmbedFrame(root);
+  //
+  // An open sheet is the anchor in preference to the map, because it is where
+  // the visitor is looking and it is what raised the toast. Read from the DOM
+  // rather than passed in: every showToast caller would otherwise have to know
+  // whether a sheet happens to be open, which is not their business.
+  //
+  // Caveat worth knowing: a toast raised while a sheet is open is currently
+  // drawn *underneath* it. A modal <dialog> and its ::backdrop paint in the top
+  // layer, above every z-index on the page. That is true of the app as much as
+  // the embed and is tracked in BACKLOG; anchoring it correctly is what makes
+  // fixing that a one-line change rather than two problems at once.
+  anchorEmbedOverlay(root, { sitOn: document.querySelector('dialog.sheet[open]') ?? undefined });
   // No role/aria-live on the toast itself: #toast-root is already the live
   // region, and a nested one makes screen readers announce twice.
   const el = document.createElement('div');

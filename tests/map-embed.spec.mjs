@@ -324,6 +324,71 @@ test('a pin tap in the embed opens the sheet over the map, and the host page sta
   );
 });
 
+// Anchoring every overlay to the map was only half an answer: by the time a
+// visitor is reading the venue key, the map frame can be a screen above them.
+// Measured 2026-09-05 before this: a tap on the last card opened the sheet at
+// y=16 in a 1359 px iframe while the visitor was looking at y=864..1359.
+//
+// The tap is the evidence. A tap on a pin proves the map is on screen; a tap on
+// a card proves the card is. So the sheet follows the tap, and this is the case
+// where the two answers are furthest apart.
+test('a venue card at the bottom of a scrolled list opens the sheet beside it', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.route('**/embed-host.html', (route) =>
+    route.fulfill({ contentType: 'text/html; charset=utf-8', body: HOST_PAGE }),
+  );
+  await page.goto('/embed-host.html');
+  const embed = page.frames().find((f) => f.url().includes('embed=map'));
+  expect(embed, 'the embed iframe never loaded').toBeTruthy();
+  await waitForEmbeddedMap(embed);
+  await expect
+    .poll(async () => (await page.locator('#map').boundingBox()).height, { timeout: 10_000 })
+    .not.toBe(IFRAME_HEIGHT);
+
+  // Scrolled to the end of the venue key, where the map frame is long gone.
+  const ids = await embed.evaluate(() =>
+    [...document.querySelectorAll('.venue-key-btn')].map((b) => b.dataset.venueId),
+  );
+  const last = ids.at(-1);
+  const cardBoxOf = (id) =>
+    embed.evaluate((venueId) => {
+      const r = document.querySelector(`.venue-key-btn[data-venue-id="${venueId}"]`).getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+    }, id);
+
+  const box = await page.locator('#map').boundingBox();
+  const iframeDocTop = box.y + (await page.evaluate(() => window.scrollY));
+  await page.evaluate((y) => window.scrollTo(0, y), iframeDocTop + (await cardBoxOf(last)).top - 426);
+  await page.waitForTimeout(200);
+
+  const view = await page.locator('#map').boundingBox();
+  const bandTop = Math.max(0, -view.y);
+  const bandBottom = Math.min(view.height, (await page.evaluate(() => window.innerHeight)) - view.y);
+  const frameBottom = await embed.evaluate(() =>
+    Math.round(document.querySelector('.map-frame').getBoundingClientRect().bottom),
+  );
+  expect(frameBottom, 'the map frame is still on screen; this test has lost its subject').toBeLessThan(bandTop);
+
+  const scrollBefore = await page.evaluate(() => window.scrollY);
+  await page.frameLocator('#map').locator(`.venue-key-btn[data-venue-id="${last}"]`).click();
+  await expect(page.frameLocator('#map').locator('.sheet[role="dialog"]')).toBeVisible();
+
+  const { sheet } = await embed.evaluate(new Function('return ' + OVERLAY_BOXES_FN)());
+  expect(await page.evaluate(() => window.scrollY), 'opening the sheet scrolled the host page').toBe(scrollBefore);
+  expect(sheet.top, `the sheet opens above the visible band (${bandTop}..${bandBottom})`).toBeGreaterThanOrEqual(
+    bandTop,
+  );
+  expect(sheet.bottom, `the sheet opens below the visible band (${bandTop}..${bandBottom})`).toBeLessThanOrEqual(
+    bandBottom,
+  );
+
+  // Beside the card, not merely somewhere legal: the tapped card is inside the
+  // sheet's own span.
+  const card = await cardBoxOf(last);
+  expect(card.top).toBeGreaterThanOrEqual(sheet.top);
+  expect(card.bottom).toBeLessThanOrEqual(sheet.bottom);
+});
+
 // The same fault, the same fix, a different overlay: a toast pinned to the
 // bottom of the viewport confirms a copied link a screen below the map. Both
 // toasts the embed can raise -- the sheet's share button and the locate button's
@@ -349,6 +414,46 @@ test('a toast in the embed appears over the map, not at the bottom of the iframe
   });
   expect(toastBox.bottom, 'the toast is below the map frame').toBeLessThanOrEqual(frame.bottom);
   expect(toastBox.top, 'the toast is above the map frame').toBeGreaterThanOrEqual(frame.top);
+});
+
+// A toast a sheet raised follows the sheet, not the map: the sheet is what the
+// visitor is looking at, and after a venue-card tap it is nowhere near the map.
+//
+// Geometry only. A toast raised while a sheet is open is painted *under* it —
+// a modal <dialog> and its ::backdrop are in the top layer, above every
+// z-index on the page — so there is nothing here to assert about visibility
+// yet. That is true of the app as much as the embed, it predates the embed,
+// and it is in BACKLOG. Anchoring is worth pinning meanwhile: it is what makes
+// that a one-line fix instead of two problems at once.
+test('a toast raised by the sheet follows the sheet rather than the map', async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await page.goto(EMBED_URL);
+  await waitForEmbeddedMap(page);
+
+  // The last card, so the sheet lands well below the map frame.
+  const ids = await page.evaluate(() =>
+    [...document.querySelectorAll('.venue-key-btn')].map((b) => b.dataset.venueId),
+  );
+  await page.locator(`.venue-key-btn[data-venue-id="${ids.at(-1)}"]`).click();
+  await expect(page.locator('.sheet[role="dialog"]')).toBeVisible();
+
+  const boxes = await page.evaluate(async () => {
+    const { showToast } = await import('./js/util.js');
+    showToast('probe');
+    await new Promise((r) => setTimeout(r, 100));
+    const round = (r) => ({ top: Math.round(r.top), bottom: Math.round(r.bottom) });
+    return {
+      toast: round(document.querySelector('.toast').getBoundingClientRect()),
+      sheet: round(document.querySelector('dialog.sheet').getBoundingClientRect()),
+      frame: round(document.querySelector('.map-frame').getBoundingClientRect()),
+    };
+  });
+
+  expect(boxes.sheet.top, 'the sheet is over the map frame; this test has lost its subject').toBeGreaterThan(
+    boxes.frame.bottom,
+  );
+  expect(boxes.toast.bottom, 'the toast sits below the sheet that raised it').toBeLessThanOrEqual(boxes.sheet.bottom);
+  expect(boxes.toast.top, 'the toast sits above the sheet that raised it').toBeGreaterThanOrEqual(boxes.sheet.top);
 });
 
 // With no tab bar there is no way back, so a link out of the map must not

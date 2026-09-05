@@ -4,7 +4,7 @@
 import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT, wireShareButton } from '../util.js';
 import { now as clockNow, parseEventTimes, formatTime, dateKey } from '../time.js';
 import { findVenue, findSponsor, eventsForVenue } from '../store.js';
-import { anchorToEmbedFrame } from '../embed.js';
+import { anchorEmbedOverlay } from '../embed.js';
 import { kindTintClass } from './event-row.js';
 
 function root() {
@@ -30,7 +30,7 @@ function onBackdropClick(ev) {
 
 // showModal() is what supplies the focus trap, background inertness, scroll
 // lock and Escape-to-close; all four were previously missing or hand-rolled.
-function open(innerHtml) {
+function open(innerHtml, { openedBy } = {}) {
   const r = root();
   if (!r) return;
   closeSheet();
@@ -52,8 +52,10 @@ function open(innerHtml) {
   r.querySelector('#sheet-close').addEventListener('click', () => dialog.close());
   r.querySelectorAll('[data-close-sheet]').forEach((el) => el.addEventListener('click', () => dialog.close()));
   // Before showModal, so the sheet is never painted at the app's position and
-  // then moved. A no-op outside the embed.
-  anchorToEmbedFrame(dialog);
+  // then moved. A no-op outside the embed. `openedBy` is the element the
+  // visitor tapped, where the caller knows it and it is not the map: a tap on
+  // the map means the map frame, which is what this defaults to.
+  anchorEmbedOverlay(dialog, openedBy ? { centreOn: openedBy } : {});
   dialog.showModal();
   // Focus the dialog itself (not the close button showModal would pick): its
   // aria-labelledby announces the sheet's title first, before a screen reader
@@ -113,7 +115,7 @@ export function buildVenueDetailHtml(venue, { headingTag = 'h2', headingId = 'sh
   `;
 }
 
-export function openVenueSheet(venueId) {
+export function openVenueSheet(venueId, { openedBy } = {}) {
   const venue = findVenue(venueId);
   if (!venue) return;
   const todayKey = dateKey(clockNow());
@@ -128,7 +130,7 @@ export function openVenueSheet(venueId) {
           .join('')}</ul>`
       : '<p class="empty-state">Nothing scheduled here today.</p>'}`;
 
-  open(buildVenueDetailHtml(venue, { eventsSectionHtml }));
+  open(buildVenueDetailHtml(venue, { eventsSectionHtml }), { openedBy });
   wireShareButton(currentDialog(), venue.name, `#/venue/${venue.id}`);
 }
 

@@ -46,8 +46,9 @@ export function fullAppUrl(hash) {
 }
 
 /**
- * Anchors an overlay to the map frame instead of to the viewport, and says
- * whether it did.
+ * Anchors an overlay near whatever the visitor just tapped, and says whether it
+ * did. `sitOn` puts it on the bottom edge of a box; `centreOn` centres it on
+ * something too small to sit on. Neither: the map frame's bottom edge.
  *
  * `position: fixed` means "the bottom of the screen" in the app and "the bottom
  * of the whole embed" in an iframe -- and the embed's iframe is deliberately as
@@ -57,11 +58,15 @@ export function fullAppUrl(hash) {
  * overlay is not merely misplaced, it is off the bottom of the screen, and a
  * browser that then scrolls it into view drags the host page down with it.
  *
- * The map frame is the anchor because it is the one box the visitor is
- * demonstrably looking at: an overlay only opens in response to a tap on it.
+ * **The tap is the only evidence of where the visitor is looking**, and it is
+ * good evidence: a tap on a pin proves the map frame is on screen, a tap on a
+ * venue card proves that card is. So the anchor follows the tap rather than
+ * always pointing at the map -- anchoring everything to the map sent a card tap
+ * at the bottom of a scrolled list 900 px back up the page and off screen again
+ * (measured 2026-09-05, and the reason this takes an argument at all).
  *
- * Asking the host page where it is scrolled to would be better still, and there
- * is no way to. A cross-origin IntersectionObserver looks like the answer --
+ * Asking the host page where it is scrolled to would beat inferring it, and
+ * there is no way to. A cross-origin IntersectionObserver looks like the answer --
  * `intersectionRect` is populated where `rootBounds` is null -- but it only
  * delivers on a threshold crossing, and a band of fixed height sliding down a
  * taller iframe never changes the ratio. Measured 2026-09-05 on the live page:
@@ -70,17 +75,39 @@ export function fullAppUrl(hash) {
  * scroll position, would need the snippet in somebody else's CMS re-pasted for
  * every fix; that is the cost this whole design exists to avoid.
  */
-export function anchorToEmbedFrame(el) {
+export function anchorEmbedOverlay(el, { sitOn, centreOn } = {}) {
   if (!isEmbed()) return false;
   const frame = document.querySelector('.map-frame');
   if (!frame) return false;
+  // Width and the height cap come from the frame whatever the overlay is
+  // anchored to: it is the embed's content column, and one size rule is enough.
   const box = frame.getBoundingClientRect();
   // Rounded so a fractional layout can't leave a hairline of map showing under
   // an overlay that is supposed to sit on the frame's edge.
   el.style.setProperty('--embed-anchor-left', `${Math.round(box.left)}px`);
   el.style.setProperty('--embed-anchor-width', `${Math.round(box.width)}px`);
-  el.style.setProperty('--embed-anchor-bottom', `${Math.round(window.innerHeight - box.bottom)}px`);
   el.style.setProperty('--embed-anchor-height', `${Math.round(box.height)}px`);
+
+  if (centreOn) {
+    // Centred, because the ignorance here is symmetric: the tapped card is the
+    // one point known to be on screen, and the screen may extend either way
+    // from it. Centring keeps the most of the overlay near that point without
+    // guessing which. Clamped by the height *cap* rather than the real height,
+    // which the sheet has not been laid out to know yet, so the overlay can
+    // never hang off the end of the embed itself.
+    const near = centreOn.getBoundingClientRect();
+    const half = box.height / 2;
+    const middle = Math.max(half, Math.min(near.top + near.height / 2, window.innerHeight - half));
+    // Floored, not rounded: rounding up puts a full-height sheet a pixel past
+    // the end of the embed, where the iframe clips it.
+    el.style.setProperty('--embed-anchor-middle', `${Math.floor(middle)}px`);
+    el.dataset.embedAnchor = 'middle';
+    return true;
+  }
+
+  const on = (sitOn ?? frame).getBoundingClientRect();
+  el.style.setProperty('--embed-anchor-bottom', `${Math.round(window.innerHeight - on.bottom)}px`);
+  el.dataset.embedAnchor = 'bottom';
   return true;
 }
 

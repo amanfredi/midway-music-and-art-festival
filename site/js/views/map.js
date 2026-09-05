@@ -1194,9 +1194,12 @@ export async function renderMap(container, content) {
   let linkVenueToMap = () => {};
   // Rendered before the engine is loaded, and left in place if it never is:
   // on a device without WebGL2 this list is the map view.
-  renderVenueKeyList(container, venues, (venueId) => {
+  // The card comes back with the id because in the embed it is where the sheet
+  // opens: a tap on it is the only proof of where the visitor is looking, and by
+  // the time they are reading this list the map frame may be well off screen.
+  renderVenueKeyList(container, venues, (venueId, card) => {
     linkVenueToMap(venueId);
-    openVenueSheet(venueId);
+    openVenueSheet(venueId, { openedBy: card });
   });
 
   if (!hasWebGl2()) {
@@ -1500,7 +1503,7 @@ function renderVenueKeyList(container, venues, onSelect) {
     )
     .join('');
   keyList.querySelectorAll('.venue-key-btn').forEach((btn) => {
-    btn.addEventListener('click', () => onSelect(btn.dataset.venueId));
+    btn.addEventListener('click', () => onSelect(btn.dataset.venueId, btn));
   });
 }
 

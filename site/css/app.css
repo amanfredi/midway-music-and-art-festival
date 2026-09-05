@@ -1040,33 +1040,53 @@ body.is-embed .map-svg-wrap {
    The app pins the sheet and the toasts to the bottom of the viewport. In an
    iframe the viewport is the iframe, and this one is as tall as its content, so
    "the bottom of the viewport" is the bottom of the venue key -- a screen and a
-   half below the map the visitor just tapped. js/embed.js publishes the map
-   frame's box in these custom properties and both overlays sit in it instead.
+   half below the map the visitor just tapped. js/embed.js measures what the
+   visitor tapped, publishes a box in these custom properties, and both overlays
+   are placed from them instead.
 
    The fallbacks are the app's own values, so an overlay that opens with no map
    frame on the page (nothing does today) is placed exactly as the app places it.
 
-   The sheet is confined to the frame: as wide as it, sitting on its bottom edge,
-   never taller than it. Confining it is the point -- the frame is what the
-   visitor is looking at, and an overlay that runs past it is running towards the
-   edge of the screen again. A venue with a long list of events scrolls inside
-   the sheet, which is what the app's own 80vh cap does on a small phone. */
-body.is-embed .sheet {
+   Width and the height cap always come from the map frame -- it is the embed's
+   content column, and one size rule is enough. What the tap decides is the
+   vertical anchor, in the two rules below. */
+body.is-embed .sheet,
+body.is-embed #toast-root {
   left: var(--embed-anchor-left, 0);
   right: auto;
   width: var(--embed-anchor-width, 100%);
-  bottom: var(--embed-anchor-bottom, 0);
+}
+
+body.is-embed .sheet {
+  /* Confined to its anchor box: as wide as it, never taller. Confining it is
+     the point -- an overlay that runs past the box the tap proved is on screen
+     is running towards the edge of the screen again. A venue with a long list
+     of events scrolls inside the sheet, which is what the app's own 80vh cap
+     does on a small phone. */
   max-height: var(--embed-anchor-height, 80vh);
   /* All four corners, not the app's top two: this sits on the frame's rounded
      bottom edge rather than running off the bottom of the screen. */
   border-radius: var(--radius);
 }
 
-body.is-embed #toast-root {
-  left: var(--embed-anchor-left, 0);
-  right: auto;
-  width: var(--embed-anchor-width, 100%);
+/* Sitting on the bottom edge of the box that was tapped: the map frame for a
+   pin, the open sheet for a toast the sheet itself raised. */
+body.is-embed [data-embed-anchor='bottom'].sheet {
+  bottom: var(--embed-anchor-bottom, 0);
+}
+
+body.is-embed [data-embed-anchor='bottom']#toast-root {
   bottom: calc(var(--embed-anchor-bottom, 0px) + var(--safe-bottom) + 0.75rem);
+}
+
+/* Centred on something too small to sit on -- a tapped venue card. `transform`
+   rather than arithmetic on `bottom`, because the sheet's height depends on the
+   venue and is not known until after it is laid out, and a sheet painted in the
+   wrong place first and moved after is a flash the visitor would see. */
+body.is-embed [data-embed-anchor='middle'] {
+  top: var(--embed-anchor-middle, auto);
+  bottom: auto;
+  transform: translateY(-50%);
 }
 
 /* An iframe is a fixed height somebody typed into a Squarespace code block, and

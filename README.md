@@ -186,9 +186,11 @@ Sources are fetched live as usual and every row is validated as usual — the ru
 just leaves out the ones that fail instead of stopping. An event whose venue was
 dropped is dropped with it, so nothing ships pointing at a venue that isn't
 there. A sponsor whose logo is the only problem keeps its place and publishes
-without the logo. A **missing pin mark still stops the run**: skipping it would
-publish the empty pin the rule exists to prevent, so commit the file instead
-(see "Sponsor logos and pin marks").
+without the logo. A sponsor whose **pin mark** is the problem is dropped
+outright instead — publishing it without the mark would put an empty red square
+on the map, which is the thing the mark rule exists to prevent (see "Sponsor
+logos and pin marks"). If that would leave the sponsors tab with nothing in it,
+the run stops rather than publish an empty one.
 
 It says what it left out: `SKIPPED n invalid row(s)` in the build log, a warning
 annotation on the run, and the rows in the job summary.
@@ -260,8 +262,8 @@ until the file is committed. This is deliberate: a Featured Destination pin
 with nothing in it is a paying sponsor's presence quietly disappearing, which
 is worse than a deploy that stops and says why. So when the organizers add an
 emerald, ruby or sapphire sponsor with an address, the mark has to land in the
-same commit. (Unlike a logo, this one is not skippable with
-`--skip-invalid-rows`.)
+same commit. `--skip-invalid-rows` does not paper over it either: it drops that
+sponsor from the site entirely rather than publish the empty pin.
 
 Making a mark: crop the sponsor's own logo down to its square sub-mark — the
 monogram, the icon, the thing that is not the words — on a **transparent

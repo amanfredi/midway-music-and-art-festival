@@ -290,9 +290,9 @@ neither is a build error.
   - **Required exactly when the sponsor draws a featured pin** — featured tier
     AND a `location`. Missing is a build error naming the path looked for, in
     the shape of the missing-logo error, because a featured pin with nothing in
-    it silently degrades a paying sponsor's presence. Unlike a bad logo, a
-    missing mark is **not** droppable by `--skip-invalid-rows`: dropping it
-    ships the empty pin, which is the thing the rule exists to prevent.
+    it silently degrades a paying sponsor's presence. Under
+    `--skip-invalid-rows` the sponsor is **dropped as a whole row** rather than
+    published without its mark — see that section below.
   - A mark for any other sponsor is **ignored with a report line**, not an
     error. It is not wrong, only inert, and it goes live the day the sheet
     changes that row's tier or location.
@@ -383,11 +383,20 @@ Binding rules:
   validation is published with a blank `logo`, including where the tier would
   have required one — the single place this mode ships a row the strict build
   would refuse.
-- **A bad pin mark still stops the build.** The asymmetry with logos is
-  deliberate: a missing logo costs a sponsor a picture in a list, a missing mark
-  empties the middle of their map pin, and publishing that is exactly what the
-  mark rule exists to prevent. The fix is to commit the file, not to skip past
-  it.
+- **A bad pin mark costs the whole row**, where a bad logo costs only the logo
+  (ruled 2026-09-05). The asymmetry is the point: a sponsor without a wordmark
+  renders as a name, which the app handles, but a featured sponsor without a
+  mark renders as an empty red square in the middle of the map — publishing
+  that is exactly what the mark rule exists to prevent, and blocking the deploy
+  is not what this flag is for. So the row is dropped and reported by name, like
+  any other row this mode cannot publish. That applies to **every** way a
+  required mark can fail: missing, ambiguous, over the cap, scripted, or an SVG
+  with no explicit `width`/`height`. A `-pin` file for a sponsor that does not
+  need one stays a report line and drops nothing. Without the flag, all of these
+  stop the build as before.
+- If dropping the mark failures would leave the sponsors tab with no rows at
+  all, the build stops instead — the same refusal an all-rows-invalid source
+  gets, for the same reason.
 - **Never `--write-snapshot`.** The two flags are refused together (exit 1). The
   snapshot's whole value is that everything in it once passed in full.
 - Output stays deterministic: identical sources and identical flags produce a

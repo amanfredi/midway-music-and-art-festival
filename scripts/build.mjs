@@ -2043,9 +2043,44 @@ async function main() {
   // already handles because it is legal for the lowest tier — including where
   // the tier would have required one, the one place this mode ships a row the
   // strict build would have refused.
-  const droppedLogos = skipInvalidRows ? [...logoFailures] : [];
+  //
+  // A MARK that fails costs the whole ROW (Anthony's call, 2026-09-05). The two
+  // are not the same problem: a sponsor without a wordmark renders as a name,
+  // which the app handles, while a featured sponsor without a mark renders as
+  // an empty red square in the middle of the map — the thing the mark rule
+  // exists to prevent. Publishing that is not an option, and blocking the
+  // deploy is not what this flag is for, so the row goes the way every other
+  // unpublishable row goes here: dropped, and reported by name.
+  const markDroppedRows = new Set(skipInvalidRows ? markFailures.map((failure) => failure.rowNum) : []);
+  // A row being dropped outright makes "published without its logo" a lie about
+  // it, so a sponsor that fails both only gets the drop.
+  const droppedLogos = skipInvalidRows ? logoFailures.filter((f) => !markDroppedRows.has(f.rowNum)) : [];
   for (const failure of droppedLogos) {
     dropped.push({ source: "sponsors", rowNum: failure.rowNum, message: failure.message, logoOnly: true });
+  }
+  for (const failure of markFailures) {
+    if (!markDroppedRows.has(failure.rowNum)) continue;
+    dropped.push({ source: "sponsors", rowNum: failure.rowNum, message: failure.message });
+  }
+
+  // The dropped rows leave for good: out of the JSON, and out of the bundle, or
+  // their logo files would linger in the precache with nothing referencing them.
+  const sponsorRecords = sponsorsResult.records.filter((rec) => !markDroppedRows.has(rec.rowNum));
+  for (const rowNum of markDroppedRows) {
+    logoFiles.delete(rowNum);
+    markFiles.delete(rowNum);
+  }
+  // The same refusal runValidator makes: publishing an empty guide over a
+  // working one is exactly as bad whether the tab arrived empty or was emptied
+  // one bad row at a time.
+  if (markDroppedRows.size > 0 && sponsorRecords.length === 0) {
+    fail(
+      `${SOURCE_LABEL.sponsors}: every remaining row would be dropped for a bad pin mark, so skipping them would ` +
+        `publish nothing at all in place of the live sponsors. Fix the marks above; the build stops rather than ` +
+        `empty the tab.`,
+      "validation",
+      "sponsors"
+    );
   }
 
   // Everything below this line is a spreadsheet cell or a file somebody can
@@ -2065,13 +2100,11 @@ async function main() {
     errors.push(failure.message);
     failures.push(failure);
   }
-  // Mark failures are NOT droppable, unlike logo failures: --skip-invalid-rows
-  // exists to publish past a bad spreadsheet row, and the point of the mark
-  // rule is that a featured sponsor's pin never quietly loses its contents. A
-  // build that drops the mark and ships the empty square is the exact failure
-  // the rule was written to prevent, so this one blocks the deploy either way
-  // (decided at definition time; the mitigation is procedural — see README).
+  // Without --skip-invalid-rows a bad mark stops the build, exactly as a
+  // missing logo does. With it, the rows above have already been dropped and
+  // this loop has nothing left to report.
   for (const failure of markFailures) {
+    if (markDroppedRows.has(failure.rowNum)) continue;
     errors.push(failure.message);
     failures.push(failure);
   }
@@ -2091,7 +2124,7 @@ async function main() {
   // Build sponsors JSON (logo and mark paths rewritten to the bundled
   // site-relative paths; tier rewritten from the CSV slug to its display label
   // + intrinsic rank).
-  const sponsorsClean = sponsorsResult.records.map((rec) => {
+  const sponsorsClean = sponsorRecords.map((rec) => {
     const tierDef = resolveSponsorTier(rec.fields.tier);
     return {
       id: rec.fields.id ?? "",

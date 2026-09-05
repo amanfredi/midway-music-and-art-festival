@@ -1386,19 +1386,128 @@ describe("--skip-invalid-rows", () => {
     assert.match(result.stdout, /published without its logo/);
   });
 
-  test("does not drop a missing pin mark the way it drops a missing logo", () => {
-    // The asymmetry is deliberate. A logo missing costs the sponsor a picture
-    // on a list; a MARK missing costs a paying sponsor the contents of their
-    // map pin, which is the exact silent degradation the mark rule exists to
-    // prevent. So this one blocks the deploy even here, and the fix is to
-    // commit the file (README, "Content updates").
+  test("drops the whole row when a sponsor that needs a pin mark has none", () => {
+    // Not the logo treatment (Anthony's call, 2026-09-05). A logo missing costs
+    // the sponsor a picture on a list, which the app renders around; a MARK
+    // missing would put an empty red square in the middle of the map, which is
+    // the thing the mark rule exists to prevent. So the row goes the way every
+    // other unpublishable row goes here — dropped, and named in the log.
+    const reportPath = path.join(TMP_ROOT, "skip-bad-mark-report.json");
     const config = makeFixtureSet(TMP_ROOT, "skip-bad-mark", [
       setCell("sponsors.csv", (fields) => fields.id === "daily-trim-barbershop", "tier", "sapphire"),
     ]);
-    const result = runBuild(config, ["--skip-invalid-rows"]);
-    assert.notEqual(result.status, 0, "a missing mark must fail even at --skip-invalid-rows");
-    assert.match(result.stderr, /no pin mark file/);
-    assert.ok(!existsSync(result.contentPath), "nothing should have been published");
+    assert.notEqual(runBuild(config).status, 0, "a missing mark must still fail a normal build");
+
+    const result = runBuild(config, ["--skip-invalid-rows", "--report", reportPath]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+    const content = readContent(result);
+    assert.equal(content.sponsors.length, good().sponsors.length - 1, "exactly the mark-less sponsor should be gone");
+    assert.ok(
+      !content.sponsors.some((s) => s.id === "daily-trim-barbershop"),
+      "the sponsor whose mark is missing must not be published at all"
+    );
+    // Dropped, not "published without its mark".
+    assert.match(result.stdout, /SKIPPED 1 invalid row/);
+    assert.match(result.stdout, /no pin mark file/);
+    assert.doesNotMatch(result.stdout, /published without its logo/);
+    // Its logo goes with it rather than lingering in the precache unreferenced.
+    assert.ok(
+      !existsSync(path.join(result.outDir, "assets/sponsors/daily-trim-barbershop.svg")),
+      "a dropped sponsor's logo should not be bundled"
+    );
+
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    const entry = report.droppedRows.find((r) => r.source === "sponsors");
+    assert.ok(entry, `the build report should carry the dropped row\n${JSON.stringify(report.droppedRows)}`);
+    assert.match(entry.message, /no pin mark file/);
+    assert.ok(!("logoOnly" in entry), "a whole-row drop must not be reported as a logo-only one");
+  });
+
+  // Every other way a required mark can fail drops the row too: publishing the
+  // sponsor minus the mark would ship the empty pin in each of them.
+  test("drops the row for every mark failure, not only a missing file", () => {
+    const LOGOS_DIR = path.join(REPO_ROOT, "content/logos");
+    const planted = [];
+    const plant = (filename, body) => {
+      const file = path.join(LOGOS_DIR, filename);
+      writeFileSync(file, body);
+      planted.push(file);
+    };
+    const markSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"></svg>';
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("\0\0\0\rIHDR\0\0\x01\0\0\0\x01\0\x08\x06", "latin1"),
+    ]);
+
+    const cases = [
+      ["over the size cap", (id) => plant(`${id}-pin.png`, Buffer.alloc(80 * 1024, 7)), /64 KB/],
+      [
+        "a scripted SVG",
+        (id) => plant(`${id}-pin.svg`, `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><script/></svg>`),
+        /can run code/,
+      ],
+      [
+        "two files differing only in extension",
+        (id) => {
+          plant(`${id}-pin.svg`, markSvg);
+          plant(`${id}-pin.png`, png);
+        },
+        /2 pin mark files/,
+      ],
+      [
+        "an SVG with no explicit width and height",
+        (id) => plant(`${id}-pin.svg`, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"></svg>'),
+        /explicit width and height/,
+      ],
+    ];
+
+    for (const [label, setup, expected] of cases) {
+      const id = `mark-drop-${slug(label)}`;
+      const config = makeFixtureSet(TMP_ROOT, id, [setCell("sponsors.csv", 2, "id", id)]);
+      plant(`${id}.svg`, markSvg); // a sound logo, so the mark is the only problem
+      setup(id);
+      try {
+        assert.notEqual(runBuild(config).status, 0, `${label} must still fail a normal build`);
+        const result = runBuild(config, ["--skip-invalid-rows"]);
+        assert.equal(result.status, 0, `${label}: expected a published build\n${result.stderr}`);
+        const content = readContent(result);
+        assert.ok(!content.sponsors.some((s) => s.id === id), `${label}: the sponsor should have been dropped`);
+        assert.match(result.stdout, expected);
+      } finally {
+        for (const file of planted.splice(0)) rmSync(file, { force: true });
+      }
+    }
+  });
+
+  test("refuses to empty the sponsors tab one bad mark at a time", () => {
+    // The same refusal an all-rows-invalid source gets: publishing an empty
+    // guide over a working one is as bad however it was emptied.
+    const rows = parseCSV(readFileSync(path.join(REPO_ROOT, "content/fixtures/sponsors.csv"), "utf8"));
+    const LOGOS_DIR = path.join(REPO_ROOT, "content/logos");
+    const planted = [];
+    const mutations = [];
+    rows.slice(1).forEach((_, i) => {
+      const id = `mark-empty-${i}`;
+      mutations.push(
+        setCell("sponsors.csv", i + 2, "id", id),
+        // Featured tier plus a location is exactly what requires a mark, and
+        // none of these ids has one.
+        setCell("sponsors.csv", i + 2, "tier", "sapphire"),
+        setCell("sponsors.csv", i + 2, "location", "44.9557, -93.1668")
+      );
+      const logo = path.join(LOGOS_DIR, `${id}.svg`);
+      writeFileSync(logo, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"></svg>');
+      planted.push(logo);
+    });
+    try {
+      const config = makeFixtureSet(TMP_ROOT, "mark-empty-tab", mutations);
+      const result = runBuild(config, ["--skip-invalid-rows"]);
+      assert.notEqual(result.status, 0, "emptying the tab one bad mark at a time must fail like an emptied tab");
+      assert.match(result.stderr, /publish nothing at all in place of the live sponsors/);
+      assert.ok(!existsSync(result.contentPath), "nothing should have been written");
+    } finally {
+      for (const file of planted.splice(0)) rmSync(file, { force: true });
+    }
   });
 
   test("does not treat an unreachable source as a bad row", async () => {

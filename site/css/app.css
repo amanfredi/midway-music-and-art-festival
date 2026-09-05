@@ -215,17 +215,14 @@ img {
 /* Every content view is a centered column, capped at the same 560px the map
    frame caps itself at, so the whole site agrees on what "content width"
    means on a laptop (Anthony, 2026-09-04 — the Support page got the cap
-   first and stood out against the then-fluid rest). The map view opts out:
-   .map-frame manages its own width, including the 1100px wide frame at
-   desktop widths, and the venue key under it reads better at the frame's
-   width than at a column's. */
+   first and stood out against the then-fluid rest). The map view widens with
+   its frame instead of opting out entirely: at desktop widths the frame caps
+   at 1100px (see the 860px media query below, which raises the view cap in
+   step), and the legend and venue key under it stay aligned to the frame
+   rather than spilling to the window edges. */
 .view {
   max-width: 560px;
   margin: 0 auto;
-}
-
-.map-view {
-  max-width: none;
 }
 
 .splash {
@@ -980,6 +977,13 @@ html:has(dialog.sheet[open]) {
    original cap was protecting. 340px is what the header, banner, legend,
    attribution, "Venues" heading and tab bar need around it. */
 @media (min-width: 860px) {
+  /* The view cap rises with the frame cap, so the legend and venue key below
+     the frame track its width instead of holding the 560px column or (worse)
+     spilling to the window edges. */
+  .map-view {
+    max-width: 1100px;
+  }
+
   .map-frame {
     max-width: 1100px;
   }

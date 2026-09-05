@@ -50,11 +50,14 @@ Newest first.
 The Support cap (below) made that one page fixed-width while the rest of the
 site stayed fluid; Anthony ruled the cap should be site-wide. `.view` now caps
 every content view at 560px centered — the same number the map frame caps
-itself at — and the map view opts out, since `.map-frame` manages its own
-width including the 1100px desktop wide frame. The sponsors-specific cap is
-gone, subsumed by the shared rule. Verified at a 1400px window: schedule,
-vendors and sponsors columns all hold 560px, the map frame holds 1100px, and
-the suite is green at 144.
+itself at — and the map view widens with its frame rather than opting out.
+The first cut opted the map view out entirely (`max-width: none`), which let
+the venue key and legend spill to the window edges under a frame capped at
+1100px (Anthony caught it on a laptop); the map view now caps at 1100px
+inside the same 860px media query that widens the frame, so view, frame and
+venue key hold one width at every window size (measured: 343/560/960/1100).
+The sponsors-specific cap is gone, subsumed by the shared rule. Suite green
+at 144.
 
 Housekeeping in the same push: the venues-header deploy blocker recorded
 earlier today is cleared — cell A1 reads `id` again and `npm run build`

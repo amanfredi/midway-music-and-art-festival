@@ -155,6 +155,18 @@ constant order. Nobody has reported an ambiguous sponsor name, and there are six
 sponsors against twenty-one venues, so it was left. `nameOrders` in `map.js`
 takes venues today and would need the sponsor list threading through it.
 
+**Transit tethers wear venue colors** (added 2026-09-05, from Anthony's review
+of the deployed-candidate map). One `tetherColors` pair (`map.js` ~:1756, fed by
+`--map-leader-dot` / `--map-leader-line`) colors every leader line and dot,
+venue and transit alike — so the displaced A Line stop beside Ginkgo hangs from
+a blue-ish leader that reads as a venue's, is hard to attribute to its green
+pin, and is easy to lose against the purple route-67 line it crosses. Leader
+lines and dots should match the pin type they belong to: a transit tether in
+the transit green family, venue tethers as they are. The fix threads a
+per-kind color pair through the tether image and layer creation; the contrast
+of the chosen green against the paper and the route lines needs a check at the
+same time.
+
 **Small pins have no collision blocker** (added 2026-09-04). Venue pins reserve
 a square of the diamond's own area rather than its bounding box; transit and
 sponsor pins still reserve the box. Their overhang is ~10 px on the diagonal

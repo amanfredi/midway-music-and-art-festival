@@ -265,8 +265,9 @@ same commit. (Unlike a logo, this one is not skippable with
 
 Making a mark: crop the sponsor's own logo down to its square sub-mark — the
 monogram, the icon, the thing that is not the words — on a **transparent
-background**, tight to the ink. The pin adds its own outline and inset, so any
-padding you leave is padding the reader loses. Aim for **256 px** square; below
+background**, tight to the ink, so the pin controls the inset uniformly. Any
+padding you leave is padding the reader loses. Keep a coloured background only
+when the colour *is* part of the mark. Aim for **256 px** square; below
 128 px it will blur on a phone, and the build says so. Anything beyond a 2:1
 aspect gets a warning too: contain-fit is honest about proportions, so a wide
 mark ends up a sliver inside the square. Keep it under **64 KB** — it is

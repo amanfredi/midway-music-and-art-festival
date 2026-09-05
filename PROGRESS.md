@@ -46,6 +46,39 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-05 — the toast climbs out from under the sheet
+
+The venue sheet's share button is the app's main way to share a venue, and its
+"Link copied" has never been visible. A modal `<dialog>` and its `::backdrop`
+paint in the **top layer**, above every `z-index` on the page, so `#toast-root`
+at 60 was drawn underneath the sheet that raised it — every time rather than
+sometimes, since the sheet always reaches the bottom of the window and the toast
+always sits just above it. The app's bug, not the embed's, dating from the sheet
+becoming a modal dialog. Found while anchoring the embed's overlays, held back a
+round because fixing it changes the app, then authorised.
+
+`#toast-root` now joins the top layer as `popover="manual"` while it has
+something to say. Three details carry weight and each has a test: the attribute
+is set from JS and only where `showPopover` exists (the UA hides a `[popover]`
+that is not open, so marking it up unconditionally would cost an older browser
+its toasts entirely); the root is shown **before** the message is appended,
+because it is the `aria-live` region and one that is `display: none` when its
+text arrives may never be announced; and it leaves the top layer when the last
+toast goes, since the layer stacks in entry order and a root left showing would
+sit above the next sheet.
+
+A trap for whoever tests this next: `elementFromPoint` cannot answer it.
+`showModal()` makes everything outside the dialog inert, and inert content is
+not hit-testable, so a hit test names the sheet whether the toast is above it or
+below — which made the fix look like it had failed when it had not. Confirmed
+against captured pixels instead, in Chromium and WebKit and in both surfaces;
+the tests assert the mechanism.
+
+What is **not** verified: that VoiceOver actually speaks a live region hosted in
+a popover. The ordering that makes it possible is pinned by a test, but
+sufficiency needs a real device, and it is now the first item in the
+accessibility QA list.
+
 ### 2026-09-05 — an embed overlay opens where the tap was
 
 Anchoring the embed's overlays to the map frame (two entries down) was half an

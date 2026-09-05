@@ -967,6 +967,39 @@ CDNs, no analytics.
   **no kind filter** — grouping by category already isolates a kind without
   hiding the rest of the day (removed after QA, 2026-08-08). `#/schedule`
   takes `day` and `group` params only.
+- **A toast joins the top layer while it has something to say.** The venue sheet
+  is a modal `<dialog>`, and a modal dialog and its `::backdrop` paint in the
+  **top layer** — above every `z-index` on the page. `#toast-root` at
+  `z-index: 60` therefore could not reach it, and every "Link copied" the
+  sheet's own share button has ever raised was drawn *underneath* the sheet that
+  raised it. Fixed 2026-09-05, in the app and the embed alike; the bug dated
+  from the sheet becoming a modal dialog.
+
+  `js/util.js` sets `popover="manual"` on the root and shows it. Three things
+  are load-bearing and each has a test:
+
+  - **The attribute is set from JS, never from the markup**, and only where the
+    browser has `showPopover`. The UA hides a `[popover]` that is not open, so
+    marking it up unconditionally would cost an older browser its toasts
+    entirely instead of leaving it today's behaviour.
+  - **The root is shown before the message is appended.** `#toast-root` is the
+    `aria-live` region, and a region that is `display: none` when its text
+    arrives may never be announced. The ordering is the announcement, not
+    housekeeping.
+  - **It leaves the top layer when the last toast goes.** The top layer stacks
+    in the order elements enter it, so a root left showing would sit above a
+    sheet opened afterwards.
+
+  `manual` rather than `auto` because an auto popover light-dismisses on the
+  next click anywhere, and a toast is not something the visitor opened. The
+  `[popover]` UA styles — centred, `fit-content`, bordered, opaque — are all
+  overruled in `app.css`.
+
+  **Don't try to assert this with `elementFromPoint`.** `showModal()` makes
+  everything outside the dialog inert, and inert content is not hit-testable, so
+  a hit test answers "is the toast interactive" (it never was — the root is
+  `pointer-events: none`) rather than "is the toast on top". What the tests
+  assert is the mechanism: in the top layer, and entered after the dialog.
 - `index.html` head must include exactly these integration points (owner: orchestrator):
   `<link rel="manifest" href="manifest.webmanifest">`,
   `<meta name="theme-color" content="#10577b">`,
@@ -1072,11 +1105,9 @@ hash is required and none should be pasted.
   venue with a long list scrolls inside the sheet, which is what the app's own
   `80vh` cap does on a small phone.
 
-  Not fixed here, and worth knowing before reading a toast's anchor as its
-  position: a toast raised while a sheet is open is **painted underneath it**,
-  because a modal `<dialog>` and its `::backdrop` are in the top layer and
-  `#toast-root` is not. That is the app's behaviour as much as the embed's and
-  predates both; BACKLOG holds it.
+  Landing in the right place only counts if the overlay is drawn at all, which
+  is a separate rule and not an embed one: see **"A toast joins the top layer"**
+  in the UI contract.
 
   **Where the host page is scrolled to is unknowable, and two ways of learning
   it were ruled out.** A cross-origin `IntersectionObserver` looks like the

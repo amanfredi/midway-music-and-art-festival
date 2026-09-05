@@ -277,30 +277,6 @@ passes `openedBy` today, which is also the only path where the visitor has a
 scroll position worth being returned to. Same root fact as the anchor's, which
 CONTRACTS.md records under "Map embed".
 
-**A toast raised from an open sheet is painted underneath it** (added
-2026-09-05, found while anchoring the embed's overlays; **not** an embed bug —
-the app has it too, and has had it since the sheet became a modal `<dialog>`).
-A modal dialog and its `::backdrop` render in the **top layer**, which is above
-every `z-index` on the page, so `#toast-root` at `z-index: 60` is behind both.
-Measured in the app: sheet open at y=308..852, toast drawn at y=742..780, and
-`elementFromPoint` at the toast's own centre returns a link inside the sheet.
-
-What that costs: the share button in the venue sheet is the app's main way to
-share a venue, and its "Link copied" confirmation has never been visible. The
-sheet always reaches the bottom of the window, and the toast always sits just
-above the bottom of the window, so it is covered every time — not sometimes.
-
-The fix is to put the toast root in the top layer as well, most cleanly as
-`popover="manual"` (`showPopover()` after the dialog was shown puts it above,
-since the top layer stacks in the order things enter it). Two things to be
-careful of: `#toast-root` is the `aria-live` region, so it has to be shown
-*before* the toast element is appended or the announcement may be missed; and
-`[popover]` carries UA styles (`inset: 0`, border, padding, background) that
-this rule would have to overrule. Left out of the embed work deliberately —
-it changes the app's presentation, which that work was told not to do — but the
-embed's toasts are already anchored to the sheet that raised them, so this is a
-small change rather than two problems at once.
-
 **The active tab in the bottom nav is nearly invisible** (added 2026-08-31,
 from Anthony's read of the deployed site). `.tab-bar a.is-active` changes
 exactly one thing: `--color-text-muted` (`#4b5962`) becomes `--color-primary`
@@ -505,6 +481,17 @@ like the README airplane-mode pass.
    should announce the notice text without focus moving. Then on the Map,
    with Location Services off for Safari, tap "Show my location" — the
    permission-denied toast should be spoken once, not twice.
+
+   **Now the most important item on this list**, because the toast's live
+   region became a popover on 2026-09-05 to get it out from under the venue
+   sheet, and no headless test can tell you whether a screen reader still
+   speaks it. `#toast-root` is shown *before* the message is appended, which is
+   the necessary condition and is pinned by a test — but that it is
+   *sufficient* for VoiceOver on a live region that was `display: none` a
+   moment earlier is unverified. Do the second half too: open a venue sheet,
+   tap Share, and confirm "Link copied" is both **spoken** and **visible**.
+   That combination is what has never worked — before the fix the toast was
+   painted underneath the sheet every time.
 4. **[1.1.1] Is the map's text alternative adequate?** With VoiceOver on, on
    the Map view: touch the map and you should hear its name and the arrow-key
    hint; swipe through the pins and each venue should announce "Venue N:

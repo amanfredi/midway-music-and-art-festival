@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Reads content/config.json, loads the 5 content CSVs (local file or https URL),
 // validates them per CONTRACTS.md, and emits <out>/data/content.json plus
-// copies of sponsor logos into <out>/assets/sponsors/. Zero npm dependencies.
+// copies of sponsor logos and pin marks into <out>/assets/sponsors/. Zero npm
+// dependencies.
 //
 // Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
 //                               [--write-snapshot] [--use-snapshot]
@@ -32,9 +33,10 @@ import { pathToFileURL } from "node:url";
 import { parseLocation } from "./location.mjs";
 
 const CWD = process.cwd();
-// Real sponsor logos, not fixtures: a sponsor's file is named for its id, and
-// that is the whole of the lookup. Still CWD-relative, and therefore shared by
-// every config the build is pointed at, including the tests' generated ones.
+// Real sponsor logos and pin marks, not fixtures: a sponsor's files are named
+// for its id (`<id>.<ext>` and `<id>-pin.<ext>`), and that is the whole of the
+// lookup. Still CWD-relative, and therefore shared by every config the build is
+// pointed at, including the tests' generated ones.
 const LOGOS_DIR = path.join(CWD, "content/logos");
 const LOGOS_DIR_LABEL = "content/logos";
 const DEFAULT_CONFIG = "content/config.json";
@@ -114,12 +116,18 @@ const DEFAULT_EVENT_MINUTES = 60;
 // emitted as content.json's `tier`, order is the intrinsic rank (1 = most
 // prominent), maxCount caps how many sponsors may carry that tier (null =
 // unlimited), logoRequired says whether a missing `logo` is a build error.
+//
+// `featured` restates the map's tier-to-pin mapping (FEATURED_SPONSOR_TIERS in
+// site/js/views/map.js): these are the tiers that draw a Featured Destination
+// pin, which is the whole reason the build demands a mark file for them. The
+// build never imports the app, so the two lists are stated twice by necessity;
+// a test asserts they still agree.
 const SPONSOR_TIERS = [
-  { slug: "emerald", label: "Emerald Tier (Presenting Partner)", order: 1, maxCount: 1, logoRequired: true },
-  { slug: "ruby", label: "Ruby Tier (Leading Partner)", order: 2, maxCount: 5, logoRequired: true },
-  { slug: "sapphire", label: "Sapphire Tier (Supporting Partner)", order: 3, maxCount: null, logoRequired: true },
-  { slug: "topaz", label: "Topaz Tier (Community Partner)", order: 4, maxCount: null, logoRequired: true },
-  { slug: "quartz", label: "Quartz Tier (Neighborhood Supporter)", order: 5, maxCount: null, logoRequired: false },
+  { slug: "emerald", label: "Emerald Tier (Presenting Partner)", order: 1, maxCount: 1, logoRequired: true, featured: true },
+  { slug: "ruby", label: "Ruby Tier (Leading Partner)", order: 2, maxCount: 5, logoRequired: true, featured: true },
+  { slug: "sapphire", label: "Sapphire Tier (Supporting Partner)", order: 3, maxCount: null, logoRequired: true, featured: true },
+  { slug: "topaz", label: "Topaz Tier (Community Partner)", order: 4, maxCount: null, logoRequired: true, featured: false },
+  { slug: "quartz", label: "Quartz Tier (Neighborhood Supporter)", order: 5, maxCount: null, logoRequired: false, featured: false },
 ];
 
 // A tier may be written as its slug or as the label the sheet's dropdown shows,
@@ -1341,6 +1349,227 @@ function resolveSponsorLogos(records) {
 }
 
 // ---------------------------------------------------------------------------
+// Sponsor mark resolution (the square brand mark inside a Featured pin)
+//
+// A featured sponsor's map pin is a red-outlined square carrying a hand-made
+// square mark: `content/logos/<id>-pin.<ext>`, beside the wordmark logo the
+// same sponsor already supplies. Two files rather than one because they are two
+// different pictures — the logo is a 2:1-to-4:1 wordmark that is illegible at
+// pin size, and deriving a square from it would need an image library the build
+// deliberately does not have (zero npm dependencies; it must deploy with NPM
+// down). Copying is therefore the ONLY transformation: no resizing, no
+// re-encoding, so unchanged sources keep producing a byte-identical
+// content.json.
+//
+// svg and png only. Both carry their dimensions in a header this file can read
+// without a library (an SVG root's width/height or viewBox, a PNG's IHDR
+// chunk); JPEG has no alpha channel, and WebP would need real parsing for no
+// gain.
+// ---------------------------------------------------------------------------
+
+const MARK_FILE_EXTENSIONS = { svg: "svg", png: "png" };
+// 64 KB, an eighth of the logo cap: a mark is a single glyph-like shape, and
+// every one of them is precached onto every attendee's phone alongside the
+// logo it comes with. The three live marks are 3–27 KB.
+const MARK_MAX_BYTES = 64 * 1024;
+// The pin draws the mark at ~21 CSS px, which is 63 device px on a 3x iPhone,
+// and the key-list thumbnail is larger. 256 px is the recommended target; below
+// 128 px the pin is resampling upward and the mark blurs. Reported, not
+// refused: a small mark is a quality problem, and refusing one would block a
+// deploy over something only a person looking at a phone can judge.
+const MARK_MIN_RASTER_PX = 128;
+// Beyond 2:1 either way a "mark" is back to being a wordmark, and contain-fit
+// gives it a sliver of the square. Also reported rather than refused: Wellington
+// Management's building silhouette is 318x144 and is the mark they have.
+const MARK_MAX_ASPECT = 2;
+
+function markSizeError(buffer) {
+  if (buffer.length <= MARK_MAX_BYTES) return null;
+  const kb = Math.round(buffer.length / 1024);
+  return (
+    `is ${kb} KB, over the ${MARK_MAX_BYTES / 1024} KB limit for a sponsor mark ` +
+    `(every mark is precached onto every attendee's phone for offline use).`
+  );
+}
+
+/** The files in content/logos/ that could be this sponsor's mark, in search order. */
+function markCandidates(sponsorId) {
+  return Object.keys(MARK_FILE_EXTENSIONS).map((suffix) => ({
+    suffix,
+    ext: MARK_FILE_EXTENSIONS[suffix],
+    name: `${sponsorId}-pin.${suffix}`,
+    file: path.join(LOGOS_DIR, `${sponsorId}-pin.${suffix}`),
+  }));
+}
+
+/** A PNG's pixel dimensions, from the IHDR chunk the format requires first. */
+function pngDimensions(buffer) {
+  const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (buffer.length < 24 || !buffer.subarray(0, 8).equals(SIGNATURE)) return null;
+  if (buffer.subarray(12, 16).toString("latin1") !== "IHDR") return null;
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+/** The opening `<svg …>` tag's attributes, or null if there is no root element. */
+function svgRootAttributes(text) {
+  const root = /<svg\b([^>]*)>/i.exec(text);
+  if (!root) return null;
+  const attrs = {};
+  for (const [, name, dq, sq] of root[1].matchAll(/([:\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    attrs[name.toLowerCase()] = dq ?? sq ?? "";
+  }
+  return attrs;
+}
+
+/** A length attribute as CSS pixels, ignoring the units SVG allows on it. */
+function svgLength(value) {
+  const match = /^\s*([0-9]*\.?[0-9]+)\s*(px)?\s*$/i.exec(String(value ?? ""));
+  return match ? Number(match[1]) : null;
+}
+
+/** An SVG mark's intrinsic dimensions, preferring the root's own width/height. */
+function svgDimensions(attrs) {
+  const width = svgLength(attrs.width);
+  const height = svgLength(attrs.height);
+  if (width && height) return { width, height };
+  const box = String(attrs.viewbox ?? "").trim().split(/[\s,]+/).map(Number);
+  if (box.length === 4 && box.every(Number.isFinite) && box[2] > 0 && box[3] > 0) {
+    return { width: box[2], height: box[3] };
+  }
+  return null;
+}
+
+/**
+ * Finds each sponsor's pin mark by its id, on the logo rule's own conventions.
+ *
+ * Required exactly when the sponsor would draw a Featured Destination pin —
+ * featured tier AND a resolved location — because that pin has a hole in the
+ * middle of it otherwise, and a paying sponsor's presence degrading in silence
+ * is worse than a build that stops and says so (the missing-logo rule, applied
+ * to the same problem one layer in). A mark for any other sponsor is ignored
+ * with a report line rather than an error: it is not wrong, only inert, and it
+ * becomes live the day the sheet changes that row's tier or location.
+ *
+ * The reports are the checks that cannot honestly be failures. Whether a mark
+ * reads at 21 px is a judgement made by looking at a phone; all this can do is
+ * say which files are likely to disappoint.
+ */
+function resolveSponsorMarks(records) {
+  const failures = [];
+  const notes = [];
+  const resolved = new Map(); // rowNum -> { filename, buffer }
+  for (const rec of records) {
+    const ident = identifierFor(rec, "name");
+    const sponsorId = rec.fields.id;
+    const tierDef = resolveSponsorTier(rec.fields.tier);
+    if (!sponsorId || !tierDef) continue;
+    const fail = (message) => {
+      const err = errorMsg("sponsors.csv", rec.rowNum, ident, message);
+      failures.push({ class: "validation", source: "sponsors", rowNum: err.rowNum, message: err.message });
+    };
+    const note = (message) => notes.push(`sponsors.csv row ${rec.rowNum} (${ident}): ${message}`);
+
+    const candidates = markCandidates(sponsorId);
+    const found = candidates.filter((candidate) => existsSync(candidate.file));
+    // Featured tier AND a location: exactly the pair that draws a featured pin
+    // (Map contract, "Sponsor pins exist only for tiers emerald–topaz and only
+    // when that sponsor has a location").
+    const drawsFeaturedPin = tierDef.featured && Boolean(rec.coords);
+
+    if (!drawsFeaturedPin) {
+      if (found.length > 0) {
+        note(
+          `${found.map((c) => `${LOGOS_DIR_LABEL}/${c.name}`).join(", ")} is present, but this sponsor draws no ` +
+            `Featured Destination pin (tier "${tierDef.slug}"${rec.coords ? "" : ", no location"}), so the mark ` +
+            `is ignored. It will start being used the day that changes.`
+        );
+      }
+      continue;
+    }
+
+    if (found.length === 0) {
+      fail(
+        `no pin mark file. Tier "${tierDef.slug}" draws a Featured Destination pin, which carries the sponsor's ` +
+          `square mark: save it as ${LOGOS_DIR_LABEL}/${sponsorId}-pin.svg (or .png).`
+      );
+      continue;
+    }
+    if (found.length > 1) {
+      fail(
+        `has ${found.length} pin mark files — ${found.map((candidate) => candidate.name).join(", ")}. ` +
+          `Keep the one that should ship and delete the rest from ${LOGOS_DIR_LABEL}/.`
+      );
+      continue;
+    }
+
+    const [mark] = found;
+    const origin = `pin mark ${LOGOS_DIR_LABEL}/${mark.name}`;
+    const buffer = readFileSync(mark.file);
+
+    const sizeError = markSizeError(buffer);
+    if (sizeError) {
+      fail(`${origin} ${sizeError}`);
+      continue;
+    }
+
+    let dimensions = null;
+    if (mark.ext === "svg") {
+      const text = buffer.toString("utf8");
+      const scriptFound = svgScriptError(text);
+      if (scriptFound) {
+        fail(
+          `${origin} contains ${scriptFound}. An SVG served from the festival's own site can run code there, ` +
+            `so marks carrying script are rejected — ask the sponsor for a plain vector or PNG mark.`
+        );
+        continue;
+      }
+      const attrs = svgRootAttributes(text);
+      // Not pedantry: Safari draws NOTHING into a canvas from an SVG whose root
+      // has no explicit width and height, and the pin is a canvas image. Without
+      // this the mark would be missing on iPhones only — the one platform the
+      // festival's audience is mostly on, and the one hardest to notice from a
+      // laptop.
+      if (!attrs || !svgLength(attrs.width) || !svgLength(attrs.height)) {
+        fail(
+          `${origin} has no explicit width and height on its <svg> root. Safari draws nothing into a canvas from ` +
+            `such an SVG, so the pin would be blank on iPhones only — add width="…" height="…" (a viewBox alone ` +
+            `is not enough).`
+        );
+        continue;
+      }
+      dimensions = svgDimensions(attrs);
+    } else {
+      dimensions = pngDimensions(buffer);
+    }
+
+    if (!dimensions) {
+      note(`${origin} has no readable dimensions, so its size and aspect could not be checked.`);
+    } else {
+      const { width, height } = dimensions;
+      const longer = Math.max(width, height);
+      if (mark.ext !== "svg" && longer < MARK_MIN_RASTER_PX) {
+        note(
+          `${origin} is ${width}x${height}, under the ${MARK_MIN_RASTER_PX} px floor on its longer side. The pin ` +
+            `draws it at ~21 CSS px, which is 63 device px on a 3x iPhone, so it will blur. 256 px is the target.`
+        );
+      }
+      const aspect = Math.max(width / height, height / width);
+      if (aspect > MARK_MAX_ASPECT) {
+        note(
+          `${origin} is ${width}x${height}, an aspect of ${aspect.toFixed(2)}:1. Past ${MARK_MAX_ASPECT}:1 a mark ` +
+            `is back to being a wordmark: contain-fit inside the square leaves it a sliver. Check it on a phone.`
+        );
+      }
+    }
+
+    resolved.set(rec.rowNum, { filename: `${sponsorId}-pin.${mark.ext}`, buffer });
+  }
+  return { failures, notes, resolved };
+}
+
+// ---------------------------------------------------------------------------
 // Snapshot of remotely-fetched bytes
 //
 // The fallback that lets a code deploy ship while the sheet is unreachable.
@@ -1805,6 +2034,7 @@ async function main() {
   const eventsResult = runValidator("events", parsed.events.records, (records) => validateEvents(records, venueIds));
 
   const { failures: logoFailures, resolved: logoFiles } = resolveSponsorLogos(sponsorsResult.records);
+  const { failures: markFailures, notes: markNotes, resolved: markFiles } = resolveSponsorMarks(sponsorsResult.records);
 
   // A logo that fails validation costs the sponsor its logo, not its place on
   // the page (ruled 2026-08-22): the row itself is sound, and a sponsor is
@@ -1835,13 +2065,32 @@ async function main() {
     errors.push(failure.message);
     failures.push(failure);
   }
+  // Mark failures are NOT droppable, unlike logo failures: --skip-invalid-rows
+  // exists to publish past a bad spreadsheet row, and the point of the mark
+  // rule is that a featured sponsor's pin never quietly loses its contents. A
+  // build that drops the mark and ships the empty square is the exact failure
+  // the rule was written to prevent, so this one blocks the deploy either way
+  // (decided at definition time; the mitigation is procedural — see README).
+  for (const failure of markFailures) {
+    errors.push(failure.message);
+    failures.push(failure);
+  }
 
   if (errors.length > 0) {
     reportErrorsAndExit(errors, { failures, reportPath, snapshot: { used: snapshotUsedEntries(ctx), written: false, changed: [] } });
   }
 
-  // Build sponsors JSON (logo path rewritten to the bundled site-relative path;
-  // tier rewritten from the CSV slug to its display label + intrinsic rank).
+  // The mark checks that are judgements rather than rules — a mark likely to
+  // blur or to be a sliver inside its square. Printed only once the build is
+  // going to succeed, since a failing build has more urgent things to say.
+  if (markNotes.length) {
+    console.log(`Noted ${markNotes.length} thing(s) about sponsor pin marks (none of them errors):`);
+    for (const n of markNotes) console.log(`  - ${oneLine(n)}`);
+  }
+
+  // Build sponsors JSON (logo and mark paths rewritten to the bundled
+  // site-relative paths; tier rewritten from the CSV slug to its display label
+  // + intrinsic rank).
   const sponsorsClean = sponsorsResult.records.map((rec) => {
     const tierDef = resolveSponsorTier(rec.fields.tier);
     return {
@@ -1852,6 +2101,10 @@ async function main() {
       tier_order: tierDef ? tierDef.order : 0,
       blurb: rec.fields.blurb ?? "",
       logo: logoFiles.has(rec.rowNum) ? `assets/sponsors/${logoFiles.get(rec.rowNum).filename}` : "",
+      // null rather than "" when there is none: absence here is a fact the map
+      // branches on (draw the mark, or draw the empty square), where a blank
+      // logo is only a missing picture. Same convention as lat/lng below.
+      mark: markFiles.has(rec.rowNum) ? `assets/sponsors/${markFiles.get(rec.rowNum).filename}` : null,
       url: rec.fields.url ?? "",
       lat: rec.coords ? rec.coords.lat : null,
       lng: rec.coords ? rec.coords.lng : null,
@@ -1894,6 +2147,12 @@ async function main() {
   writeFileSync(contentJsonPath, JSON.stringify(content, null, 2) + "\n");
 
   for (const { filename, buffer } of logoFiles.values()) {
+    writeFileSync(path.join(sponsorsOutDir, filename), buffer);
+  }
+  // Copied byte for byte, which is the whole transformation: no resize, no
+  // re-encode, so an unchanged mark cannot move content.json or the service
+  // worker version.
+  for (const { filename, buffer } of markFiles.values()) {
     writeFileSync(path.join(sponsorsOutDir, filename), buffer);
   }
 

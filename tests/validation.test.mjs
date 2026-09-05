@@ -777,6 +777,13 @@ describe("sponsor logos", () => {
   const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
   const EMERALD_SPONSOR = "Shortline Credit Union"; // sponsors.csv row 2
   const EMERALD_ID = "shortline-credit-union";
+  // A sponsor whose tier requires a logo but which draws no Featured
+  // Destination pin, and therefore needs no pin mark. The cases below that
+  // expect a SUCCESSFUL build rename this one: renaming the emerald sponsor
+  // orphans its mark too, and the build would then be failing for a reason
+  // that has nothing to do with logos (see "sponsor pin marks").
+  const UNPINNED_SPONSOR = "PrintWorks Studio"; // topaz, no location
+  const UNPINNED_ROW = (fields) => fields.id === "printworks-studio";
 
   // content/logos/ is CWD-relative and shared with the generated fixture sets,
   // so a case that needs a particular file on disk puts it there and takes it
@@ -846,7 +853,7 @@ describe("sponsor logos", () => {
   });
 
   test("a raster logo is found by its own extension and keeps it", () => {
-    const config = makeFixtureSet(TMP_ROOT, "logo-webp", [setCell("sponsors.csv", 2, "id", "logo-case-webp")]);
+    const config = makeFixtureSet(TMP_ROOT, "logo-webp", [setCell("sponsors.csv", UNPINNED_ROW, "id", "logo-case-webp")]);
     plantLogo("logo-case-webp.webp", Buffer.from("RIFF----WEBP"));
     const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
@@ -857,7 +864,7 @@ describe("sponsor logos", () => {
   });
 
   test(".jpeg and .jpg are the same picture and bundle under one name", () => {
-    const config = makeFixtureSet(TMP_ROOT, "logo-jpeg", [setCell("sponsors.csv", 2, "id", "logo-case-jpeg")]);
+    const config = makeFixtureSet(TMP_ROOT, "logo-jpeg", [setCell("sponsors.csv", UNPINNED_ROW, "id", "logo-case-jpeg")]);
     plantLogo("logo-case-jpeg.jpeg", Buffer.from("\xff\xd8\xff", "binary"));
     const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
@@ -917,7 +924,9 @@ describe("sponsor logos", () => {
     const body =
       `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">` +
       `<image xlink:href="data:image/png;base64,iVBORw0KGgo=" width="10" height="10"/></svg>`;
-    const config = makeFixtureSet(TMP_ROOT, "logo-svg-raster", [setCell("sponsors.csv", 2, "id", "logo-svg-raster")]);
+    const config = makeFixtureSet(TMP_ROOT, "logo-svg-raster", [
+      setCell("sponsors.csv", UNPINNED_ROW, "id", "logo-svg-raster"),
+    ]);
     plantLogo("logo-svg-raster.svg", body);
     const result = runBuild(config);
     assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
@@ -945,6 +954,253 @@ describe("sponsor logos", () => {
       assert.doesNotMatch(result.stderr, /\.\./);
       assert.doesNotMatch(result.stderr, /etc\/hostname/);
     }
+  });
+});
+
+// The square brand mark inside a Featured Destination pin: content/logos/
+// <id>-pin.<ext>, required exactly when the sponsor draws that pin. The rules
+// mirror the logo rules above wherever they can, and diverge only where the
+// mark's job differs — a smaller cap because it ships beside the logo, svg/png
+// only because those are the two formats whose dimensions are readable without
+// a library, and explicit width/height on an SVG root because Safari draws
+// nothing into a canvas without them.
+describe("sponsor pin marks", () => {
+  const CLEAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>';
+  const MARK_SVG = (attrs = 'width="64" height="64"') =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" ${attrs}><rect width="64" height="64"/></svg>`;
+
+  /**
+   * A PNG that is nothing but a header. The build reads dimensions from the
+   * IHDR chunk and copies the bytes unexamined, so a real image would only make
+   * the fixtures heavier — and a header-only file is the honest way to say that
+   * the header is the whole of what is being tested.
+   */
+  const pngBytes = (width, height) => {
+    const ihdr = Buffer.alloc(25);
+    ihdr.writeUInt32BE(13, 0);
+    ihdr.write("IHDR", 4, "latin1");
+    ihdr.writeUInt32BE(width, 8);
+    ihdr.writeUInt32BE(height, 12);
+    ihdr[16] = 8; // bit depth
+    ihdr[17] = 6; // colour type: RGBA
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), ihdr]);
+  };
+
+  const LOGOS_DIR = path.join(REPO_ROOT, "content/logos");
+  const planted = [];
+  const plant = (filename, body) => {
+    const file = path.join(LOGOS_DIR, filename);
+    writeFileSync(file, body);
+    planted.push(file);
+    return file;
+  };
+  afterEach(() => {
+    for (const file of planted.splice(0)) rmSync(file, { force: true });
+  });
+
+  /** Renames a fixture sponsor onto a fresh id and gives it a logo, so the case
+   *  below is about the mark and nothing else. content/logos/ is the live
+   *  directory, so ids no real sponsor uses are the only safe ones. */
+  const asFreshSponsor = (name, row, id) => {
+    const config = makeFixtureSet(TMP_ROOT, name, [setCell("sponsors.csv", row, "id", id)]);
+    plant(`${id}.svg`, CLEAN_SVG);
+    return config;
+  };
+  const sponsorRow = (id) => (fields) => fields.id === id;
+  // Emerald, with a location: draws a featured pin, so it needs a mark.
+  const EMERALD_ROW = sponsorRow("shortline-credit-union");
+
+  test("every fixture sponsor that draws a featured pin carries a bundled mark", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const featured = content.sponsors.filter(
+      (s) => ["emerald", "ruby", "sapphire"].includes(s.tier_slug) && s.lat !== null
+    );
+    assert.ok(featured.length >= 3, `expected the fixtures to pin featured sponsors, got ${featured.length}`);
+    for (const sponsor of featured) {
+      assert.equal(sponsor.mark, `assets/sponsors/${sponsor.id}-pin.svg`, `${sponsor.id} mark path`);
+      assert.ok(existsSync(path.join(result.outDir, sponsor.mark)), `${sponsor.mark} should exist on disk`);
+    }
+  });
+
+  test("a sponsor with no featured pin carries mark: null, not a blank string", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    // Absence is a fact the map branches on, so it is null the way lat/lng are.
+    const unpinned = content.sponsors.filter((s) => s.tier_slug === "quartz");
+    assert.ok(unpinned.length > 0, "the fixtures should carry a quartz sponsor");
+    for (const s of unpinned) assert.strictEqual(s.mark, null, `${s.id} should have mark: null`);
+    for (const s of content.sponsors) assert.ok("mark" in s, `${s.id} is missing the mark field entirely`);
+  });
+
+  test("a featured-tier sponsor with a location and no mark names the path it looked for", () => {
+    // Promoting a pinned topaz sponsor is the smallest way to create the case:
+    // it already has a location and a logo, and the tier is the only thing that
+    // decides whether it draws a featured pin.
+    const config = makeFixtureSet(TMP_ROOT, "mark-missing", [
+      setCell("sponsors.csv", sponsorRow("daily-trim-barbershop"), "tier", "sapphire"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a featured sponsor with no mark should fail the build");
+    assert.ok(
+      result.stderr.includes("content/logos/daily-trim-barbershop-pin.svg"),
+      `the message must name the expected path\n${result.stderr}`
+    );
+    assert.ok(result.stderr.includes("The Daily Trim Barbershop"), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  test("a featured-tier sponsor with no location needs no mark", () => {
+    // No location, no pin, nothing for a mark to go in. The fixtures already
+    // carry three of these; this pins the rule rather than the fixtures.
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const unpinnedFeatured = content.sponsors.filter(
+      (s) => ["emerald", "ruby", "sapphire"].includes(s.tier_slug) && s.lat === null
+    );
+    assert.ok(unpinnedFeatured.length > 0, "the fixtures should carry a featured sponsor with no location");
+    for (const s of unpinnedFeatured) assert.strictEqual(s.mark, null);
+  });
+
+  test("two mark files for one id is an error rather than a coin flip", () => {
+    const config = asFreshSponsor("mark-ambiguous", EMERALD_ROW, "mark-case-both");
+    plant("mark-case-both-pin.svg", MARK_SVG());
+    plant("mark-case-both-pin.png", pngBytes(256, 256));
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an ambiguous mark should fail the build");
+    assert.match(result.stderr, /2 pin mark files/);
+    assert.ok(
+      result.stderr.includes("mark-case-both-pin.svg") && result.stderr.includes("mark-case-both-pin.png"),
+      `both candidates should be named\n${result.stderr}`
+    );
+  });
+
+  test("an oversized mark is rejected with the limit in the message", () => {
+    const config = asFreshSponsor("mark-huge", EMERALD_ROW, "mark-case-huge");
+    plant("mark-case-huge-pin.png", Buffer.concat([pngBytes(256, 256), Buffer.alloc(80 * 1024, 7)]));
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an oversized mark should fail the build");
+    assert.match(result.stderr, /64 KB/);
+    assert.ok(result.stderr.includes("Shortline Credit Union"), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  test("an SVG mark carrying script is rejected, not sanitized", () => {
+    const config = asFreshSponsor("mark-script", EMERALD_ROW, "mark-case-script");
+    plant(
+      "mark-case-script-pin.svg",
+      `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><script>fetch('/steal')</script></svg>`
+    );
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "an SVG mark with a script should fail the build");
+    assert.match(result.stderr, /can run code/);
+    assert.ok(result.stderr.includes("Shortline Credit Union"), `error should name the sponsor row\n${result.stderr}`);
+  });
+
+  // The trap this rule exists for is invisible from a laptop: Chrome and
+  // Firefox size such an SVG from its viewBox, Safari draws nothing at all, so
+  // the pin would be blank on iPhones only.
+  for (const [label, attrs] of [
+    ["neither width nor height", ""],
+    ["only a width", 'width="64"'],
+    ["only a height", 'height="64"'],
+    ["a percentage width", 'width="100%" height="64"'],
+  ]) {
+    test(`an SVG mark with ${label} on its root is rejected`, () => {
+      const id = `mark-case-${slug(label)}`;
+      const config = asFreshSponsor(`mark-${slug(label)}`, EMERALD_ROW, id);
+      plant(`${id}-pin.svg`, MARK_SVG(attrs));
+      const result = runBuild(config);
+      assert.notEqual(result.status, 0, `an SVG mark with ${label} should fail the build`);
+      assert.match(result.stderr, /explicit width and height/);
+      assert.match(result.stderr, /Safari/);
+    });
+  }
+
+  test("an SVG mark with explicit width and height builds", () => {
+    const config = asFreshSponsor("mark-svg-ok", EMERALD_ROW, "mark-case-ok");
+    plant("mark-case-ok-pin.svg", MARK_SVG());
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.sponsors.find((s) => s.id === "mark-case-ok").mark, "assets/sponsors/mark-case-ok-pin.svg");
+  });
+
+  // The three checks that are judgements, not rules. Each of them describes a
+  // mark that will disappoint somebody looking at a phone, and none of them is
+  // a thing a build should refuse to deploy over.
+  test("a raster mark under 128 px is reported, not refused", () => {
+    const config = asFreshSponsor("mark-small", EMERALD_ROW, "mark-case-small");
+    plant("mark-case-small-pin.png", pngBytes(64, 64));
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    assert.match(result.stdout, /mark-case-small-pin\.png is 64x64/);
+    assert.match(result.stdout, /128 px floor/);
+    // Reported and still shipped.
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.sponsors.find((s) => s.id === "mark-case-small").mark, "assets/sponsors/mark-case-small-pin.png");
+  });
+
+  test("a mark beyond 2:1 either way is reported, not refused", () => {
+    for (const [id, width, height] of [
+      ["mark-case-wide", 400, 120],
+      ["mark-case-tall", 120, 400],
+    ]) {
+      const config = asFreshSponsor(`mark-aspect-${id}`, EMERALD_ROW, id);
+      plant(`${id}-pin.png`, pngBytes(width, height));
+      const result = runBuild(config);
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+      assert.match(result.stdout, new RegExp(`${id}-pin\\.png is ${width}x${height}, an aspect of 3.33:1`));
+      for (const file of planted.splice(0)) rmSync(file, { force: true });
+    }
+  });
+
+  test("a mark for a sponsor that draws no featured pin is ignored, with a line saying so", () => {
+    for (const [name, row, id, because] of [
+      ["mark-topaz", sponsorRow("daily-trim-barbershop"), "mark-case-topaz", /tier "topaz"/],
+      ["mark-nowhere", sponsorRow("north-side-family-clinic"), "mark-case-nowhere", /no location/],
+    ]) {
+      const config = asFreshSponsor(name, row, id);
+      plant(`${id}-pin.svg`, MARK_SVG());
+      const result = runBuild(config);
+      assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+      assert.match(result.stdout, new RegExp(`${id}-pin\\.svg is present`));
+      assert.match(result.stdout, because);
+      // Ignored means ignored: not in the JSON, not bundled.
+      const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+      assert.strictEqual(content.sponsors.find((s) => s.id === id).mark, null);
+      assert.ok(!existsSync(path.join(result.outDir, `assets/sponsors/${id}-pin.svg`)), "an ignored mark was bundled");
+      for (const file of planted.splice(0)) rmSync(file, { force: true });
+    }
+  });
+
+  test("copying is the only transformation: the bundled bytes are the source bytes", () => {
+    const result = runBuild(GOOD_CONFIG);
+    assert.equal(result.status, 0, `expected exit 0, got ${result.status}\nstderr: ${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const marks = content.sponsors.filter((s) => s.mark);
+    assert.ok(marks.length > 0, "no sponsor carries a mark, so this proves nothing");
+    for (const sponsor of marks) {
+      const source = readFileSync(path.join(REPO_ROOT, "content/logos", path.basename(sponsor.mark)));
+      const bundled = readFileSync(path.join(result.outDir, sponsor.mark));
+      assert.ok(source.equals(bundled), `${sponsor.mark} was not copied byte for byte`);
+    }
+  });
+
+  test("the build's featured tiers are the app's featured tiers", () => {
+    // Two lists, stated twice by necessity: the build never imports the app.
+    // Comparing the source text is the only check available, and it is worth
+    // having — a tier added to one and not the other means either a featured
+    // pin with no mark or a mark nobody asked for.
+    const buildSource = readFileSync(path.join(REPO_ROOT, "scripts/build.mjs"), "utf8");
+    const mapSource = readFileSync(path.join(REPO_ROOT, "site/js/views/map.js"), "utf8");
+    const fromBuild = [...buildSource.matchAll(/\{\s*slug:\s*"([a-z]+)"[^}]*featured:\s*true[^}]*\}/g)].map((m) => m[1]);
+    const declared = /const FEATURED_SPONSOR_TIERS = new Set\(\[([^\]]*)\]\)/.exec(mapSource);
+    assert.ok(declared, "map.js no longer declares FEATURED_SPONSOR_TIERS as a literal Set");
+    const fromMap = [...declared[1].matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+    assert.ok(fromBuild.length > 0, "build.mjs declares no featured tiers");
+    assert.deepEqual(fromBuild.sort(), fromMap.sort());
   });
 });
 
@@ -1113,9 +1369,10 @@ describe("--skip-invalid-rows", () => {
   });
 
   test("keeps a sponsor whose logo is the only thing wrong, minus the logo", () => {
-    // No file is named for this id, and the tier requires one.
+    // No file is named for this id, and the tier requires one. A sponsor that
+    // draws no featured pin, so the logo is genuinely the only thing wrong.
     const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [
-      setCell("sponsors.csv", 2, "id", "shortline-credit-onion"),
+      setCell("sponsors.csv", (fields) => fields.id === "printworks-studio", "id", "printworks-studioo"),
     ]);
     assert.notEqual(runBuild(config).status, 0, "a missing logo must still fail a normal build");
 
@@ -1123,10 +1380,25 @@ describe("--skip-invalid-rows", () => {
     assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
     const content = readContent(result);
     assert.equal(content.sponsors.length, good().sponsors.length, "the sponsor keeps its place on the page");
-    const sponsor = content.sponsors.find((s) => s.name === "Shortline Credit Union"); // sponsors.csv row 2
+    const sponsor = content.sponsors.find((s) => s.name === "PrintWorks Studio");
     assert.ok(sponsor, "expected to find the sponsor whose logo was broken");
     assert.equal(sponsor.logo, "", "the sponsor is published without a logo rather than with a missing one");
     assert.match(result.stdout, /published without its logo/);
+  });
+
+  test("does not drop a missing pin mark the way it drops a missing logo", () => {
+    // The asymmetry is deliberate. A logo missing costs the sponsor a picture
+    // on a list; a MARK missing costs a paying sponsor the contents of their
+    // map pin, which is the exact silent degradation the mark rule exists to
+    // prevent. So this one blocks the deploy even here, and the fix is to
+    // commit the file (README, "Content updates").
+    const config = makeFixtureSet(TMP_ROOT, "skip-bad-mark", [
+      setCell("sponsors.csv", (fields) => fields.id === "daily-trim-barbershop", "tier", "sapphire"),
+    ]);
+    const result = runBuild(config, ["--skip-invalid-rows"]);
+    assert.notEqual(result.status, 0, "a missing mark must fail even at --skip-invalid-rows");
+    assert.match(result.stderr, /no pin mark file/);
+    assert.ok(!existsSync(result.contentPath), "nothing should have been published");
   });
 
   test("does not treat an unreachable source as a bad row", async () => {

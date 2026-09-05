@@ -5,13 +5,26 @@ Before/after captures for the 2026-09-04 map work (`definitions/squarespace-map-
 content rather than the live sheet — the full baseline recapture is still owed
 and is tracked in BACKLOG.md.
 
-Three sets, each the same ten shots:
+**Captures only compare cleanly within one session.** The CSS font stack
+(`-apple-system, BlinkMacSystemFont, …`) resolves differently between headless
+browser launches, so the legend and venue key below the map render at different
+sizes in different prefixes. It is stable within a run — re-shooting a prefix
+reproduces it byte for byte — and it never touches the map frame, whose type
+MapLibre draws itself. When a prefix has to be compared against an earlier one,
+re-shoot the earlier commit in the same session; `before-aim-labels-desktop.png`
+is such a re-shoot, of `f52205b`.
+
+Sets, each the same ten shots unless noted:
 
 | prefix | code |
 |---|---|
 | `before-` | commit `94187a0`, the last commit before any of this work |
 | `after-` | the collision rulings only (commit `a45c739`) |
 | `after-wide-` | plus the desktop map frame (commit `d021bce`) |
+| `after-fill-` | the label-space work: split composites, fallback anchors, dot rule, rank lanes (`56a035e`) |
+| `after-dots-` | dots reserve their own box; names gain corner candidates (`62e8453`) |
+| `after-box-` | pins reserve the diamond's area, not its bounding box (`f52205b`) |
+| `before-aim-` / `after-aim-` | per-venue candidate order and diagonals pulled in to the ink (`f52205b` → `221114c`), two shots and four |
 
 Those three shas are checked, not assumed: re-shooting `sundin-soeffker` at
 `94187a0` reproduces the committed `before-` pair byte for byte. Do not read

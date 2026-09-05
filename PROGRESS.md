@@ -93,6 +93,43 @@ stretch to fill their row instead. Measured after the fix: from ~600px of
 window width up the tab no longer changes at all — sapphire cards hold 274px,
 topaz 179px — and the phone layout is untouched.
 
+### 2026-09-04 — names aim at their own pin, and diagonals come in to the ink
+
+Anthony's read of the corner placements: "much better, still not perfect."
+
+**A name now knows which pin it looks like it belongs to.** MapLibre's placement
+pass is ambiguity-blind — it takes the first candidate whose box is free, and a
+box can be perfectly free while sitting directly over a neighbouring pin. That
+is how "Anderson Center" ended up on top of the Creative Writing House pin with
+open paper to its own left. Each venue's candidate order is now worked out at
+render time from what is actually around that pin, and a candidate is ambiguous
+when any other mark — diamond, location dot, transit or sponsor pin — is nearer
+to the label than the label's own pin is. That is the question the reader is
+answering, so there is no threshold to tune. Ambiguous candidates are demoted,
+never dropped: on a crowded map an ambiguous place still beats no name.
+
+**Diagonals measure their gap from the ink.** A corner clearance had been
+measured to the reserved box's corner, 0.71 R out per axis, while the diamond's
+edge crosses the 45° ray at R/2 — 0.2 R of reserved emptiness you could see. It
+now starts from the edge with the same gap a side gets. No ownership exception
+was needed, which is worth recording since one was on the table: the label's own
+padded corner still lands ~2 px outside the reserved box, so a name is never
+rejected by the pin it belongs to.
+
+Anderson Center sits left of its own pin, which was the acceptance case. Fluid
+Ink below, Mosaic upper-left and Black Hart top-right are unchanged. Black
+Garnet Books moved from below its pin to its right — a change from the list this
+round was measured against, and a return to what Anthony asked for originally;
+the transit stop beside it makes both above and below ambiguous under the new
+rule, and east is genuinely the clear side.
+
+Fill is unchanged at 12 of 14 on a phone and 19 of 20 on desktop, on both
+contents. This round changes where names go, not how many fit. Captures under
+`after-aim-`, with `before-aim-labels-desktop.png` shot from the previous commit
+in the same session — necessary because CSS font fallback resolves differently
+between browser launches, so the legend renders at a different size in earlier
+prefixes and only same-session captures compare cleanly.
+
 ### 2026-09-04 — pins reserve the diamond's area rather than its bounding box
 
 Anthony's read of the corner placements, and he had the geometry right: a

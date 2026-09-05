@@ -857,12 +857,35 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   sponsor name layers use `text-variable-anchor-offset` too, with a constant
   list rather than a data-driven one.
 
-  A corner's clearance is measured to **what the pin reserves**, a cardinal's to
-  **what it draws**: `PIN_BLOCK_HALF + NAME_CLEAR_PX` against
-  `VENUE_R + NAME_CLEAR_PX`. A side name has to clear a real tip; a corner name
-  has nothing there to clear, so holding it at the same distance was what made
-  diagonal names look stranded. Sponsor names keep one clearance for both,
-  since sponsor pins have no blocker.
+  Both clearances are measured to **ink**, on their own axis: a cardinal to the
+  tip at `VENUE_R`, a diagonal to where the diamond's edge crosses the 45° ray,
+  at `VENUE_R / 2` per axis — `CORNER_CLEAR_PX`. Each then adds the same
+  `NAME_CLEAR_PX` gap. Measuring a diagonal to the reserved box's corner
+  instead, at 0.71 R, left 0.2 R of visible emptiness beside every corner-placed
+  name. The pulled-in corner still clears the box — the label's own padded
+  corner lands ~2 px outside `PIN_BLOCK_HALF` — so no name is rejected by the
+  pin it belongs to and no ownership exception is needed. Sponsor names keep one
+  clearance for both, since sponsor pins have no blocker.
+
+  **Each venue's candidate order is its own, and demotes placements that would
+  read as labelling somebody else.** MapLibre's placement pass is
+  ambiguity-blind: it takes the first candidate whose box is free, and a box can
+  be free while sitting directly over a neighbouring pin — which is how
+  "Anderson Center" came to sit on the Creative Writing House pin with open
+  paper to its own left (2026-09-04). A candidate is ambiguous when **any other
+  mark is nearer to the label than the label's own pin is**: a diamond where it
+  is drawn, a location dot, a transit or sponsor pin. That is the question a
+  reader answers when deciding which pin a name belongs to, so it needs no
+  threshold to tune and no constant to drift.
+
+  Ambiguous candidates are **demoted, never dropped** — on a crowded map an
+  ambiguous place still beats no name, and a venue must never end up with fewer
+  places to go than a lonely one. The order is worked out once, at the leader
+  zoom, because the property takes a static list per feature and that is the
+  widest view names draw at and so the most crowded; zooming in only spreads
+  marks apart, which can retire an ambiguity but never create one. Both venue
+  name layers therefore key their candidate list on `['get', 'id']` rather than
+  on the lane. Sponsor names keep one constant order.
 
   Its offsets are in **ems of the layer's own text size**, and that coupling is
   binding: changing a name layer's `text-size` without dividing the offsets by

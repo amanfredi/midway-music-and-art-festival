@@ -148,6 +148,13 @@ Same neighbourhood, resolved: Fluid Ink Tattoos and Mosaic on a Stick are both
 named as of the 2026-09-04 collision-box shrink. Fluid Ink's "below" candidate
 had been blocked by 2 px of Vig Guitars' bounding-box overhang.
 
+**Sponsor names have no per-pin candidate ordering** (added 2026-09-04). Venue
+names get an order worked out from what is around each pin, so a name that would
+read as labelling a neighbour goes elsewhere first; sponsor names keep one
+constant order. Nobody has reported an ambiguous sponsor name, and there are six
+sponsors against twenty-one venues, so it was left. `nameOrders` in `map.js`
+takes venues today and would need the sponsor list threading through it.
+
 **Small pins have no collision blocker** (added 2026-09-04). Venue pins reserve
 a square of the diamond's own area rather than its bounding box; transit and
 sponsor pins still reserve the box. Their overhang is ~10 px on the diagonal

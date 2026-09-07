@@ -5,8 +5,7 @@
 // dependencies.
 //
 // Usage: node scripts/build.mjs [path/to/config.json] [--config path] [--out dir]
-//                               [--write-snapshot] [--use-snapshot]
-//                               [--skip-invalid-rows]
+//                               [--write-snapshot] [--use-snapshot] [--strict]
 //                               [--snapshot-dir dir] [--report path]
 //   config defaults to content/config.json, out defaults to site/,
 //   snapshot-dir defaults to content/snapshot/
@@ -15,14 +14,13 @@
 //                     remotely-fetched resource into the snapshot directory
 //   --use-snapshot    serve a remote resource from the snapshot when it cannot
 //                     be reached (never when it answers wrongly)
-//   --skip-invalid-rows
-//                     publish the rows that validate and leave out the ones
-//                     that don't, instead of failing the build. Row-level
-//                     problems only: an unreachable source, a renamed header
-//                     column, an emptied tab, or a source left with no valid
-//                     rows at all still stops the build. Refuses
-//                     --write-snapshot, because the snapshot exists to hold
-//                     bytes that passed the full validation.
+//   --strict          stop the build on any validation error, publishing
+//                     nothing. By default a row that fails validation is left
+//                     out of the published output and reported instead, which
+//                     is what keeps one bad spreadsheet cell from holding the
+//                     whole site. Structural problems — an unreachable source,
+//                     a renamed header column, an emptied tab, or a source left
+//                     with no valid rows at all — stop the build either way.
 //   --report path     write a machine-readable outcome (failure classes,
 //                     snapshot state) for CI to route notifications with
 
@@ -393,9 +391,8 @@ async function loadSource(key, value, ctx) {
 /**
  * Every row-scoped complaint in this file is built here, and each one carries
  * the row it came from as well as the text. That attribution is what lets a
- * --skip-invalid-rows build drop exactly the rows it objected to: an error with
- * no `rowNum` describes the file rather than a row, and no row can be dropped
- * to answer it.
+ * build drop exactly the rows it objected to: an error with no `rowNum`
+ * describes the file rather than a row, and no row can be dropped to answer it.
  */
 function errorMsg(fileLabel, rowNum, identifier, message) {
   return { rowNum, message: `${fileLabel} row ${rowNum} ("${identifier}"): ${message}` };
@@ -1812,7 +1809,7 @@ const PATH_OPTIONS = { "--config": "configArg", "--out": "outArg", "--snapshot-d
 const FLAG_OPTIONS = {
   "--write-snapshot": "writeSnapshot",
   "--use-snapshot": "useSnapshot",
-  "--skip-invalid-rows": "skipInvalidRows",
+  "--strict": "strict",
 };
 
 function parseArgs(argv) {
@@ -1823,7 +1820,7 @@ function parseArgs(argv) {
     reportArg: null,
     writeSnapshot: false,
     useSnapshot: false,
-    skipInvalidRows: false,
+    strict: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -1844,14 +1841,12 @@ function parseArgs(argv) {
       return { error: `unexpected argument "${arg}".` };
     }
   }
-  // The snapshot is the build's definition of "last known good", and
-  // --use-snapshot spends it on the assumption that everything in it once
-  // passed. Saving a build that knowingly skipped rows would poison that, so
-  // the two flags are refused together here rather than being left to whatever
-  // CI happens to pass.
-  if (parsed.writeSnapshot && parsed.skipInvalidRows) {
-    return { error: `--write-snapshot and --skip-invalid-rows cannot be combined: the snapshot may only hold sources that fully validated.` };
-  }
+  // --write-snapshot and a build that left rows out are deliberately allowed
+  // together: the snapshot holds the bytes every published build was made from,
+  // and a --use-snapshot build of those bytes leaves the same rows out and
+  // reports them again. Freezing it whenever any row was bad would rot the
+  // fallback exactly while several people are editing the sheet, and would make
+  // every 6-hourly rebuild see "changed" and republish.
   return {
     ...parsed,
     configArg: parsed.configArg ?? DEFAULT_CONFIG,
@@ -1866,7 +1861,7 @@ async function main() {
     console.error(`Cannot start the build: ${args.error}`);
     process.exit(1);
   }
-  const { configArg, outArg, snapshotArg, reportArg, writeSnapshot, useSnapshot, skipInvalidRows } = args;
+  const { configArg, outArg, snapshotArg, reportArg, writeSnapshot, useSnapshot, strict } = args;
   const configPath = path.resolve(CWD, configArg);
   const outDir = path.resolve(CWD, outArg);
   const snapshotDir = path.resolve(CWD, snapshotArg);
@@ -1973,16 +1968,17 @@ async function main() {
     for (const n of dateNotes) console.log(`  - ${oneLine(n)}`);
   }
 
-  // Rows dropped by --skip-invalid-rows, for the log, the step summary, and
+  // Rows left out of this build, for the log, the step summary, the email and
   // the report. A successful build with a non-empty list here published less
-  // than the sheet holds, and the operator has to be able to see exactly what.
+  // than the sheet holds, and the organizers have to be able to see exactly
+  // what.
   const dropped = [];
 
   /**
-   * Without --skip-invalid-rows this is just `validate(records)`.
+   * Under --strict this is just `validate(records)`.
    *
-   * With it, the validator runs twice: once to learn which rows it objects to,
-   * then again on the survivors to produce the output. The second pass is what
+   * By default the validator runs twice: once to learn which rows it objects
+   * to, then again on the survivors to produce the output. The second pass is what
    * makes the result trustworthy — nothing reaches content.json that a
    * validator hasn't approved as it stands. It is also expected to be silent,
    * because every check here is either per-row or "this row conflicts with an
@@ -1996,7 +1992,7 @@ async function main() {
    */
   const runValidator = (source, records, validate) => {
     const first = validate(records);
-    if (!skipInvalidRows || first.errors.length === 0) return { ...first, records };
+    if (strict || first.errors.length === 0) return { ...first, records };
 
     const rowScoped = first.errors.filter((err) => rowOf(err) !== null);
     const fileLevel = first.errors.filter((err) => rowOf(err) === null);
@@ -2009,7 +2005,7 @@ async function main() {
         records: survivors,
         errors: [
           ...first.errors,
-          `${SOURCE_LABEL[source]}: every data row failed validation, so skipping the invalid rows would publish ` +
+          `${SOURCE_LABEL[source]}: every data row failed validation, so leaving the invalid rows out would publish ` +
             `nothing at all in place of the live ${source}. Fix the rows above; the build stops rather than empty the tab.`,
         ],
       };
@@ -2048,13 +2044,13 @@ async function main() {
   // are not the same problem: a sponsor without a wordmark renders as a name,
   // which the app handles, while a featured sponsor without a mark renders as
   // an empty red square in the middle of the map — the thing the mark rule
-  // exists to prevent. Publishing that is not an option, and blocking the
-  // deploy is not what this flag is for, so the row goes the way every other
-  // unpublishable row goes here: dropped, and reported by name.
-  const markDroppedRows = new Set(skipInvalidRows ? markFailures.map((failure) => failure.rowNum) : []);
+  // exists to prevent. Publishing that is not an option, and stopping the
+  // deploy over one row is not what the default is for, so the row goes the way
+  // every other unpublishable row goes here: left out, and reported by name.
+  const markDroppedRows = new Set(strict ? [] : markFailures.map((failure) => failure.rowNum));
   // A row being dropped outright makes "published without its logo" a lie about
   // it, so a sponsor that fails both only gets the drop.
-  const droppedLogos = skipInvalidRows ? logoFailures.filter((f) => !markDroppedRows.has(f.rowNum)) : [];
+  const droppedLogos = strict ? [] : logoFailures.filter((f) => !markDroppedRows.has(f.rowNum));
   for (const failure of droppedLogos) {
     dropped.push({ source: "sponsors", rowNum: failure.rowNum, message: failure.message, logoOnly: true });
   }
@@ -2075,7 +2071,7 @@ async function main() {
   // one bad row at a time.
   if (markDroppedRows.size > 0 && sponsorRecords.length === 0) {
     fail(
-      `${SOURCE_LABEL.sponsors}: every remaining row would be dropped for a bad pin mark, so skipping them would ` +
+      `${SOURCE_LABEL.sponsors}: every remaining row would be dropped for a bad pin mark, so leaving them out would ` +
         `publish nothing at all in place of the live sponsors. Fix the marks above; the build stops rather than ` +
         `empty the tab.`,
       "validation",
@@ -2097,12 +2093,16 @@ async function main() {
   }
   for (const failure of logoFailures) {
     if (droppedLogos.includes(failure)) continue;
+    // A row already left out for a bad mark takes its logo complaint with it:
+    // the sponsor is not being published at all, so a missing logo for it is
+    // not a reason to stop the build.
+    if (markDroppedRows.has(failure.rowNum)) continue;
     errors.push(failure.message);
     failures.push(failure);
   }
-  // Without --skip-invalid-rows a bad mark stops the build, exactly as a
-  // missing logo does. With it, the rows above have already been dropped and
-  // this loop has nothing left to report.
+  // Under --strict a bad mark stops the build, exactly as a missing logo does.
+  // By default the rows above have already been left out and this loop has
+  // nothing left to report.
   for (const failure of markFailures) {
     if (markDroppedRows.has(failure.rowNum)) continue;
     errors.push(failure.message);
@@ -2197,13 +2197,13 @@ async function main() {
   );
 
   if (dropped.length > 0) {
-    console.log(
-      `SKIPPED ${dropped.length} invalid row(s) at --skip-invalid-rows; the site above was published without them:`
-    );
+    console.log(`LEFT OUT ${dropped.length} invalid row(s); the site above was published without them:`);
     for (const entry of dropped) {
       console.log(`  - ${oneLine(entry.message)}${entry.logoOnly ? " [published without its logo]" : ""}`);
     }
-    console.log(`  Fix these in the spreadsheet and re-run a normal build to publish them.`);
+    console.log(
+      `  Fix these in the spreadsheet; the next build publishes them. (--strict makes any of them stop the build instead.)`
+    );
   }
 
   const shownSnapshotDir = path.relative(CWD, snapshotDir) || snapshotDir;
@@ -2235,7 +2235,7 @@ async function main() {
     ok: true,
     failureClasses: [],
     failures: [],
-    skipInvalidRows,
+    strict,
     droppedRows: dropped,
     snapshot: {
       dir: shownSnapshotDir,

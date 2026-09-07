@@ -17,10 +17,6 @@ on:
         description: "npm unreachable: publish without the test job (emergency only)"
         type: boolean
         default: false
-      skip_invalid_rows:
-        description: "Bad rows in the sheet: publish the rows that validate and leave the invalid ones out (does not update the snapshot)"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -34,7 +30,8 @@ concurrency:
 
 env:
   # A fixed path rather than runner.temp, which no workflow-level context can
-  # see. build.mjs writes the failure class here and the mail step reads it.
+  # see. build.mjs writes the run's outcome here — the failure class, or the
+  # rows a successful build left out — and the mail steps read it.
   BUILD_REPORT: /tmp/mmaf-build-report.json
 
 jobs:
@@ -87,7 +84,7 @@ jobs:
           FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
           DEPLOY_NOTIFICATION_EMAIL: ${{ secrets.DEPLOY_NOTIFICATION_EMAIL || vars.DEPLOY_NOTIFICATION_EMAIL }}
           CONTENT_NOTIFICATION_EMAIL: ${{ secrets.CONTENT_NOTIFICATION_EMAIL || vars.CONTENT_NOTIFICATION_EMAIL }}
-        run: node .github/scripts/notify-failure.mjs
+        run: node .github/scripts/notify.mjs failure
 
   deploy:
     needs: test
@@ -110,27 +107,21 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      # the site build itself has zero npm dependencies
+      # The site build itself has zero npm dependencies.
+      #
+      # No --strict: a row that fails validation is left out of the published
+      # site and reported, rather than holding the whole deploy over one cell.
+      # The snapshot is written either way — it holds the bytes this build
+      # published from, and an emergency --use-snapshot build of them leaves the
+      # same rows out.
       - name: Build the site
         env:
           USE_SNAPSHOT: ${{ inputs.use_content_snapshot }}
-          SKIP_INVALID_ROWS: ${{ inputs.skip_invalid_rows }}
         run: |
-          flags=""
+          flags="--write-snapshot"
           if [ "$USE_SNAPSHOT" = "true" ]; then
             flags="$flags --use-snapshot"
             echo "::notice::Unreachable sources will be served from content/snapshot for this run."
-          fi
-          # --write-snapshot is dropped rather than made conditional inside the
-          # build: a run that knowingly published less than the sheet holds must
-          # not become the copy a later --use-snapshot run trusts. build.mjs
-          # refuses the two flags together, so this branch is the contract, not
-          # a convention.
-          if [ "$SKIP_INVALID_ROWS" = "true" ]; then
-            flags="$flags --skip-invalid-rows"
-            echo "::notice::Rows that fail validation will be left out of this build, and the snapshot will not be updated."
-          else
-            flags="$flags --write-snapshot"
           fi
           node scripts/build.mjs $flags --report "$BUILD_REPORT"
           node scripts/build-sw.mjs
@@ -149,9 +140,9 @@ jobs:
             console.log("::warning title=Published stale content::" + lines.join("; "));
             appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published from the content snapshot", "", "These sources could not be reached, so this deploy shipped saved copies:", "", ...lines.map((l) => "- " + l), ""].join("\n"));
           '
-      # A skipped-row run is green, so nothing else would say that the site now
-      # holds less than the sheet does. The rows still need fixing, and this is
-      # where the operator who ticked the box goes looking.
+      # A run that left rows out is green, so nothing else would say that the
+      # site now holds less than the sheet does. The rows still need fixing, and
+      # this is where whoever is watching the run goes looking.
       - name: Flag skipped rows
         run: |
           node -e '
@@ -165,7 +156,7 @@ jobs:
             // newline must not forge extra log lines.
             const lines = dropped.map((d) => String(d.message).replace(/\s+/g, " ").trim() + (d.logoOnly ? " (published without its logo)" : ""));
             console.log("::warning title=Published without " + dropped.length + " invalid row(s)::" + lines.join("; "));
-            appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out of this deploy. The snapshot was not updated, so it still holds the last fully valid content:", "", ...lines.map((l) => "- " + l), "", "Fix them in the spreadsheet; the next normal run publishes them.", ""].join("\n"));
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out; everything else in the sheet is live. The snapshot holds the bytes this build published from, so an emergency build would leave the same rows out and say so again. An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 6 hours, or run by hand) publishes them.", ""].join("\n"));
           '
       - name: Commit the refreshed snapshot
         # Only from main: this workflow can be dispatched against any ref, and
@@ -192,6 +183,23 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+      - name: Email the skipped rows
+        # Deliberately continue-on-error, unlike the failure mail: this runs on
+        # a green publish, and a red Deploy run would make content-gate.mjs
+        # decline every cron rebuild until the next green one — and would fire
+        # the failure-email step for a failure that is itself an unsent email.
+        # The ::error annotation the script prints keeps an unsent alarm visible
+        # instead, which is a deliberate narrowing of the 2026-08-22 "an unsent
+        # alarm must show as a red step" ruling to the steps whose run is
+        # already red.
+        if: success()
+        continue-on-error: true
+        env:
+          FASTMAIL_USER: ${{ secrets.FASTMAIL_USER || vars.FASTMAIL_USER }}
+          FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
+          DEPLOY_NOTIFICATION_EMAIL: ${{ secrets.DEPLOY_NOTIFICATION_EMAIL || vars.DEPLOY_NOTIFICATION_EMAIL }}
+          CONTENT_NOTIFICATION_EMAIL: ${{ secrets.CONTENT_NOTIFICATION_EMAIL || vars.CONTENT_NOTIFICATION_EMAIL }}
+        run: node .github/scripts/notify.mjs skipped-rows
       - name: Email the failure
         # Deliberately allowed to fail: this only runs on an already-failed
         # run, and an unsent alarm must show as a red step, not hide behind a
@@ -202,4 +210,4 @@ jobs:
           FASTMAIL_APP_PASSWORD: ${{ secrets.FASTMAIL_APP_PASSWORD }}
           DEPLOY_NOTIFICATION_EMAIL: ${{ secrets.DEPLOY_NOTIFICATION_EMAIL || vars.DEPLOY_NOTIFICATION_EMAIL }}
           CONTENT_NOTIFICATION_EMAIL: ${{ secrets.CONTENT_NOTIFICATION_EMAIL || vars.CONTENT_NOTIFICATION_EMAIL }}
-        run: node .github/scripts/notify-failure.mjs
+        run: node .github/scripts/notify.mjs failure

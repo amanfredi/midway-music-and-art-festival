@@ -1,10 +1,11 @@
 // node --test tests/ci-scripts.test.mjs
 //
 // The two decisions CI makes on its own: whether the content-only rebuild may
-// publish, and who hears about a failure. Both are exercised as pure functions
-// over the payload shapes GitHub and build.mjs actually produce — the workflow
-// steps that call them are asserted separately in ci-workflows.test.mjs, and
-// neither test touches the network.
+// publish, and who hears about a failure or about a publish that left invalid
+// rows out. Both are exercised as pure functions over the payload shapes GitHub
+// and build.mjs actually produce — the workflow steps that call them are
+// asserted separately in ci-workflows.test.mjs, and neither test touches the
+// network.
 
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -14,10 +15,48 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { decidePublish } from "../.github/scripts/content-gate.mjs";
-import { buildMessage, parseAddressList, recipientsFor, summarize } from "../.github/scripts/notify-failure.mjs";
+import {
+  buildMessage,
+  parseAddressList,
+  recipientsFor,
+  summarize,
+  summarizeSkippedRows,
+} from "../.github/scripts/notify.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const NOTIFY_SCRIPT = path.join(REPO_ROOT, ".github/scripts/notify-failure.mjs");
+const NOTIFY_SCRIPT = path.join(REPO_ROOT, ".github/scripts/notify.mjs");
+
+/**
+ * Runs the notifier as the workflow would, over a report written to a temp file
+ * and with the mail stubbed out by NOTIFY_DRY_RUN.
+ */
+function runNotify(mode, report, envOverrides = {}) {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "mmaf-notify-mode-"));
+  const reportPath = path.join(tmp, "report.json");
+  try {
+    writeFileSync(reportPath, JSON.stringify(report));
+    return spawnSync(process.execPath, [NOTIFY_SCRIPT, mode], {
+      cwd: REPO_ROOT,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        NOTIFY_DRY_RUN: "1",
+        BUILD_REPORT: reportPath,
+        FASTMAIL_USER: "site@example.com",
+        FASTMAIL_APP_PASSWORD: "hunter2secret",
+        DEPLOY_NOTIFICATION_EMAIL: "anthony@example.com",
+        CONTENT_NOTIFICATION_EMAIL: "coordinator@example.org",
+        GITHUB_WORKFLOW: "Deploy",
+        GITHUB_REPOSITORY: "amanfredi/mmaf",
+        GITHUB_RUN_ID: "9",
+        GITHUB_SERVER_URL: "https://github.com",
+        ...envOverrides,
+      },
+    });
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
 
 const HEAD = "1111111111111111111111111111111111111111";
 const RUN_SHA = "2222222222222222222222222222222222222222";
@@ -109,6 +148,13 @@ describe("failure notification routing", () => {
     assert.deepEqual(recipients, ["anthony@example.com", "ops@example.com", "coordinator@example.org"]);
   });
 
+  test("a publish that left rows out reaches the organizers too", () => {
+    // Their edit and their fix, exactly like a validation failure — and asked
+    // for as such rather than by pretending the run failed.
+    const recipients = recipientsFor({ deployList: DEPLOY, contentList: CONTENT, includeContent: true });
+    assert.deepEqual(recipients, ["anthony@example.com", "ops@example.com", "coordinator@example.org"]);
+  });
+
   test("an outage or a config problem stays with the operator", () => {
     for (const failureClasses of [["network"], ["config"], []]) {
       assert.deepEqual(recipientsFor({ deployList: DEPLOY, contentList: CONTENT, failureClasses }), [
@@ -140,6 +186,27 @@ describe("failure notification routing", () => {
     assert.match(body, /venues\.csv row 7/);
     assert.match(body, /https:\/\/github\.com\/amanfredi\/mmaf\/actions\/runs\/42/);
     assert.match(body, /live site still shows the last good version/);
+  });
+
+  test("a failure after a successful build still names the rows that build left out", () => {
+    // The report is written when the build succeeds, so a deploy-step failure
+    // would otherwise lose the only record of what was left out.
+    const { body } = summarize({
+      report: {
+        ok: true,
+        failureClasses: [],
+        failures: [],
+        droppedRows: [
+          { source: "venues", rowNum: 16, message: 'venues.csv row 16 ("Hive"): missing required field "location".' },
+          { source: "sponsors", rowNum: 4, message: "sponsors.csv row 4: no logo file.", logoOnly: true },
+        ],
+        snapshot: { used: [] },
+      },
+      context: { workflow: "Deploy" },
+    });
+    assert.match(body, /left 2 invalid row\(s\) out/);
+    assert.match(body, /venues\.csv row 16/);
+    assert.match(body, /sponsors\.csv row 4: no logo file\. \(published without its logo\)/);
   });
 
   test("a failure with no build report still produces a sendable notice", () => {
@@ -177,6 +244,96 @@ describe("failure notification routing", () => {
   });
 });
 
+describe("skipped-rows notification", () => {
+  const report = (overrides = {}) => ({
+    ok: true,
+    failureClasses: [],
+    failures: [],
+    strict: false,
+    droppedRows: [
+      { source: "venues", rowNum: 16, message: 'venues.csv row 16 ("Hive\nCollaborative"): missing required field "location".' },
+      { source: "sponsors", rowNum: 4, message: "sponsors.csv row 4: no logo file.", logoOnly: true },
+    ],
+    snapshot: { dir: "content/snapshot", used: [], written: true, changed: ["source:venues"], removed: [] },
+    ...overrides,
+  });
+
+  test("the subject counts the rows and the body names them", () => {
+    const { subject, body } = summarizeSkippedRows({
+      report: report(),
+      context: {
+        workflow: "Rebuild content",
+        repo: "amanfredi/mmaf",
+        runId: "42",
+        serverUrl: "https://github.com",
+        sha: RUN_SHA,
+        event: "schedule",
+      },
+    });
+    assert.equal(subject, "[Midway site] Published without 2 invalid row(s)");
+    assert.match(body, /venues\.csv row 16/);
+    // A cell with a newline in it must not forge extra lines in the mail.
+    assert.doesNotMatch(body, /^Collaborative/m);
+    assert.match(body, /sponsors\.csv row 4: no logo file\. \(published without its logo\)/);
+    assert.match(body, /https:\/\/github\.com\/amanfredi\/mmaf\/actions\/runs\/42/);
+    assert.match(body, /Everything else in the spreadsheet is live/);
+    assert.match(body, /next scheduled rebuild \(every 6 hours\)/);
+  });
+
+  test("a fallback publish says which sources were stale as well", () => {
+    const { body } = summarizeSkippedRows({
+      report: report({
+        snapshot: {
+          used: [{ id: "source:venues", label: "venues.csv", url: "https://x", lastChanged: "2026-08-01" }],
+          changed: ["source:events"],
+        },
+      }),
+      context: { workflow: "Deploy" },
+    });
+    assert.match(body, /venues\.csv — saved bytes unchanged since 2026-08-01/);
+  });
+
+  test("a clean publish sends nothing", () => {
+    const result = runNotify("skipped-rows", report({ droppedRows: [] }));
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /published every row the sheet holds/);
+    assert.doesNotMatch(result.stdout, /mail-rcpt/);
+  });
+
+  test("rows nobody has fixed are not mailed again until the sheet changes", () => {
+    // A code push or a 6-hourly cron rebuilds the same bad sheet. The snapshot
+    // is unchanged exactly when no source has changed since the last publish,
+    // which is the one signal available without keeping state between runs.
+    const result = runNotify("skipped-rows", report({ snapshot: { used: [], written: false, changed: [] } }));
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /no content source has changed since the last publish/);
+    assert.doesNotMatch(result.stdout, /mail-rcpt/);
+  });
+
+  test("it mails the deploy list and the content list together", () => {
+    const result = runNotify("skipped-rows", report());
+    assert.equal(result.status, 0, result.stdout);
+    assert.match(result.stdout, /mail-rcpt = "anthony@example\.com"/);
+    assert.match(result.stdout, /mail-rcpt = "coordinator@example\.org"/);
+    assert.match(result.stdout, /Subject: \[Midway site\] Published without 2 invalid row\(s\)/);
+  });
+
+  test("an unsent one fails the step and annotates the run, since the step is continue-on-error", () => {
+    const result = runNotify("skipped-rows", report(), {
+      DEPLOY_NOTIFICATION_EMAIL: "",
+      CONTENT_NOTIFICATION_EMAIL: "",
+    });
+    assert.equal(result.status, 1, "an unsent email must still fail its step");
+    assert.match(result.stdout, /::error title=Skipped-rows email not sent::/);
+  });
+
+  test("an unknown mode is a usage error rather than a silent no-op", () => {
+    const result = runNotify("", report());
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /Usage: node \.github\/scripts\/notify\.mjs failure\|skipped-rows/);
+  });
+});
+
 describe("failure notification sending", () => {
   test("it composes a real curl invocation without leaking the password", () => {
     const tmp = mkdtempSync(path.join(os.tmpdir(), "mmaf-notify-"));
@@ -190,7 +347,7 @@ describe("failure notification sending", () => {
       })
     );
     try {
-      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT], {
+      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT, "failure"], {
         cwd: REPO_ROOT,
         encoding: "utf8",
         env: {
@@ -224,7 +381,7 @@ describe("failure notification sending", () => {
     const reportPath = path.join(tmp, "report.json");
     try {
       writeFileSync(reportPath, JSON.stringify({ ok: false, failureClasses: ["network"], failures: [{ class: "network", source: "venues", message: "timeout" }] }));
-      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT], {
+      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT, "failure"], {
         cwd: REPO_ROOT,
         encoding: "utf8",
         env: {
@@ -257,14 +414,14 @@ describe("failure notification sending", () => {
       { FASTMAIL_USER: "", FASTMAIL_APP_PASSWORD: "", DEPLOY_NOTIFICATION_EMAIL: "a@b.co" },
       { FASTMAIL_USER: "site@example.com", FASTMAIL_APP_PASSWORD: "x", DEPLOY_NOTIFICATION_EMAIL: "" },
     ]) {
-      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT], {
+      const result = spawnSync(process.execPath, [NOTIFY_SCRIPT, "failure"], {
         cwd: REPO_ROOT,
         encoding: "utf8",
         env: { ...process.env, NOTIFY_DRY_RUN: "1", BUILD_REPORT: "", CONTENT_NOTIFICATION_EMAIL: "", ...env },
       });
       assert.equal(result.status, 1, "an unsent email must fail its step, or the alarm fails silently");
       assert.match(result.stdout, /cannot be sent/);
-      assert.doesNotMatch(result.stderr, /at .*notify-failure/, "must exit cleanly, not via an unhandled throw");
+      assert.doesNotMatch(result.stderr, /at .*notify\.mjs/, "must exit cleanly, not via an unhandled throw");
     }
   });
 });

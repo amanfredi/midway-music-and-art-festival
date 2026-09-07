@@ -26,6 +26,15 @@ Items are not prioritized against each other. The festival is October 2–4,
   `DEPLOY_NOTIFICATION_EMAIL`, `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER`
   variables (recipient lists may be comma-separated).
 
+- **The skipped-rows email** (2026-09-07) — the mail a green publish sends when
+  it left invalid rows out has never been seen arriving from a real run. It
+  needs two things at once that nobody should manufacture: a genuinely invalid
+  row in the sheet, and a change to some source since the last publish. Do not
+  break the sheet to provoke it; the next real bad row proves it. The dry-run
+  path and the send-failure path are unit-tested, and the operator config is
+  unchanged — same Fastmail secret, same two recipient variables as the failure
+  mail.
+
 ## Decisions that need Anthony
 
 **Venue popup: ruled deferred, nothing to build (2026-08-21).** No felt
@@ -215,7 +224,7 @@ fixture-based test missed. Runtime derivation plus the frame-independent
 reference frame now absorb coordinate drift, but near-threshold flips remain
 silent. Consider a build-time report in `scripts/build.mjs` that recomputes
 pair margins from the fetched sheet and warns when any drawn-pin clearance
-falls under a floor — the build already refuses invalid rows, so it is the
+falls under a floor — the build already validates every row, so it is the
 natural choke point.
 
 **Recapture the screenshot baseline** (`reviews/2026-08-baseline/`, procedure

@@ -118,15 +118,18 @@ gh api -X POST repos/amanfredi/midway-music-and-art-festival/pages -f build_type
 A failed run emails the addresses in the `DEPLOY_NOTIFICATION_EMAIL` repository
 variable; a failure caused by a spreadsheet edit also goes to
 `CONTENT_NOTIFICATION_EMAIL`, since that is the failure the organizers can fix.
-Mail goes out over Fastmail SMTP using the `FASTMAIL_USER` variable and the
-`FASTMAIL_APP_PASSWORD` secret. The step is best-effort: a send failure is
-logged and never changes the run's own result.
+A *successful* run that left invalid rows out of the site emails both lists with
+the rows it left out — see "The sheet has bad rows" below. Mail goes out over
+Fastmail SMTP using the `FASTMAIL_USER` variable and the `FASTMAIL_APP_PASSWORD`
+secret. The step is best-effort: a send failure is logged and never changes the
+run's own result.
 
 ## Emergency deploys
 
-Three things can stop a deploy — two outages and a bad sheet edit — and each has
-one command that gets around it. All are deliberate acts: nothing falls back on
-its own. A rebuild can also stop on its own, deliberately — the last case below.
+Two outages can stop a deploy, and each has one command that gets around it,
+deliberately: nothing falls back on its own. A bad row in the sheet no longer
+stops one — the third case below says what happens instead. A rebuild can also
+stop on its own, deliberately — the last case below.
 
 ### The content sheet is unreachable
 
@@ -172,37 +175,50 @@ gh workflow run deploy.yml -f skip_tests=true
 That publishes with no tests run at all. It exists for the case where the
 alternative is not shipping.
 
-### The sheet has bad rows and the fix can't wait
+### The sheet has bad rows
 
-The failing run names the rows: `venues.csv row 16 ("Hive Collaborative"):
-missing required field "location".` The fix is sheet-side, but if a deploy has
-to go out first, publish the rows that are good:
+Nothing to do, unless you want them on the site sooner. A row that fails
+validation is left out and the rest of the sheet publishes: the run is green,
+and the site is everything the sheet holds except that row.
+
+The run says what it left out — `LEFT OUT n invalid row(s)` in the build log, a
+warning annotation, and the rows in the job summary: `venues.csv row 16 ("Hive
+Collaborative"): missing required field "location".` The same list goes by email
+to `DEPLOY_NOTIFICATION_EMAIL` and `CONTENT_NOTIFICATION_EMAIL`, so the
+organizers hear about their own rows without watching Actions. That mail goes
+out only when a content source changed since the last publish: otherwise every
+code push and every 6-hour rebuild would re-send the same unfixed rows, and an
+edit to the sheet is the one signal that somebody is working on them.
+
+What goes with the row: any event whose venue was dropped, so nothing ships
+pointing at a venue that isn't there. A sponsor whose **pin mark** is the
+problem is dropped outright too — publishing it without the mark would put an
+empty red square on the map, which is the thing the mark rule exists to prevent
+(see "Sponsor logos and pin marks"). A sponsor whose only problem is its
+**logo** keeps its place and publishes without the logo.
+
+What still fails the run, on a deploy and a rebuild alike: an unreachable
+source, a renamed or double-named header column, a tab with no data rows, a tab
+where *every* row is bad — which would empty that guide — and a bad config.
+Those email as failures, and the live site stays on its last good version.
+
+Fixing the cells is the whole fix. The next 6-hour rebuild publishes them, or
+run one now:
 
 ```sh
-gh workflow run deploy.yml -f skip_invalid_rows=true
+gh workflow run rebuild-content.yml
 ```
 
-Sources are fetched live as usual and every row is validated as usual — the run
-just leaves out the ones that fail instead of stopping. An event whose venue was
-dropped is dropped with it, so nothing ships pointing at a venue that isn't
-there. A sponsor whose logo is the only problem keeps its place and publishes
-without the logo. A sponsor whose **pin mark** is the problem is dropped
-outright instead — publishing it without the mark would put an empty red square
-on the map, which is the thing the mark rule exists to prevent (see "Sponsor
-logos and pin marks"). If that would leave the sponsors tab with nothing in it,
-the run stops rather than publish an empty one.
+To check the sheet is completely clean — worth doing before the festival, when
+"published minus one row" stops being good enough:
 
-It says what it left out: `SKIPPED n invalid row(s)` in the build log, a warning
-annotation on the run, and the rows in the job summary.
+```sh
+node scripts/build.mjs --strict --out /tmp/mmaf-strict
+```
 
-This skips rows, not files. An unreachable source, a renamed header column, or a
-tab with no data rows still fails — as does a tab where *every* row is bad, which
-would empty the guide. And it never updates `content/snapshot/`: that copy stays
-the last content that passed in full, so a later `use_content_snapshot` deploy
-isn't quietly building on a partial one.
-
-The 6-hour rebuild has no such flag and keeps failing on those rows. Fix the
-sheet.
+That fetches the live sheet and exits non-zero listing every validation error it
+finds, without writing to `site/` or the snapshot. Silence means the sheet is
+clean.
 
 ### A rebuild publishes nothing
 
@@ -262,8 +278,9 @@ until the file is committed. This is deliberate: a Featured Destination pin
 with nothing in it is a paying sponsor's presence quietly disappearing, which
 is worse than a deploy that stops and says why. So when the organizers add an
 emerald, ruby or sapphire sponsor with an address, the mark has to land in the
-same commit. `--skip-invalid-rows` does not paper over it either: it drops that
-sponsor from the site entirely rather than publish the empty pin.
+same commit. Publishing around it is no help either: a build that leaves
+invalid rows out drops that sponsor from the site entirely rather than publish
+the empty pin.
 
 Making a mark: crop the sponsor's own logo down to its square sub-mark — the
 monogram, the icon, the thing that is not the words — on a **transparent
@@ -602,7 +619,7 @@ matters and needs a hands-on check after any caching change:
 | `content/config.json` | Where content comes from (fixture paths or sheet URLs) |
 | `content/snapshot/` | Generated: the last bytes fetched from each remote source, and where `use_content_snapshot` reads a source the build can't reach |
 | `scripts/` | Build (CSV→JSON, validation), service-worker generator, dev server |
-| `.github/scripts/` | Zero-dependency helpers the workflows run: the content-publish gate and the failure email |
+| `.github/scripts/` | Zero-dependency helpers the workflows run: the content-publish gate and the notification emails (failures, and publishes that left rows out) |
 | `tools/` | One-off generators (map GeoJSON and calibration from OSM data, transit stops, PWA icons, ticket-icon sprite), `vendor-maplibre.mjs`, and `shoot.mjs`, which renders routes to PNGs in `.screenshots/` for visual review |
 | `tests/` | Unit tests (validation, georeferencing) + Playwright offline test |
 | `.github/workflows/` | Deploy on push; scheduled/manual content rebuild (which invokes no npm, by design) |

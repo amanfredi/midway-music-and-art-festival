@@ -104,7 +104,7 @@ describe("pull request runs", () => {
       "the deploy job must never run for a pull_request event"
     );
     const testJob = code(DEPLOY).slice(code(DEPLOY).indexOf("\n  test:"), code(DEPLOY).indexOf("\n  deploy:"));
-    const mailStep = around(testJob, "notify-failure.mjs", 12).join("\n");
+    const mailStep = around(testJob, "notify.mjs failure", 12).join("\n");
     assert.match(
       mailStep,
       /if: failure\(\) && github\.event_name != 'pull_request'/,
@@ -115,10 +115,10 @@ describe("pull request runs", () => {
 
 describe("the snapshot refresh", () => {
   test("is carried by both publishing paths, best-effort, with [skip ci]", () => {
-    // Deploy assembles its flags in shell (it has three checkboxes to honour),
+    // Deploy assembles its flags in shell (it still has a checkbox to honour),
     // so the two files spell the same intent differently.
     assert.match(code(REBUILD), /node scripts\/build\.mjs --write-snapshot/, "the rebuild must refresh the snapshot");
-    assert.match(code(DEPLOY), /flags="\$flags --write-snapshot"/, "the deploy must refresh the snapshot");
+    assert.match(code(DEPLOY), /flags="--write-snapshot"/, "the deploy must refresh the snapshot");
     for (const [name, text] of [["deploy.yml", DEPLOY], ["rebuild-content.yml", REBUILD]]) {
       assert.match(code(text), /git commit -m "refresh content snapshot \[skip ci\]"/, `${name} must commit it`);
       assert.match(code(text), /git push origin HEAD:main \|\| echo/, `${name}'s push must not fail the run`);
@@ -177,41 +177,65 @@ describe("the npm-down mitigations", () => {
   });
 });
 
-describe("skip_invalid_rows", () => {
-  test("exists as a dispatch input, and reaches the build only when it is set", () => {
-    assert.match(code(DEPLOY), /skip_invalid_rows:\n\s+description:.*\n\s+type: boolean\n\s+default: false/);
-    assert.match(code(DEPLOY), /SKIP_INVALID_ROWS: \$\{\{ inputs\.skip_invalid_rows \}\}/);
-    assert.match(code(DEPLOY), /if \[ "\$SKIP_INVALID_ROWS" = "true" \]; then\n\s+flags="\$flags --skip-invalid-rows"/);
-    // A push cannot set inputs, so the normal path is untouched by this.
-    assert.doesNotMatch(code(DEPLOY), /--skip-invalid-rows(?!"\n)/);
+describe("invalid rows are left out, not opted out of", () => {
+  test("neither workflow offers a choice about it", () => {
+    // The dispatch checkbox this replaced, and both spellings of the flags it
+    // used: leaving a bad row out is what a build does now, and --strict is a
+    // local check rather than something CI runs.
+    for (const [name, text] of [["deploy.yml", DEPLOY], ["rebuild-content.yml", REBUILD]]) {
+      assert.doesNotMatch(text, /skip_invalid_rows/, `${name} must not carry the old dispatch input`);
+      assert.doesNotMatch(code(text), /--skip-invalid-rows/, `${name} must not pass the removed flag`);
+      assert.doesNotMatch(code(text), /--strict/, `${name} must not build in strict mode`);
+    }
   });
 
-  test("never refreshes the snapshot on the same run", () => {
-    // The snapshot is what --use-snapshot spends on the assumption that
-    // everything in it once validated in full. build.mjs refuses the two flags
-    // together; this pins the workflow to the else-branch that makes that
-    // refusal unreachable rather than a way to fail a deploy.
-    const build = around(DEPLOY, "node scripts/build.mjs", 20).join("\n");
-    assert.match(build, /flags="\$flags --skip-invalid-rows"\n[\s\S]*?else\n\s+flags="\$flags --write-snapshot"/);
+  test("both paths refresh the snapshot, unconditionally", () => {
+    // It holds the bytes each publish was made from, bad rows and all — the
+    // outage fallback and the cron's change detector both read it, and freezing
+    // it over one bad cell would rot both.
+    assert.match(code(DEPLOY), /flags="--write-snapshot"/);
+    assert.doesNotMatch(code(DEPLOY), /if .*--write-snapshot/);
+    assert.match(code(REBUILD), /node scripts\/build\.mjs --write-snapshot/);
   });
 
-  test("says in the run itself what was left out", () => {
-    assert.match(code(DEPLOY), /::warning title=Published without/);
-    assert.match(code(DEPLOY), /droppedRows/);
-    // The rows are quoted spreadsheet cells; a newline in one must not forge
-    // extra log lines, the same rule the build log follows.
-    const step = around(DEPLOY, "::warning title=Published without", 8).join("\n");
-    assert.match(step, /replace\(\/\\s\+\/g, " "\)/, "cell text must be flattened before it reaches the log");
+  test("both paths say in the run itself what was left out", () => {
+    for (const [name, text] of [["deploy.yml", DEPLOY], ["rebuild-content.yml", REBUILD]]) {
+      assert.match(code(text), /::warning title=Published without/, `${name} must warn on the run`);
+      assert.match(code(text), /droppedRows/, `${name} must read the dropped rows from the report`);
+      // The rows are quoted spreadsheet cells; a newline in one must not forge
+      // extra log lines, the same rule the build log follows.
+      const step = around(text, "::warning title=Published without", 8).join("\n");
+      assert.match(step, /replace\(\/\\s\+\/g, " "\)/, `${name} must flatten cell text before it reaches the log`);
+    }
   });
 
-  test("is not offered on the cron rebuild, which nobody is watching", () => {
-    assert.doesNotMatch(code(REBUILD), /skip-invalid-rows/);
+  test("both paths email the rows after the site is actually published", () => {
+    for (const [name, text] of [["deploy.yml", DEPLOY], ["rebuild-content.yml", REBUILD]]) {
+      const executable = code(text);
+      const deployAt = executable.indexOf("actions/deploy-pages@");
+      const mailAt = executable.indexOf("notify.mjs skipped-rows");
+      assert.ok(mailAt > deployAt && deployAt !== -1, `${name} must mail the rows after deploy-pages, not before`);
+      const step = around(text, "notify.mjs skipped-rows", 20).join("\n");
+      assert.match(step, /name: Email the skipped rows/, `${name} must name the step`);
+      // Unlike the failure mail: this one runs on a green publish, and a red
+      // step here would decline every cron rebuild until the next green Deploy.
+      assert.match(step, /continue-on-error: true/, `${name}'s skipped-rows mail must not redden a good publish`);
+      assert.match(step, /FASTMAIL_USER: \$\{\{ secrets\.FASTMAIL_USER \|\| vars\.FASTMAIL_USER \}\}/);
+      assert.match(step, /CONTENT_NOTIFICATION_EMAIL: \$\{\{ secrets\.CONTENT_NOTIFICATION_EMAIL \|\| vars\.CONTENT_NOTIFICATION_EMAIL \}\}/);
+    }
+    assert.match(around(DEPLOY, "notify.mjs skipped-rows", 20).join("\n"), /if: success\(\)/);
+    assert.match(
+      around(REBUILD, "notify.mjs skipped-rows", 20).join("\n"),
+      /if: \$\{\{ steps\.build\.outputs\.changed == 'true' \}\}/
+    );
   });
 });
 
 describe("failure email", () => {
   test("every job that can fail sends one, and only on failure", () => {
-    const steps = [...around(DEPLOY, "notify-failure.mjs", 10), ...around(REBUILD, "notify-failure.mjs", 10)];
+    // One script, two modes: `failure` is this one, `skipped-rows` is the mail
+    // a green publish sends.
+    const steps = [...around(DEPLOY, "notify.mjs failure", 10), ...around(REBUILD, "notify.mjs failure", 10)];
     assert.equal(steps.length, 3, "both deploy jobs and the rebuild job must notify");
     for (const step of steps) {
       assert.match(step, /if: failure\(\)/, "the mail step must run only on failure");

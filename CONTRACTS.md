@@ -16,7 +16,7 @@ content/
                         # remote source, and the only thing --use-snapshot will build from
 .github/scripts/
   content-gate.mjs      # may the content-only rebuild publish? (last Deploy run green + nothing publishable changed since)
-  notify-failure.mjs    # emails a failed run via Fastmail SMTP; best-effort, never fails a run
+  notify.mjs            # emails a failed run, or a publish that left invalid rows out, via Fastmail SMTP
 scripts/
   build.mjs             # CSV -> validated site/data/content.json + copies logos and pin marks
   build-sw.mjs          # generates site/sw.js from scripts/sw.template.js (precache list + version)
@@ -90,13 +90,21 @@ literal `null` opts a section out.
 
 ## content/snapshot/ (build output, emergency build input)
 
-The bytes of every resource the build fetched over the network, so a code
-deploy can still ship while those sources are unreachable. Written by
-`build.mjs --write-snapshot` **after** a build fully succeeds, so it can only
-ever hold content that passed validation; read only by `build.mjs
---use-snapshot`, and then only for a resource that could not be reached. A build
-that skipped invalid rows never writes it — `--write-snapshot` and
-`--skip-invalid-rows` are refused together.
+The bytes of every remote source a build **published** from, so a code deploy
+can still ship while those sources are unreachable. Written by `build.mjs
+--write-snapshot` after the build succeeds — meaning the structural checks
+passed and every non-null source kept at least one valid row — and read only by
+`build.mjs --use-snapshot`, and then only for a resource that could not be
+reached.
+
+It holds the bytes, not a verdict on them: a run that left invalid rows out
+still writes it, and a later `--use-snapshot` build of those bytes leaves the
+same rows out and reports them again. Nothing a validator has not approved ever
+reaches `content.json` on either path. The alternative — freezing the snapshot
+whenever any row was bad — would break the two jobs it does: the cron detects
+change by diffing this directory, so every 6-hourly rebuild would see a
+difference, republish and re-notify, and the outage fallback would go stale
+exactly while several people are editing the sheet.
 
 ```
 content/snapshot/
@@ -290,9 +298,9 @@ neither is a build error.
   - **Required exactly when the sponsor draws a featured pin** — featured tier
     AND a `location`. Missing is a build error naming the path looked for, in
     the shape of the missing-logo error, because a featured pin with nothing in
-    it silently degrades a paying sponsor's presence. Under
-    `--skip-invalid-rows` the sponsor is **dropped as a whole row** rather than
-    published without its mark — see that section below.
+    it silently degrades a paying sponsor's presence. By default the sponsor is
+    **left out as a whole row** rather than published without its mark; under
+    `--strict` it stops the build — see that section below.
   - A mark for any other sponsor is **ignored with a report line**, not an
     error. It is not wrong, only inert, and it goes live the day the sheet
     changes that row's tier or location.
@@ -337,13 +345,15 @@ it; `you_are_here_enabled` must be exactly `true` or `false`:
 
 ## Validation (build.mjs)
 
-Any violation **fails the build (exit 1)** with messages a non-programmer can
-act on. Format: `events.csv row 14 ("Sunset Set"): venue_id "blue-moon" doesn't
-match any venue in the venues tab.` Row numbers are spreadsheet rows (header =
-row 1). Structural problems — a source that wouldn't load, a header missing,
-misspelling, or double-naming a known column, a tab with no data rows — are
-reported together and stop the build before row checks run, because every row
-message downstream of them is a misreading of the file. Row checks: required fields, duplicate ids, unknown venue_id references,
+Every violation is reported with a message a non-programmer can act on. Format:
+`events.csv row 14 ("Sunset Set"): venue_id "blue-moon" doesn't match any venue
+in the venues tab.` Row numbers are spreadsheet rows (header = row 1).
+Structural problems — a source that wouldn't load, a header missing,
+misspelling, or double-naming a known column, a tab with no data rows — **fail
+the build (exit 1)**, and are reported together and stop it before row checks
+run, because every row message downstream of them is a misreading of the file.
+A row-level violation costs its row rather than the build; see the section
+below. Row checks: required fields, duplicate ids, unknown venue_id references,
 date/time format and calendar validity, `end_time` equal to `start_time`,
 `location` parseable (decimal pair or plus code) and resolving inside the
 source's bbox — venues/vendors: the festival box [44.94..44.98,
@@ -356,21 +366,23 @@ that draws a featured pin (including an SVG mark with no explicit
 `width`/`height`), a non-blank `sponsors.logo` cell. Collect ALL
 errors, then print all and exit — never stop at the first.
 
-### --skip-invalid-rows (deliberate partial publish)
+### Invalid rows are left out by default (`--strict` to refuse)
 
-`build.mjs --skip-invalid-rows` publishes the rows that validate and leaves out
-the ones that don't, instead of failing. It exists for the case where a bad cell
-in the sheet is holding up a deploy that has to go out, and it is only ever
-reached by dispatching Deploy with `skip_invalid_rows` ticked — a push cannot
-set it, and the cron rebuild does not offer it.
+A row that fails validation is left out of the published output and reported;
+the rows that validate are published. Several people enter data into the sheet
+and mistakes are constant, so one bad cell holding the whole site — and every
+6-hourly rebuild after it — costs more than shipping the guide without that row.
+`build.mjs --strict` is the opposite bargain: any validation error stops the
+build, exit 1, nothing written. It is what a local check before the festival
+runs, not something CI passes.
 
-Binding rules:
+Binding rules, all of them for the default:
 
 - **Rows only.** Everything the section above calls structural still fails the
-  build: a source that wouldn't load, a header missing, misspelling, or
-  double-naming a known column, a tab with no data rows, an unreachable source,
-  a bad config. A row is skippable; a file is not, and an outage is
-  `--use-snapshot`'s problem rather than this flag's.
+  build in both modes: a source that wouldn't load, a header missing,
+  misspelling, or double-naming a known column, a tab with no data rows, an
+  unreachable source, a bad config. A row is skippable; a file is not, and an
+  outage is `--use-snapshot`'s problem rather than this behaviour's.
 - **What is published has been validated as it stands.** Each validator runs
   again over the surviving rows, and any error from that second pass fails the
   build. Nothing reaches `content.json` that a validator has not approved.
@@ -378,31 +390,36 @@ Binding rules:
   venues that survived, so the foreign key holds in the published output.
 - **A source cannot be emptied this way.** If every row of a source fails, the
   build stops with the same reasoning as an emptied tab: an empty guide over a
-  working one is exactly as bad however the tab was emptied.
+  working one is exactly as bad however the tab was emptied. The judgement is
+  **per source** — another tab still having rows is no reason to publish this
+  one empty.
 - **A bad logo costs the logo, not the row.** A sponsor whose logo fails
   validation is published with a blank `logo`, including where the tier would
-  have required one — the single place this mode ships a row the strict build
-  would refuse.
+  have required one — the single place the default ships a row `--strict` would
+  refuse.
 - **A bad pin mark costs the whole row**, where a bad logo costs only the logo
   (ruled 2026-09-05). The asymmetry is the point: a sponsor without a wordmark
   renders as a name, which the app handles, but a featured sponsor without a
   mark renders as an empty red square in the middle of the map — publishing
-  that is exactly what the mark rule exists to prevent, and blocking the deploy
-  is not what this flag is for. So the row is dropped and reported by name, like
-  any other row this mode cannot publish. That applies to **every** way a
-  required mark can fail: missing, ambiguous, over the cap, scripted, or an SVG
-  with no explicit `width`/`height`. A `-pin` file for a sponsor that does not
-  need one stays a report line and drops nothing. Without the flag, all of these
-  stop the build as before.
+  that is exactly what the mark rule exists to prevent, and stopping the deploy
+  over one row is not what the default is for. So the row is dropped and
+  reported by name, like any other row that cannot be published. That applies
+  to **every** way a required mark can fail: missing, ambiguous, over the cap,
+  scripted, or an SVG with no explicit `width`/`height`. A `-pin` file for a
+  sponsor that does not need one stays a report line and drops nothing. A row
+  dropped for its mark takes any complaint about its logo with it, since that
+  sponsor is not being published at all. Under `--strict`, all of these stop the
+  build.
 - If dropping the mark failures would leave the sponsors tab with no rows at
   all, the build stops instead — the same refusal an all-rows-invalid source
   gets, for the same reason.
-- **Never `--write-snapshot`.** The two flags are refused together (exit 1). The
-  snapshot's whole value is that everything in it once passed in full.
+- **The snapshot is written anyway.** `--write-snapshot` and a run that left
+  rows out are deliberately compatible; see the snapshot contract above for why
+  freezing it would cost more than it protects.
 - Output stays deterministic: identical sources and identical flags produce a
   byte-identical `content.json`. `version` still hashes the raw source bytes, so
-  a partial publish shares its version with the strict build of the same bytes —
-  which is safe only because that strict build cannot succeed.
+  a partial publish shares its version with the `--strict` build of the same
+  bytes — which is safe only because that strict build cannot succeed.
 
 ### Failure report (build.mjs --report, CI input)
 
@@ -419,23 +436,46 @@ are a contract:
 }
 ```
 
-- `validation` — somebody's spreadsheet edit: a bad cell, a renamed header, an
-  emptied tab, a 4xx or sign-in page from a publish link. Emailed to the
-  organizers as well as the operator, because it is their edit and their fix.
+- `validation` — somebody's spreadsheet edit that the build cannot publish
+  around: a renamed header, an emptied tab, a tab with no valid rows left at
+  all, a 4xx or sign-in page from a publish link. (A single bad cell is left out
+  and reported instead — see above.) Emailed to the organizers as well as the
+  operator, because it is their edit and their fix.
 - `network` — nobody's edit: a source that could not be reached, or that 5xx'd
   on every attempt. Operator only.
 - `config` — a source path or config file the build could not use. Operator only.
 
-On a successful build the report also carries `skipInvalidRows` (whether the
-flag was set) and `droppedRows`: one `{ source, rowNum, message, logoOnly? }`
-entry per row left out, in the order the build found them. It is what the run's
-"Published without N invalid row(s)" warning and job summary are built from, and
-it is empty on every normal build.
+On a successful build the report also carries `strict` (whether the build
+refused to publish around anything) and `droppedRows`: one
+`{ source, rowNum, message, logoOnly? }` entry per row left out, in the order
+the build found them. It is what the run's "Published without N invalid row(s)"
+warning, job summary and email are built from, and it is empty on every clean
+build.
 
 `snapshot.used` carries one entry per resource served from the snapshot
 (`{ id, label, url, lastChanged }`); it is what the run's staleness warning and
 job summary are built from. `snapshot.changed` is non-empty exactly when the
 snapshot directory was modified.
+
+### Notifications (.github/scripts/notify.mjs, CI output)
+
+One script, two modes, both reading the report above and sending over the same
+curl/SMTP path.
+
+- `notify.mjs failure` — unchanged: every failed run reaches the operator, and
+  the `validation` class reaches the organizers too. Runs under `if: failure()`,
+  and an email that did not go out exits 1 so the alarm's own failure is visible.
+- `notify.mjs skipped-rows` — runs after a publish and mails the rows that
+  publish left out, to the deploy list **and** the content list (it is the
+  organizers' edit and their fix). Subject:
+  `[Midway site] Published without N invalid row(s)`. It sends **only** when
+  `droppedRows` is non-empty **and** `snapshot.changed` is non-empty — a source
+  changed since the last publish. Otherwise it says why and exits 0: without
+  that gate every code push and every 6-hourly cron would re-mail the same
+  unfixed rows. A snapshot commit that failed to push can cost one repeat, which
+  is the accepted price. The step is `continue-on-error: true`, so an unsent
+  email exits 1 **and** prints an `::error` annotation rather than reddening a
+  run that published fine.
 
 ## site/data/content.json (build output, UI input)
 

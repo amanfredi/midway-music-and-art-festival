@@ -381,8 +381,11 @@ describe("failure report", () => {
   });
 
   test("a bad row is a validation failure and a dead host is a network failure", async () => {
+    // --strict, because the default build leaves a bad row out and publishes
+    // the rest: the classes exist to route what stopped a run, and a row no
+    // longer stops one by itself.
     const badRow = makeFixtureSet(TMP_ROOT, "bad-row", [setCell("events.csv", 2, "date", "October 2, 2026")]);
-    const rowResult = await runBuild(badRow);
+    const rowResult = await runBuild(badRow, { flags: ["--strict"] });
     assert.notEqual(rowResult.status, 0);
     assert.deepEqual(rowResult.report.failureClasses, ["validation"]);
     assert.equal(rowResult.report.failures[0].source, "events");

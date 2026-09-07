@@ -4,8 +4,10 @@
 //  - the committed good fixtures build successfully into a content.json that
 //    matches the CONTRACTS.md schema shape, sort order, and version format.
 //  - a deliberately broken copy of those fixtures (one mutated cell per case,
-//    see tests/fixture-sets.mjs) makes the build fail (non-zero exit) with a
-//    human-readable message that names the offending file, row, and value.
+//    see tests/fixture-sets.mjs) is judged in both modes: under --strict it
+//    fails the build (non-zero exit) with a human-readable message that names
+//    the offending file, row, and value, and by default it publishes the rest
+//    of the sheet and reports the same message against the row it left out.
 
 import { after, afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -51,6 +53,16 @@ function runBuild(configPath, extraArgs = []) {
     encoding: "utf8",
   });
   return Object.assign(result, { outDir, contentPath: path.join(outDir, "data/content.json") });
+}
+
+/**
+ * Runs the build in the mode that stops on any validation error. The default
+ * build leaves a bad row out and publishes the rest (see "invalid rows are left
+ * out by default" below), so a test about the message one bad cell produces has
+ * to ask for the mode that refuses to publish around it.
+ */
+function runStrictBuild(configPath, extraArgs = []) {
+  return runBuild(configPath, ["--strict", ...extraArgs]);
 }
 
 /**
@@ -105,6 +117,10 @@ async function withLocalServer(routes, run) {
 // Hermetic all-local config: the default content/config.json points the venues
 // tab at the live Google Sheet, which tests must not depend on.
 const GOOD_CONFIG = "tests/fixtures-good/config.json";
+
+// The content.json keys that are lists of rows — settings is a single object,
+// so nothing counts rows in it.
+const LIST_SOURCES = ["venues", "events", "vendors", "sponsors"];
 
 const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
@@ -379,7 +395,7 @@ describe("sheet-native formats", () => {
     // Blank is how you ask for the default; equal is still the ambiguity it
     // always was.
     const config = makeFixtureSet(TMP_ROOT, "equal-times", [setCell("events.csv", strays, "end_time", "17:00")]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "equal start and end times should still fail");
     assert.match(result.stderr, /must differ from start_time/);
   });
@@ -430,7 +446,10 @@ describe("sheet-native formats", () => {
 
 describe("bad fixtures", () => {
   // Each case is the good fixtures with one cell changed, named for the mistake
-  // a coordinator would have made in the spreadsheet.
+  // a coordinator would have made in the spreadsheet. Every one of them is a
+  // row-level mistake, so each is judged twice: --strict must refuse to publish
+  // and say why, and the default build must publish the rest of the sheet and
+  // report the same complaint against the row it left out.
   const cases = [
     {
       name: "venue_id pointing at no venue",
@@ -494,6 +513,10 @@ describe("bad fixtures", () => {
       name: "a required logo with no file named for the sponsor",
       mutations: [setCell("sponsors.csv", 2, "id", "shortline-credit-onion")],
       mustInclude: ["sponsors.csv", "row 2", "content/logos/shortline-credit-onion.svg"],
+      // Renaming the id orphans this sponsor's pin mark as well as its logo,
+      // and a missing mark costs the whole row rather than the picture — so the
+      // default build leaves the sponsor out and names the mark it looked for.
+      defaultInclude: ["sponsors.csv", "row 2", "content/logos/shortline-credit-onion-pin.svg"],
     },
     {
       name: "tickets value outside the enum",
@@ -533,10 +556,11 @@ describe("bad fixtures", () => {
   ];
 
   for (const { name, mutations, mustInclude } of cases) {
-    test(`${name} fails the build with a readable, actionable error`, () => {
+    test(`${name} stops a --strict build with a readable, actionable error`, () => {
       const config = makeFixtureSet(TMP_ROOT, `bad-${slug(name)}`, mutations);
-      const result = runBuild(config);
+      const result = runStrictBuild(config);
       assert.notEqual(result.status, 0, `expected a non-zero exit for "${name}"`);
+      assert.ok(!existsSync(result.contentPath), `"${name}" published a content.json under --strict`);
       for (const needle of mustInclude) {
         assert.ok(
           result.stderr.includes(needle),
@@ -549,6 +573,51 @@ describe("bad fixtures", () => {
         `"${name}" stderr should read as a message, not a stack trace`
       );
       assert.ok(!result.stderr.includes("undefined"), `"${name}" stderr should not contain "undefined"`);
+    });
+  }
+
+  // The default: the sheet's good rows still reach phones, and the bad one is
+  // named in the log and in the report the run's email and job summary read.
+  const goodCounts = () => {
+    const content = JSON.parse(readFileSync(runBuild(GOOD_CONFIG).contentPath, "utf8"));
+    return Object.fromEntries(LIST_SOURCES.map((key) => [key, content[key].length]));
+  };
+
+  for (const { name, mutations, mustInclude, defaultInclude } of cases) {
+    test(`${name} is left out of a default build, which publishes the rest`, () => {
+      const config = makeFixtureSet(TMP_ROOT, `left-out-${slug(name)}`, mutations);
+      const reportPath = path.join(TMP_ROOT, `left-out-${slug(name)}.json`);
+      const result = runBuild(config, ["--report", reportPath]);
+      assert.equal(result.status, 0, `expected a published build for "${name}"\n${result.stderr}`);
+
+      const dropped = JSON.parse(readFileSync(reportPath, "utf8")).droppedRows;
+      assert.ok(dropped.length > 0, `"${name}" published without reporting a dropped row`);
+
+      // The rows really are gone from the output: every source is short by
+      // exactly the number of rows the report says were left out of it, and no
+      // source grew.
+      const before = goodCounts();
+      const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+      for (const key of LIST_SOURCES) {
+        const lost = dropped.filter((row) => row.source === key && !row.logoOnly).length;
+        assert.equal(content[key].length, before[key] - lost, `"${name}" left the wrong number of ${key} out`);
+      }
+
+      // ...and the complaint survives: same text in the build log and in the
+      // report entry for the row it belongs to.
+      const needles = defaultInclude ?? mustInclude;
+      const entry = dropped.find((row) => needles.every((needle) => row.message.includes(needle)));
+      assert.ok(
+        entry,
+        `expected a dropped-row entry for "${name}" mentioning ${JSON.stringify(needles)}\n${JSON.stringify(dropped, null, 2)}`
+      );
+      assert.match(result.stdout, /LEFT OUT \d+ invalid row\(s\)/);
+      for (const needle of needles) {
+        assert.ok(
+          result.stdout.includes(needle),
+          `expected the build log for "${name}" to mention ${JSON.stringify(needle)}\n--- stdout ---\n${result.stdout}`
+        );
+      }
     });
   }
 });
@@ -575,7 +644,7 @@ describe("sponsor locations", () => {
     const config = makeFixtureSet(TMP_ROOT, "venue-across-town", [
       setCell("venues.csv", 2, "location", "XW56+CH St Paul, Minnesota"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a venue across town should still fail the build");
     assert.ok(result.stderr.includes("the festival area"), `stderr should name the festival box:\n${result.stderr}`);
   });
@@ -818,7 +887,7 @@ describe("sponsor logos", () => {
     const config = makeFixtureSet(TMP_ROOT, "logo-missing", [
       setCell("sponsors.csv", 2, "id", "shortline-credit-onion"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a required logo with no file should fail the build");
     assert.ok(
       result.stderr.includes("content/logos/shortline-credit-onion.svg"),
@@ -843,7 +912,7 @@ describe("sponsor logos", () => {
     const config = makeFixtureSet(TMP_ROOT, "logo-ambiguous", [setCell("sponsors.csv", 2, "id", "logo-case-both")]);
     plantLogo("logo-case-both.svg", CLEAN_SVG);
     plantLogo("logo-case-both.png", Buffer.from("not really a png"));
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "an ambiguous logo should fail the build");
     assert.match(result.stderr, /2 logo files/);
     assert.ok(
@@ -876,7 +945,7 @@ describe("sponsor logos", () => {
     // The live sheet keeps a logo column as a notes column. Somebody typing a
     // filename into it means it to be used, and silence would strand the logo.
     const config = makeFixtureSet(TMP_ROOT, "logo-cell", [setCell("sponsors.csv", 2, "logo", "our-wordmark.svg")]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a filename in the logo column should fail the build");
     assert.match(result.stderr, /sponsors\.csv row 2/);
     assert.ok(result.stderr.includes("our-wordmark.svg"), result.stderr);
@@ -886,7 +955,7 @@ describe("sponsor logos", () => {
   test("an oversized logo is rejected with the limit in the message", () => {
     const config = makeFixtureSet(TMP_ROOT, "logo-huge", [setCell("sponsors.csv", 2, "id", "logo-case-huge")]);
     plantLogo("logo-case-huge.png", Buffer.alloc(600 * 1024, 7));
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "an oversized logo should fail the build");
     assert.match(result.stderr, /512 KB/);
     assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
@@ -912,7 +981,7 @@ describe("sponsor logos", () => {
       const id = `logo-svg-${slug(label)}`;
       const config = makeFixtureSet(TMP_ROOT, id, [setCell("sponsors.csv", 2, "id", id)]);
       plantLogo(`${id}.svg`, body);
-      const result = runBuild(config);
+      const result = runStrictBuild(config);
       assert.notEqual(result.status, 0, `an SVG with ${label} should fail the build`);
       assert.ok(result.stderr.includes(EMERALD_SPONSOR), `error should name the sponsor row\n${result.stderr}`);
       assert.match(result.stderr, /can run code/);
@@ -947,7 +1016,7 @@ describe("sponsor logos", () => {
       const config = makeFixtureSet(TMP_ROOT, `logo-path-${slug(escape)}`, [
         setCell("sponsors.csv", 2, "id", escape),
       ]);
-      const result = runBuild(config);
+      const result = runStrictBuild(config);
       assert.notEqual(result.status, 0, `${escape} should fail the build`);
       // The build looked inside content/logos/ for a slugified name, and never
       // outside it.
@@ -1042,7 +1111,7 @@ describe("sponsor pin marks", () => {
     const config = makeFixtureSet(TMP_ROOT, "mark-missing", [
       setCell("sponsors.csv", sponsorRow("daily-trim-barbershop"), "tier", "sapphire"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a featured sponsor with no mark should fail the build");
     assert.ok(
       result.stderr.includes("content/logos/daily-trim-barbershop-pin.svg"),
@@ -1068,7 +1137,7 @@ describe("sponsor pin marks", () => {
     const config = asFreshSponsor("mark-ambiguous", EMERALD_ROW, "mark-case-both");
     plant("mark-case-both-pin.svg", MARK_SVG());
     plant("mark-case-both-pin.png", pngBytes(256, 256));
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "an ambiguous mark should fail the build");
     assert.match(result.stderr, /2 pin mark files/);
     assert.ok(
@@ -1080,7 +1149,7 @@ describe("sponsor pin marks", () => {
   test("an oversized mark is rejected with the limit in the message", () => {
     const config = asFreshSponsor("mark-huge", EMERALD_ROW, "mark-case-huge");
     plant("mark-case-huge-pin.png", Buffer.concat([pngBytes(256, 256), Buffer.alloc(80 * 1024, 7)]));
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "an oversized mark should fail the build");
     assert.match(result.stderr, /64 KB/);
     assert.ok(result.stderr.includes("Shortline Credit Union"), `error should name the sponsor row\n${result.stderr}`);
@@ -1092,7 +1161,7 @@ describe("sponsor pin marks", () => {
       "mark-case-script-pin.svg",
       `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><script>fetch('/steal')</script></svg>`
     );
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "an SVG mark with a script should fail the build");
     assert.match(result.stderr, /can run code/);
     assert.ok(result.stderr.includes("Shortline Credit Union"), `error should name the sponsor row\n${result.stderr}`);
@@ -1111,7 +1180,7 @@ describe("sponsor pin marks", () => {
       const id = `mark-case-${slug(label)}`;
       const config = asFreshSponsor(`mark-${slug(label)}`, EMERALD_ROW, id);
       plant(`${id}-pin.svg`, MARK_SVG(attrs));
-      const result = runBuild(config);
+      const result = runStrictBuild(config);
       assert.notEqual(result.status, 0, `an SVG mark with ${label} should fail the build`);
       assert.match(result.stderr, /explicit width and height/);
       assert.match(result.stderr, /Safari/);
@@ -1211,7 +1280,7 @@ describe("settings", () => {
     const config = makeFixtureSet(TMP_ROOT, "settings-typo", [
       setCell("settings.csv", settingRow("you_are_here_enabled"), "key", "you_are_here_enabld"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "an unknown settings key should fail the build");
     assert.match(result.stderr, /unknown setting "you_are_here_enabld"/);
   });
@@ -1220,7 +1289,7 @@ describe("settings", () => {
     const config = makeFixtureSet(TMP_ROOT, "settings-value", [
       setCell("settings.csv", settingRow("you_are_here_enabled"), "value", "yes"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a non-boolean value should fail the build");
     assert.match(result.stderr, /must be exactly true or false/);
   });
@@ -1241,7 +1310,7 @@ describe("settings", () => {
     const config = makeFixtureSet(TMP_ROOT, "settings-url", [
       setCell("settings.csv", settingRow("donation_url"), "value", "javascript:alert(1)"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a javascript: donate link should fail the build");
     assert.match(result.stderr, /only https, http, and mailto/);
   });
@@ -1250,7 +1319,7 @@ describe("settings", () => {
 describe("url fields", () => {
   test("a sponsor link with a script scheme fails the build", () => {
     const config = makeFixtureSet(TMP_ROOT, "sponsor-url", [setCell("sponsors.csv", 2, "url", "javascript:alert(1)")]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a javascript: sponsor link should fail the build");
     assert.match(result.stderr, /sponsors\.csv row 2/);
     assert.match(result.stderr, /only https, http, and mailto/);
@@ -1269,7 +1338,7 @@ describe("url fields", () => {
 
   test("a link that is neither a scheme nor a domain fails with advice", () => {
     const config = makeFixtureSet(TMP_ROOT, "venue-url", [setCell("venues.csv", 2, "url", "ask at the front desk")]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "unparseable link text should fail the build");
     assert.match(result.stderr, /venues\.csv row 2/);
     assert.match(result.stderr, /starting with "https:\/\/"/);
@@ -1290,7 +1359,7 @@ describe("url fields", () => {
     const config = makeFixtureSet(TMP_ROOT, "event-url-scheme", [
       setCell("events.csv", 2, "url", "javascript:alert(1)"),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "a javascript: event link should fail the build");
     assert.match(result.stderr, /events\.csv row 2/);
     assert.match(result.stderr, /only https, http, and mailto/);
@@ -1318,27 +1387,27 @@ describe("url fields", () => {
   });
 });
 
-describe("--skip-invalid-rows", () => {
+describe("invalid rows are left out by default", () => {
   const readContent = (result) => JSON.parse(readFileSync(result.contentPath, "utf8"));
   const good = () => readContent(runBuild(GOOD_CONFIG));
 
   test("publishes the rows that validate and leaves out the ones that don't", () => {
     const config = makeFixtureSet(TMP_ROOT, "skip-one-bad-venue", [setCell("venues.csv", 2, "address", "")]);
-    assert.notEqual(runBuild(config).status, 0, "the same sources must still fail a normal build");
+    assert.notEqual(runStrictBuild(config).status, 0, "the same sources must still stop a --strict build");
 
-    const result = runBuild(config, ["--skip-invalid-rows"]);
+    const result = runBuild(config);
     assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
     const content = readContent(result);
     assert.equal(content.venues.length, good().venues.length - 1, "exactly the bad venue should be missing");
     assert.ok(
-      result.stdout.includes("SKIPPED") && result.stdout.includes("venues.csv row 2"),
+      result.stdout.includes("LEFT OUT") && result.stdout.includes("venues.csv row 2"),
       `the run must say what it left out\n${result.stdout}`
     );
   });
 
   test("drops the events a dropped venue leaves stranded", () => {
     const config = makeFixtureSet(TMP_ROOT, "skip-venue-with-events", [setCell("venues.csv", 2, "address", "")]);
-    const content = readContent(runBuild(config, ["--skip-invalid-rows"]));
+    const content = readContent(runBuild(config));
     const droppedVenue = good().venues[0].id;
     assert.ok(
       good().events.some((e) => e.venue_id === droppedVenue),
@@ -1362,10 +1431,23 @@ describe("--skip-invalid-rows", () => {
     const emptyEveryLocation = rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "location", ""));
     const config = makeFixtureSet(TMP_ROOT, "skip-every-row-bad", emptyEveryLocation);
 
-    const result = runBuild(config, ["--skip-invalid-rows"]);
+    const result = runBuild(config);
     assert.notEqual(result.status, 0, "emptying a tab one bad row at a time must fail like an emptied tab");
     assert.match(result.stderr, /every data row failed validation/);
     assert.ok(!existsSync(result.contentPath), "nothing should have been written");
+  });
+
+  test("judges 'no valid rows at all' per source, not across the sheet", () => {
+    // Another source still having rows is no reason to publish an empty tab in
+    // place of a working one.
+    const rows = parseCSV(readFileSync(path.join(REPO_ROOT, "content/fixtures/vendors.csv"), "utf8"));
+    const config = makeFixtureSet(TMP_ROOT, "skip-one-source-emptied", [
+      ...rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "location", "")),
+      setCell("events.csv", 2, "kind", "dance"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0, "a source left with no valid rows must stop the build");
+    assert.match(result.stderr, /vendors\.csv: every data row failed validation/);
   });
 
   test("keeps a sponsor whose logo is the only thing wrong, minus the logo", () => {
@@ -1374,9 +1456,9 @@ describe("--skip-invalid-rows", () => {
     const config = makeFixtureSet(TMP_ROOT, "skip-bad-logo", [
       setCell("sponsors.csv", (fields) => fields.id === "printworks-studio", "id", "printworks-studioo"),
     ]);
-    assert.notEqual(runBuild(config).status, 0, "a missing logo must still fail a normal build");
+    assert.notEqual(runStrictBuild(config).status, 0, "a missing logo must still stop a --strict build");
 
-    const result = runBuild(config, ["--skip-invalid-rows"]);
+    const result = runBuild(config);
     assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
     const content = readContent(result);
     assert.equal(content.sponsors.length, good().sponsors.length, "the sponsor keeps its place on the page");
@@ -1391,14 +1473,14 @@ describe("--skip-invalid-rows", () => {
     // the sponsor a picture on a list, which the app renders around; a MARK
     // missing would put an empty red square in the middle of the map, which is
     // the thing the mark rule exists to prevent. So the row goes the way every
-    // other unpublishable row goes here — dropped, and named in the log.
+    // other unpublishable row goes here — left out, and named in the log.
     const reportPath = path.join(TMP_ROOT, "skip-bad-mark-report.json");
     const config = makeFixtureSet(TMP_ROOT, "skip-bad-mark", [
       setCell("sponsors.csv", (fields) => fields.id === "daily-trim-barbershop", "tier", "sapphire"),
     ]);
-    assert.notEqual(runBuild(config).status, 0, "a missing mark must still fail a normal build");
+    assert.notEqual(runStrictBuild(config).status, 0, "a missing mark must still stop a --strict build");
 
-    const result = runBuild(config, ["--skip-invalid-rows", "--report", reportPath]);
+    const result = runBuild(config, ["--report", reportPath]);
     assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
     const content = readContent(result);
     assert.equal(content.sponsors.length, good().sponsors.length - 1, "exactly the mark-less sponsor should be gone");
@@ -1406,8 +1488,8 @@ describe("--skip-invalid-rows", () => {
       !content.sponsors.some((s) => s.id === "daily-trim-barbershop"),
       "the sponsor whose mark is missing must not be published at all"
     );
-    // Dropped, not "published without its mark".
-    assert.match(result.stdout, /SKIPPED 1 invalid row/);
+    // Left out, not "published without its mark".
+    assert.match(result.stdout, /LEFT OUT 1 invalid row/);
     assert.match(result.stdout, /no pin mark file/);
     assert.doesNotMatch(result.stdout, /published without its logo/);
     // Its logo goes with it rather than lingering in the precache unreferenced.
@@ -1417,6 +1499,7 @@ describe("--skip-invalid-rows", () => {
     );
 
     const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.equal(report.strict, false, "the report must say which mode published this");
     const entry = report.droppedRows.find((r) => r.source === "sponsors");
     assert.ok(entry, `the build report should carry the dropped row\n${JSON.stringify(report.droppedRows)}`);
     assert.match(entry.message, /no pin mark file/);
@@ -1467,8 +1550,8 @@ describe("--skip-invalid-rows", () => {
       plant(`${id}.svg`, markSvg); // a sound logo, so the mark is the only problem
       setup(id);
       try {
-        assert.notEqual(runBuild(config).status, 0, `${label} must still fail a normal build`);
-        const result = runBuild(config, ["--skip-invalid-rows"]);
+        assert.notEqual(runStrictBuild(config).status, 0, `${label} must still stop a --strict build`);
+        const result = runBuild(config);
         assert.equal(result.status, 0, `${label}: expected a published build\n${result.stderr}`);
         const content = readContent(result);
         assert.ok(!content.sponsors.some((s) => s.id === id), `${label}: the sponsor should have been dropped`);
@@ -1501,7 +1584,7 @@ describe("--skip-invalid-rows", () => {
     });
     try {
       const config = makeFixtureSet(TMP_ROOT, "mark-empty-tab", mutations);
-      const result = runBuild(config, ["--skip-invalid-rows"]);
+      const result = runBuild(config);
       assert.notEqual(result.status, 0, "emptying the tab one bad mark at a time must fail like an emptied tab");
       assert.match(result.stderr, /publish nothing at all in place of the live sponsors/);
       assert.ok(!existsSync(result.contentPath), "nothing should have been written");
@@ -1511,36 +1594,108 @@ describe("--skip-invalid-rows", () => {
   });
 
   test("does not treat an unreachable source as a bad row", async () => {
-    // The answer to an outage is --use-snapshot. Skipping rows must not become
-    // a second, quieter way to publish through one.
+    // The answer to an outage is --use-snapshot. Leaving rows out must not
+    // become a second, quieter way to publish through one.
     const result = await withLocalServer({}, (origin) => {
       const config = makeFixtureSet(TMP_ROOT, "skip-unreachable-source", [], {
         venues: `${origin}/gone.csv`,
       });
-      return runBuildAsync(config, ["--skip-invalid-rows"]);
+      return runBuildAsync(config);
     });
     assert.notEqual(result.status, 0, "an unreachable source must still stop the build");
     assert.match(result.stderr, /venues/);
   });
 
-  test("refuses to write the snapshot on the same run", () => {
-    const result = runBuild(GOOD_CONFIG, ["--skip-invalid-rows", "--write-snapshot"]);
-    assert.notEqual(result.status, 0, "the snapshot may only hold sources that fully validated");
-    assert.match(result.stderr, /cannot be combined/);
+  test("writes the snapshot, and a fallback build of it leaves the same rows out", async () => {
+    // The snapshot holds the bytes every published build was made from, bad
+    // rows and all: freezing it whenever one cell is wrong would rot the outage
+    // fallback exactly while the sheet is being edited, and would make every
+    // cron rebuild see "changed". Nothing a validator has not approved ships
+    // either way, because the fallback build validates the saved bytes again
+    // and leaves the same rows out.
+    const source = makeFixtureSet(TMP_ROOT, "snapshot-left-out-source", [setCell("venues.csv", 2, "address", "")]);
+    const badVenues = readFileSync(path.join(path.dirname(source), "venues.csv"), "utf8");
+    const snapshotDir = path.join(TMP_ROOT, "snapshot-left-out-dir");
+    const writeReport = path.join(TMP_ROOT, "snapshot-left-out-write.json");
+    const useReport = path.join(TMP_ROOT, "snapshot-left-out-use.json");
+
+    let config;
+    const written = await withLocalServer({ "/venues.csv": { type: "text/csv", body: badVenues } }, (origin) => {
+      config = makeFixtureSet(TMP_ROOT, "snapshot-left-out", [], { venues: `${origin}/venues.csv` });
+      return runBuildAsync(config, ["--write-snapshot", "--snapshot-dir", snapshotDir, "--report", writeReport]);
+    });
+    assert.equal(written.status, 0, `expected a published build\n${written.stderr}`);
+    assert.match(written.stdout, /LEFT OUT/);
+    assert.equal(
+      readFileSync(path.join(snapshotDir, "sources/venues.csv"), "utf8"),
+      badVenues,
+      "the snapshot must hold the bytes this build published from, bad row and all"
+    );
+    const writtenReport = JSON.parse(readFileSync(writeReport, "utf8"));
+    assert.equal(writtenReport.snapshot.written, true);
+    assert.ok(writtenReport.droppedRows.length > 0);
+
+    // The server is closed now, so the source is unreachable and the fallback
+    // reads those saved bytes.
+    const fallback = await runBuildAsync(config, [
+      "--use-snapshot",
+      "--snapshot-dir",
+      snapshotDir,
+      "--report",
+      useReport,
+    ]);
+    assert.equal(fallback.status, 0, `expected the fallback build to publish\n${fallback.stderr}`);
+    assert.match(fallback.stdout, /STALE CONTENT/);
+    const fallbackReport = JSON.parse(readFileSync(useReport, "utf8"));
+    assert.deepEqual(
+      fallbackReport.droppedRows,
+      writtenReport.droppedRows,
+      "a fallback build must leave out the same rows, and say so again"
+    );
   });
 
   test("is byte-identical on a rebuild, like every other build", () => {
     const config = makeFixtureSet(TMP_ROOT, "skip-deterministic", [setCell("venues.csv", 2, "address", "")]);
-    const first = runBuild(config, ["--skip-invalid-rows"]);
-    const second = runBuild(config, ["--skip-invalid-rows"]);
+    const first = runBuild(config);
+    const second = runBuild(config);
     assert.equal(readFileSync(first.contentPath, "utf8"), readFileSync(second.contentPath, "utf8"));
   });
 
   test("changes nothing when every row is valid", () => {
-    const skipped = runBuild(GOOD_CONFIG, ["--skip-invalid-rows"]);
-    assert.equal(skipped.status, 0);
-    assert.equal(readFileSync(skipped.contentPath, "utf8"), readFileSync(runBuild(GOOD_CONFIG).contentPath, "utf8"));
-    assert.ok(!skipped.stdout.includes("SKIPPED"), "a clean build must not claim to have skipped anything");
+    const reportPath = path.join(TMP_ROOT, "clean-report.json");
+    const result = runBuild(GOOD_CONFIG, ["--report", reportPath]);
+    assert.equal(result.status, 0);
+    assert.equal(
+      readFileSync(result.contentPath, "utf8"),
+      readFileSync(runStrictBuild(GOOD_CONFIG).contentPath, "utf8")
+    );
+    assert.ok(!result.stdout.includes("LEFT OUT"), "a clean build must not claim to have left anything out");
+    assert.deepEqual(JSON.parse(readFileSync(reportPath, "utf8")).droppedRows, []);
+  });
+
+  test("--strict publishes nothing at all over the same rows", () => {
+    const reportPath = path.join(TMP_ROOT, "strict-report.json");
+    const config = makeFixtureSet(TMP_ROOT, "strict-refuses", [
+      setCell("venues.csv", 2, "address", ""),
+      setCell("events.csv", 4, "kind", "dance"),
+    ]);
+    assert.equal(runBuild(config).status, 0, "the default build publishes around both rows");
+
+    const result = runStrictBuild(config, ["--report", reportPath]);
+    assert.notEqual(result.status, 0, "--strict must stop on a row the default build would leave out");
+    assert.ok(!existsSync(result.contentPath), "--strict must publish nothing");
+    assert.match(result.stderr, /venues\.csv row 2/);
+    assert.match(result.stderr, /events\.csv row 4/);
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.failureClasses, ["validation"]);
+  });
+
+  test("--skip-invalid-rows is no longer an option", () => {
+    // It was the opt-in this behaviour replaced. A workflow or a habit still
+    // passing it must fail loudly rather than be silently ignored.
+    const result = runBuild(GOOD_CONFIG, ["--skip-invalid-rows"]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unknown option "--skip-invalid-rows"/);
   });
 });
 
@@ -1551,7 +1706,7 @@ describe("build log", () => {
       setCell("venues.csv", 2, "name", forged),
       setCell("venues.csv", 2, "address", ""),
     ]);
-    const result = runBuild(config);
+    const result = runStrictBuild(config);
     assert.notEqual(result.status, 0, "the blank address should still fail the build");
     assert.ok(result.stderr.includes("ghost venue"), "the cell's text should still be visible in the message");
     const forgedLines = result.stderr.split("\n").filter((line) => line.trim().startsWith('- venues.csv row 99'));

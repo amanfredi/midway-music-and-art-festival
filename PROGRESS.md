@@ -49,6 +49,78 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-07 — a bad row costs the row, not the deploy
+
+Several people enter content into the sheet and mistakes are constant. Until
+today one bad cell failed the deploy and every 6-hourly rebuild after it until
+somebody found and fixed that cell; the escape was dispatching Deploy with
+`skip_invalid_rows` ticked, which only the operator can do and only while he is
+watching. The organizers asked for the opposite default: publish, leave the
+invalid rows out, say exactly which ones, and still refuse to publish nothing.
+
+That inverts the 2026-08-22 call that the cron must not offer the flag, on the
+grounds that "a cron that silently drops rows is the same silent failure in a
+new costume". The word carrying that sentence is *silently*. A row left out is
+now a warning annotation, a job-summary section, and an email to the people who
+own the cell — so the reason the cron was kept strict is the thing this change
+supplies, and the behaviour that rationale feared is not the behaviour that
+shipped.
+
+`--skip-invalid-rows` is gone; `--strict` takes its place and means what the
+build used to do — any validation error stops it, exit 1, nothing written.
+Nothing in CI passes it. It is the local check that the sheet is completely
+clean, which is worth running as the festival gets close, when "published minus
+one row" stops being good enough. Everything structural still fails in both
+modes: an unreachable source, a bad config, a renamed, missing or double-named
+header column, an emptied tab — and a source whose every data row failed, judged
+**per source**, because another tab still having rows is no reason to publish
+this one empty. The second pass over the survivors, dropped-venue-drops-its-
+events, bad-logo-costs-the-logo and bad-mark-costs-the-row are all unchanged.
+
+**The snapshot now records what a build published, not what was perfect.** The
+2026-08-22 rule refused `--write-snapshot` and skipping together, because
+`--use-snapshot` spends the snapshot on the assumption that everything in it
+once passed in full. That was affordable while skipping was a rare dispatch; as
+the default it corrodes. The snapshot is also the cron's change detector: frozen
+whenever any row is bad, every 6-hourly rebuild would diff it, see "changed",
+republish and re-notify — and the outage fallback would go stale exactly while
+several people are editing. So the contract is now the bytes of every remote
+source a build published from (structural checks passed, every non-null source
+kept at least one valid row), and the safety the old rule bought comes from a
+better place: a later `--use-snapshot` build validates those saved bytes again,
+leaves the same rows out, and reports them again. Nothing a validator has not
+approved ships on either path.
+
+**The mail is gated on a source having changed.** `notify-failure.mjs` is now
+`notify.mjs` with a mode argument, and `notify.mjs skipped-rows` runs after the
+deploy step on both publishing paths — after, so "published" is true when it
+says so. It sends only when the report carries dropped rows *and*
+`snapshot.changed` is non-empty. Without that second condition a code push and
+four cron rebuilds a day would re-mail the same unfixed rows until somebody
+fixed them, which is how an alarm turns into noise. A snapshot commit that loses
+its push race can cost one repeat; that is the accepted price for keeping the
+gate stateless.
+
+**A deliberate narrowing of the 2026-08-22 "an unsent alarm must show as a red
+step" ruling.** The skipped-rows step is `continue-on-error: true`, which the
+failure step still is not. A red Deploy run is not free here: `content-gate.mjs`
+declines every cron rebuild until the next green Deploy, so an unsent email
+would stop content reaching phones — and it would fire the failure-email step
+for a failure that is itself an unsent email. The alarm stays visible as an
+`::error` annotation the script prints itself. The ruling holds unchanged where
+it was made: on steps whose run is already red.
+
+One bug surfaced while classifying every bad-fixture case in both modes: a
+sponsor failing its logo *and* its required pin mark was dropped for the mark
+and then still failed the build on the logo, contradicting the rule it had just
+been dropped under. A row that is not being published cannot owe anyone a logo,
+so the logo complaint now goes with the row.
+
+Suite green: 224 unit + 176 Playwright. The bad-fixture table is the bulk of the
+new tests: every case is now run twice, once to prove `--strict` refuses it with
+the message it always gave, and once to prove the default publishes the rest of
+the sheet and reports the same message against the row it left out.
+
 ### 2026-09-05 — a Featured Destination looks like one
 
 Three sapphire sponsors bought the featured tier and got a pin

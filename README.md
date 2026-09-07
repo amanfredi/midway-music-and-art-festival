@@ -217,8 +217,8 @@ node scripts/build.mjs --strict --out /tmp/mmaf-strict
 ```
 
 That fetches the live sheet and exits non-zero listing every validation error it
-finds, without writing to `site/` or the snapshot. Silence means the sheet is
-clean.
+finds, without writing to `site/` or the snapshot. A run that prints no errors
+means the sheet is clean.
 
 ### A rebuild publishes nothing
 

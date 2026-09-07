@@ -54,7 +54,7 @@ Newest first.
 Several people enter content into the sheet and mistakes are constant. Until
 today one bad cell failed the deploy and every 6-hourly rebuild after it until
 somebody found and fixed that cell; the escape was dispatching Deploy with
-`skip_invalid_rows` ticked, which only the operator can do and only while he is
+`skip_invalid_rows` ticked, which only the operator can do and only while
 watching. The organizers asked for the opposite default: publish, leave the
 invalid rows out, say exactly which ones, and still refuse to publish nothing.
 

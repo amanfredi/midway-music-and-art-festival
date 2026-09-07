@@ -438,12 +438,18 @@ function main(mode) {
 }
 
 if (process.argv[1] && process.argv[1].endsWith("notify.mjs")) {
+  const mode = process.argv[2];
   try {
-    main(process.argv[2]);
+    main(mode);
   } catch (err) {
-    // A failure run is already red; a skipped-rows run is continue-on-error and
-    // has said so in an annotation.
-    console.log(`Notification could not be prepared: ${err.stack || err.message}`);
+    // A failure run is already red, so exit 1 is visible on its own. A
+    // skipped-rows run is continue-on-error, so an unexpected throw needs the
+    // same annotation giveUp prints or nothing on the run would show it.
+    const message = `Notification could not be prepared: ${err.stack || err.message}`;
+    console.log(message);
+    if (mode === "skipped-rows") {
+      console.log(`::error title=Skipped-rows email not sent::${String(message).replace(/\s+/g, " ").trim()}`);
+    }
     process.exitCode = 1;
   }
 }

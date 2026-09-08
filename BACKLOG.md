@@ -26,14 +26,15 @@ Items are not prioritized against each other. The festival is October 2–4,
   `DEPLOY_NOTIFICATION_EMAIL`, `CONTENT_NOTIFICATION_EMAIL`, `FASTMAIL_USER`
   variables (recipient lists may be comma-separated).
 
-- **The skipped-rows email** (2026-09-07) — the mail a green publish sends when
-  it left invalid rows out has never been seen arriving from a real run. It
-  needs two things at once that nobody should manufacture: a genuinely invalid
-  row in the sheet, and a change to some source since the last publish. Do not
-  break the sheet to provoke it; the next real bad row proves it. The dry-run
-  path and the send-failure path are unit-tested, and the operator config is
-  unchanged — same Fastmail secret, same two recipient variables as the failure
-  mail.
+- **The skipped-rows email** (2026-09-07) — sent for real on its first chance:
+  the Deploy run for the merge (run 34175870726, 2026-09-08 01:17 UTC) left six
+  events rows out (two missing `venue_id`, four whose `kind` holds what looks
+  like a venue id), published the other 34, refreshed the snapshot, and logged
+  "Skipped-rows email sent to 2 recipient(s)". Still owed: confirm the mail
+  arrived at both lists and reads well to a non-programmer, then decide whether
+  the wording needs a pass. The dry-run and send-failure paths are unit-tested;
+  operator config is unchanged — same Fastmail secret, same two recipient
+  variables as the failure mail.
 
 ## Decisions that need Anthony
 

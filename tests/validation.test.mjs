@@ -1026,7 +1026,7 @@ describe("sponsor logos", () => {
   });
 });
 
-// The square brand mark inside a Featured Destination pin: content/logos/
+// The square brand mark inside a Featured Sponsor pin: content/logos/
 // <id>-pin.<ext>, required exactly when the sponsor draws that pin. The rules
 // mirror the logo rules above wherever they can, and diverge only where the
 // mark's job differs — a smaller cap because it ships beside the logo, svg/png

@@ -308,7 +308,7 @@ Flagged now, priced in the audit. Ordered by how much they cost to fix later.
    satisfies both.
 
 3. **Map symbols are missing from the legend.** The legend lists exactly four
-   entries — Venue, Transit, Featured Destination, Sponsor. Drawn but absent:
+   entries — Venue, Transit, Featured Sponsor, Sponsor. Drawn but absent:
    the METRO Green Line (`#2f7d4f`) and Blue Line (`#2b5fa8`), the station
    dots, and the water. The guide permits omitting roads and water when they
    are properly labelled — the water is *not* labelled, and rail lines are a

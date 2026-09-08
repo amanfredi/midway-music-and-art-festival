@@ -316,7 +316,7 @@ test('legend swatches are the size of the pins they key', async ({ page }) => {
 });
 
 // The two shapes are one rotated from the other, and that is the claim the
-// legend makes about the hierarchy: a Featured Destination weighs what a venue
+// legend makes about the hierarchy: a Featured Sponsor weighs what a venue
 // weighs. Equal ink, not equal bounding box — the 38 px box reading would
 // double it.
 test('the featured square carries the venue diamond ink, unrotated', async ({ page }) => {

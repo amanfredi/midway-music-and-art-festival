@@ -190,7 +190,7 @@ const VENUE_R = 19;
 const PIN_BLOCK_HALF = VENUE_R / Math.SQRT2;
 const SMALL_R = 11;
 const CLUSTER_R = 17;
-// The Featured Destination pin: **the venue diamond unrotated**, 27 px. Same
+// The Featured Sponsor pin: **the venue diamond unrotated**, 27 px. Same
 // ink as a venue pin (a diamond of half-diagonal R has area 2R^2, and so does a
 // square of side R * sqrt(2)), which is the point -- a featured sponsor is as
 // important as a venue and no more, so it gets the venue pin's weight and a
@@ -805,7 +805,7 @@ function diamondImage(radius, { fill, stroke, strokeWidth = 0 }, dpr) {
 }
 
 /**
- * The Featured Destination pin: an axis-aligned square of paper, red-keylined,
+ * The Featured Sponsor pin: an axis-aligned square of paper, red-keylined,
  * carrying the sponsor's own square mark.
  *
  * `mark` is a loaded `Image` or null. Null is not an error case to be avoided —
@@ -1283,7 +1283,7 @@ export async function renderMap(container, content) {
                the same ink: same area, one rotated from the other, which is what
                the two pins are. The rect is inset 3 and stroked 2, so its outer
                edge spans the same 28 of 32 units the polygons do. -->
-          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26"></rect></svg> Featured Destination</li>
+          <li><svg class="legend-icon legend-icon--sponsor-featured" viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="3" width="26" height="26"></rect></svg> Featured Sponsor</li>
           <li><svg class="legend-icon legend-icon--sponsor-generic" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Sponsor</li>
           <li><svg class="legend-icon legend-icon--transit" viewBox="0 0 32 32" aria-hidden="true"><polygon points="16,2 30,16 16,30 2,16"></polygon></svg> Transit</li>
           <!-- The two rail lines draw at the same weight in different colors,
@@ -1649,7 +1649,7 @@ function pinnedSponsorsOf(sponsors) {
 }
 
 /**
- * The key below the map: Featured Destinations, Venues, Sponsors, in that
+ * The key below the map: Featured Sponsors, Venues, Sponsors, in that
  * order, each under a visible heading.
  *
  * It is a **map key**, so it holds exactly what the map draws: the sponsors are
@@ -1704,7 +1704,7 @@ function renderMapKeyList(container, venues, sponsors, { onVenue, onSponsor }) {
       : '';
 
   host.innerHTML = [
-    section('Featured Destinations', 'ul', 'featured-key-list', featured.map(featuredCard)),
+    section('Featured Sponsors', 'ul', 'featured-key-list', featured.map(featuredCard)),
     section('Venues', 'ol', 'venue-key-list', venues.map(venueCard)),
     section('Sponsors', 'ul', 'sponsor-key-list', generic.map(sponsorCard)),
   ].join('');
@@ -2256,7 +2256,7 @@ function addPins(
     paint: { 'icon-opacity': selectedOnly(1) },
   });
 
-  // Layer order IS paint order, lowest first: transit, featured destination,
+  // Layer order IS paint order, lowest first: transit, featured sponsor,
   // sponsor, venue -- the priority the SVG map gets from document order.
   map.addLayer({
     id: 'transit-pin',

@@ -142,14 +142,14 @@ test('a pair that only supercluster stacked still gets zoomed apart', async ({ p
 // --- The three sections ------------------------------------------------------
 
 // The list is a map KEY: it holds what the map draws, in the order the map's
-// own hierarchy puts things — Featured Destinations, Venues, Sponsors — under
+// own hierarchy puts things — Featured Sponsors, Venues, Sponsors — under
 // visible headings, because a heading only a screen reader gets is a heading
 // only some readers get.
 test('the key list is three headed sections, in map order, holding only pinned sponsors', async ({ page }) => {
   await gotoMap(page);
 
   const headings = page.locator('#map-key .view-subtitle');
-  await expect(headings).toHaveText(['Featured Destinations', 'Venues', 'Sponsors']);
+  await expect(headings).toHaveText(['Featured Sponsors', 'Venues', 'Sponsors']);
 
   // Against the engine's own source, so the list and the pins cannot disagree.
   const sponsors = await sourceFeatures(page, 'sponsors');

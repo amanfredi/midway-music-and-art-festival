@@ -1472,7 +1472,7 @@ body.is-embed .venue-key-list {
   stroke: var(--bus-route-local);
 }
 
-/* The Featured Destination pin is the venue diamond unrotated: a 27 px square
+/* The Featured Sponsor pin is the venue diamond unrotated: a 27 px square
    of the same ink (FEATURED_SIDE = round(VENUE_R * sqrt(2)) in map.js). The
    swatch carries no mark — a legend entry stands for the category, and one
    sponsor's mark inside it would read as that sponsor. */
@@ -1543,7 +1543,7 @@ body.is-embed .venue-key-list {
   dominant-baseline: central;
 }
 
-/* Sponsor cards, in the Featured Destinations and Sponsors sections of the key.
+/* Sponsor cards, in the Featured Sponsors and Sponsors sections of the key.
    Same card as a venue's, different thing in the slot the numbered diamond
    occupies: the sponsor's own mark, or the small red diamond its pin draws. */
 .sponsor-key-btn__mark,

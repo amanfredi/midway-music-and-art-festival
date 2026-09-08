@@ -116,7 +116,7 @@ const DEFAULT_EVENT_MINUTES = 60;
 // unlimited), logoRequired says whether a missing `logo` is a build error.
 //
 // `featured` restates the map's tier-to-pin mapping (FEATURED_SPONSOR_TIERS in
-// site/js/views/map.js): these are the tiers that draw a Featured Destination
+// site/js/views/map.js): these are the tiers that draw a Featured Sponsor
 // pin, which is the whole reason the build demands a mark file for them. The
 // build never imports the app, so the two lists are stated twice by necessity;
 // a test asserts they still agree.
@@ -1441,7 +1441,7 @@ function svgDimensions(attrs) {
 /**
  * Finds each sponsor's pin mark by its id, on the logo rule's own conventions.
  *
- * Required exactly when the sponsor would draw a Featured Destination pin —
+ * Required exactly when the sponsor would draw a Featured Sponsor pin —
  * featured tier AND a resolved location — because that pin has a hole in the
  * middle of it otherwise, and a paying sponsor's presence degrading in silence
  * is worse than a build that stops and says so (the missing-logo rule, applied
@@ -1479,7 +1479,7 @@ function resolveSponsorMarks(records) {
       if (found.length > 0) {
         note(
           `${found.map((c) => `${LOGOS_DIR_LABEL}/${c.name}`).join(", ")} is present, but this sponsor draws no ` +
-            `Featured Destination pin (tier "${tierDef.slug}"${rec.coords ? "" : ", no location"}), so the mark ` +
+            `Featured Sponsor pin (tier "${tierDef.slug}"${rec.coords ? "" : ", no location"}), so the mark ` +
             `is ignored. It will start being used the day that changes.`
         );
       }
@@ -1488,7 +1488,7 @@ function resolveSponsorMarks(records) {
 
     if (found.length === 0) {
       fail(
-        `no pin mark file. Tier "${tierDef.slug}" draws a Featured Destination pin, which carries the sponsor's ` +
+        `no pin mark file. Tier "${tierDef.slug}" draws a Featured Sponsor pin, which carries the sponsor's ` +
           `square mark: save it as ${LOGOS_DIR_LABEL}/${sponsorId}-pin.svg (or .png).`
       );
       continue;

@@ -624,7 +624,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   |---|---|---|
   | Venue | blue `#10577b` | diamond with the venue's number inside |
   | Transit | green `#298d4e` | diamond with the line letter inside (`G`/`A`/`B`) |
-  | Featured Destination | red `#a11f22` | axis-aligned **square**, paper-filled with a 2 px red keyline, carrying the sponsor's mark |
+  | Featured Sponsor | red `#a11f22` | axis-aligned **square**, paper-filled with a 2 px red keyline, carrying the sponsor's mark |
   | Sponsor (generic) | red `#a11f22` | small solid diamond |
 
   Pins are canvas images built in `map.js` and drawn as symbol layers, so they
@@ -636,7 +636,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   **Venue and featured pins share the largest size: the venue diamond is the
   featured square rotated.** `FEATURED_SIDE = round(VENUE_R * sqrt(2))` = 27 px,
   which is the square with the diamond's own area (a diamond of half-diagonal R
-  has area 2R², a square of side R·√2 has the same), so a Featured Destination
+  has area 2R², a square of side R·√2 has the same), so a Featured Sponsor
   carries a venue's weight and no more. The bounding-box reading — a square
   filling the diamond's 38 px box — would double the ink and put sponsors above
   venues. Everything else draws at **22 px** (`SMALL_R` 11): transit and generic
@@ -664,7 +664,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   that sponsor rather than as the category. The venue key list
   below the map repeats the venue pin's diamond (not a circle), and the
   legend's venue swatch carries no number. The legend lists festival content
-  first — venue, featured destination, sponsor — and the transit entries after.
+  first — venue, featured sponsor, sponsor — and the transit entries after.
 
   Map labels are rasterised by the engine itself: the styles carry no `glyphs`
   URL, so MapLibre draws every codepoint locally with TinySDF and nothing is
@@ -722,7 +722,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   still share a bubble there. Test the property, not the camera position.
 
   **The key list below the map is three sections under visible headings**, in
-  this order: Featured Destinations, Venues, Sponsors. It is a map *key*, so it
+  this order: Featured Sponsors, Venues, Sponsors. It is a map *key*, so it
   holds exactly what the map draws — only sponsors that get a pin appear, and a
   section with nothing in it renders **nothing, heading included**, because an
   empty heading is a claim that there is something under it. Venue cards and
@@ -949,7 +949,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   their feature ids and source, so the tap highlight is `transit-leader-halo`,
   the symbol twin of the venue one.
 
-  **Pins are named from the leader zoom inward.** Venue, featured-destination
+  **Pins are named from the leader zoom inward.** Venue, featured-sponsor
   and generic sponsor pins carry their venue's or sponsor's name beside the pin
   (`venue-name-label`, `venue-leader-name-label`,
   `sponsor-name-label`, all `minzoom` = leader zoom); transit stops do not —
@@ -1063,7 +1063,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   `#/vendors` list view — see UI contract). Sponsor pins exist **only** for
   tiers `emerald`–`topaz` **and only** when that sponsor has a `location`;
   `quartz` never gets a pin regardless of `location`. `emerald`/`ruby`/`sapphire`
-  render as "Featured Destination"; `topaz` renders as a generic "Sponsor" pin.
+  render as "Featured Sponsor"; `topaz` renders as a generic "Sponsor" pin.
   Tapping a venue, sponsor **or transit** pin opens its detail sheet. The
   transit sheet lists which lines serve the stop (the only fact transit.json
   carries beyond position) plus one Google Maps link to the stop location —

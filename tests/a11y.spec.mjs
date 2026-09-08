@@ -286,13 +286,13 @@ test('the legend names both bus route classes in the colors the map draws them',
 
 // The legend ranks what attendees came for above how they get there: venue and
 // the two sponsor tiers first, every transit entry after (requested 2026-08-23).
-test('the legend lists venue, featured destination and sponsor before transit', async ({ page }) => {
+test('the legend lists venue, featured sponsor and sponsor before transit', async ({ page }) => {
   await gotoMap(page);
 
   const items = page.locator('.map-legend__list li');
   await expect(items.nth(0)).toHaveText(/Venue/);
-  await expect(items.nth(1)).toHaveText(/Featured Destination/);
-  await expect(items.nth(2)).toHaveText(/Sponsor/);
+  await expect(items.nth(1)).toHaveText(/^\s*Featured Sponsor\s*$/);
+  await expect(items.nth(2)).toHaveText(/^\s*Sponsor\s*$/);
   await expect(items.nth(3)).toHaveText(/Transit/);
 });
 

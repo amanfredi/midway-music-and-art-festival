@@ -23,8 +23,9 @@ the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
 sponsors carry `location`s in the sheet as of 2026-09-04, so each gets a map
 pin: a sponsor may sit anywhere inside the map's calibration frame, not just
 the festival box (ruled 2026-09-04 — see the log). The three sapphire sponsors are
-**Featured Destinations** (2026-09-05): 27 px squares carrying a committed
-square mark (`content/logos/<id>-pin.png`), listed above the venues in the
+**Featured Sponsors** (2026-09-05; called Featured Destinations until
+2026-09-07): 27 px squares carrying a committed square mark
+(`content/logos/<id>-pin.png`), listed above the venues in the
 map key; topaz sponsors are solid red diamonds listed below them. Vendors is deliberately empty (`"vendors": null`), so that tab reads
 "Vendor list coming soon."; the organizers have not named vendors yet.
 `content/fixtures/venues.csv` remains a hand-committed copy feeding the offline
@@ -48,6 +49,25 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-07 — "Featured Destination" becomes "Featured Sponsor"
+
+The old name overpromised. These are not places an attendee would set out to
+visit; the pin is ad space the top three tiers bought, and calling it a
+destination told riders to plan around it (Anthony, 2026-09-07). Two strings
+move — the map legend entry and the key list's first heading — and the rest of
+the change is the code comments, contracts, README and tests that call the pin
+by name. No class name, id, data attribute or test hook changed: `featured` is
+still the word in the markup.
+
+The key list now reads Featured Sponsors / Venues / Sponsors, where that last
+section means *the sponsors that are not featured*. Destinations / Sponsors
+named two kinds of thing; Featured Sponsors / Sponsors names one, and the
+second heading now reads like a superset of the first. Left as written —
+accuracy about what the pin is beats the tidier pairing, and re-wording the
+generic section is a separate decision.
+
+Older log entries keep the old name; they record what was decided when.
 
 ### 2026-09-07 — a bad row costs the row, not the deploy
 

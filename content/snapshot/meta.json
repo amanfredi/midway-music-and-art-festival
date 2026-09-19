@@ -17,9 +17,9 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1566910329&single=true&output=csv",
       "file": "sources/sponsors.csv",
       "contentType": "text/csv",
-      "sha256": "8ef95b7657515c42470af638bf8d97e62265f4c58beddcb3c535bcabb51e6de9",
-      "bytes": 1055,
-      "lastChanged": "2026-09-18"
+      "sha256": "4a5f79f1f411d52acacf00b4c4c690dd7351bc103d9228711f9c3a883bd7144e",
+      "bytes": 1188,
+      "lastChanged": "2026-09-19"
     },
     {
       "id": "source:venues",

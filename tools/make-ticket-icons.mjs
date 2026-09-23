@@ -16,14 +16,15 @@
 //   3. wrap as <symbol> so each row costs one <use> instead of a copy of the
 //      glyph paths (~3KB x ~60 rows).
 //
-// Sold Out has no brand artwork of its own (organizers never supplied one) and
-// no organizers-approved wording to render as lettering, so it reuses the paid
-// ticket's outline — recolored grey instead of brand red, with the "$" glyph
-// dropped rather than replaced — per definitions/ticket-links-and-sold-out.md,
-// which pre-approves a plain grey ticket as one of two acceptable outcomes
-// (the other being "SOLD OUT" lettering, if it turns out to be legible at
-// schedule-row size; nothing here renders lettering that doesn't exist as
-// vector artwork). Anthony judges the choice on device against BACKLOG.md.
+// Sold Out has no brand artwork of its own (organizers never supplied one), so
+// it reuses the paid ticket's outline with the "$" glyph dropped — recolored a
+// lighter grey than the app's usual muted-text tone, so the ticket itself
+// reads as greyed out/unavailable rather than merely dark — and gets its own
+// "SOLD OUT" lettering, generated here (not hand-pasted) as plain SVG <text>
+// rather than vector letterforms, since there is no source artwork to draw
+// real glyph paths from the way FREE_TICKET.svg's "FREE" is. Per
+// definitions/ticket-links-and-sold-out.md; Anthony judges legibility on
+// device (BACKLOG.md).
 //
 // The brand assets themselves are never modified.
 //
@@ -38,19 +39,63 @@ import { join } from 'node:path';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const INDEX = join(ROOT, 'site/index.html');
 const BRAND_RED = '#a11f22';
-// Same grey the app already uses for de-emphasized text (--color-text-muted in
-// app.css) — icon colors are baked into the symbol rather than driven by a CSS
-// custom property, so it is restated here rather than shared with that file.
-const SOLD_OUT_GREY = '#4b5962';
+// Lighter than --color-text-muted (#4b5962, the app's usual de-emphasized
+// grey): Anthony's call after reviewing the darker first pass was that the
+// ticket itself should read as greyed out/unavailable, not merely dark.
+// #6b7680 keeps >=3:1 contrast (WCAG non-text minimum) against every kind
+// tint in app.css, including the two lightest — --kind-music (#ddeaf3) and
+// --kind-performance (#f9e3e3) — at 3.78:1 each; the previous #4b5962 sat at
+// 5.9:1 on the same two. Icon colors are baked into the symbol rather than
+// driven by a CSS custom property, so this is restated here rather than
+// shared with app.css.
+const SOLD_OUT_GREY = '#6b7680';
 const PAD = 12; // breathing room around the artwork, in source units
 
 const SOURCES = [
   { file: 'FREE_TICKET.svg', id: 'icon-ticket-free', color: BRAND_RED, glyph: true },
   { file: 'PAID_TICKET.svg', id: 'icon-ticket-paid', color: BRAND_RED, glyph: true },
-  // Reuses PAID_TICKET.svg's outline only — see the header comment above for
-  // why there is no lettering.
-  { file: 'PAID_TICKET.svg', id: 'icon-ticket-soldout', color: SOLD_OUT_GREY, glyph: false },
+  // Reuses PAID_TICKET.svg's outline only, recolored grey, with generated
+  // "SOLD OUT" lettering in brand red — see the header comment above.
+  {
+    file: 'PAID_TICKET.svg',
+    id: 'icon-ticket-soldout',
+    color: SOLD_OUT_GREY,
+    glyph: false,
+    label: ['SOLD', 'OUT'],
+    labelColor: BRAND_RED,
+  },
 ];
+
+/**
+ * "SOLD OUT" as plain SVG <text>, stacked two lines (it does not fit legibly
+ * on one line at schedule-row size), centered over the ticket's main face —
+ * left of the perforated tear line near the right edge (the small dashed
+ * circles and the notched top/bottom curves in the outline path, roughly the
+ * right third of `box`), the same way PAID's "$" and FREE's lettering sit
+ * left-of-center rather than centered on the whole ticket.
+ *
+ * font-family is the app's own system-ui stack (CLAUDE.md: no CDN fonts), and
+ * <text> inside a <symbol> resolves it against the referencing document, not
+ * this generator's headless page — same as any other inherited SVG property
+ * reached through <use>.
+ */
+function labelMarkup(lines, box, color) {
+  const centerX = box.x + box.w * 0.365;
+  const fontSize = box.h * 0.285;
+  const lineGap = fontSize * 1.02;
+  const blockHeight = lineGap * lines.length;
+  const firstBaseline = box.y + (box.h - blockHeight) / 2 + fontSize * 0.8;
+  return lines
+    .map((line, i) => {
+      const y = round(firstBaseline + i * lineGap);
+      return (
+        `<text x="${round(centerX)}" y="${y}" text-anchor="middle" ` +
+        `font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" ` +
+        `font-size="${round(fontSize)}" letter-spacing="${round(fontSize * 0.03)}" fill="${color}">${line}</text>`
+      );
+    })
+    .join('');
+}
 
 const START = '<!-- BEGIN generated ticket sprite (tools/make-ticket-icons.mjs) -->';
 const END = '<!-- END generated ticket sprite -->';
@@ -59,7 +104,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage();
 const symbols = [];
 
-for (const { file, id, color, glyph } of SOURCES) {
+for (const { file, id, color, glyph, label, labelColor } of SOURCES) {
   const raw = await readFile(join(ROOT, 'MMAF Brand Assets', file), 'utf8');
   await page.setContent(`<body style="margin:0">${raw}</body>`);
   const box = await page.evaluate((keepGlyph) => {
@@ -88,6 +133,7 @@ for (const { file, id, color, glyph } of SOURCES) {
   const body = glyph ? inner : (inner.match(/<path fill="#000000"[^>]*\/>/) ?? [])[0];
   if (!body) throw new Error(`${file}: expected a ticket-outline path to reuse for ${id}`);
   const recolored = body.replaceAll('fill="#000000"', `fill="${color}"`);
+  const text = label ? labelMarkup(label, box, labelColor) : '';
 
   const vb = [
     round(box.x - PAD),
@@ -96,7 +142,7 @@ for (const { file, id, color, glyph } of SOURCES) {
     round(box.h + PAD * 2),
   ].join(' ');
 
-  symbols.push(`  <symbol id="${id}" viewBox="${vb}">${recolored.trim()}</symbol>`);
+  symbols.push(`  <symbol id="${id}" viewBox="${vb}">${recolored.trim()}${text}</symbol>`);
   console.error(`${file} -> ${id}: bbox ${round(box.w)}x${round(box.h)} -> viewBox "${vb}"`);
 }
 

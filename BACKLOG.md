@@ -466,18 +466,25 @@ None of these can be checked from the screenshot harness or the test suite.
       (procedure in README; standing gate, last passed 2026-08-10 — **owed
       again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
 - [ ] **Sold Out ticket icon legibility, and the detail-page ticket link, on a
-      real phone** (added 2026-09-23, `definitions/ticket-links-and-sold-out.md`).
-      `tools/make-ticket-icons.mjs` ships a plain grey ticket (no "SOLD OUT"
-      lettering — the definition doc pre-approved this fallback, and there was
-      no brand artwork or approved wording to render lettering from); screenshots
-      at 320 px are in the commit that added this. Two judgements only a
-      device answers: does the grey-vs-red ticket icon read as "different from
-      Paid/Free" at actual schedule-row size (34×21 px, `.ticket-icon` in
-      app.css), or does it need "SOLD OUT" lettering after all (fallback
-      pre-approved either way — Anthony's call); and does the linked ticket
-      text on the event detail page (`[data-testid="ticket-link"]`, underlined
-      in `--color-primary`) read clearly as tappable next to the plain-text
-      venue name and age badge on the same page.
+      real phone** (added 2026-09-23, revised 2026-09-23,
+      `definitions/ticket-links-and-sold-out.md`). `tools/make-ticket-icons.mjs`
+      ships a lighter grey ticket body (`#6b7680`, chosen for ≥3:1 contrast
+      against every kind tint) with "SOLD OUT" stacked in brand red
+      (`#a11f22`) across two lines, generated as plain SVG `<text>` rather than
+      vector letterforms — there is no brand artwork or approved wording to
+      draw real glyph paths from the way FREE_TICKET.svg's "FREE" is.
+      Screenshots at 320 px, and a 2× close-up of the icon alone, are in the
+      commit that added this (both the first, lettering-less pass and this
+      revision). Two judgements only a device answers: does "SOLD OUT" actually
+      read at real schedule-row size (34×21 px, `.ticket-icon` in app.css) —
+      the desktop close-up reads clearly, but generated `<text>` may render
+      differently across phone browsers/font-rendering than the vector
+      letterforms the other two icons use, and a plain grey ticket with no
+      lettering is still a pre-approved fallback if it does not; and does the
+      linked ticket text on the event detail page
+      (`[data-testid="ticket-link"]`, underlined in `--color-primary`) read
+      clearly as tappable next to the plain-text venue name and age badge on
+      the same page.
 - [ ] **Featured-pin marks on a real phone.** All three live marks draw, but the
       judgement is a 3× one and the screenshots are 1×. Wellington Management's
       is 318×144, which contain-fit makes ~21 × 9.5 px inside the square, and it

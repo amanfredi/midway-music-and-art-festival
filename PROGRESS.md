@@ -93,14 +93,19 @@ surfaces as every ticketed row warning at once — self-reporting rather than
 silent.
 
 The Sold Out icon has no brand artwork behind it (organizers never supplied
-one) and no approved "SOLD OUT" wording to set as lettering, so
-`tools/make-ticket-icons.mjs` now also emits `icon-ticket-soldout`: the paid
-ticket's outline reused with the "$" glyph dropped, recolored grey
-(`--color-text-muted`'s `#4b5962`) instead of brand red. A plain grey ticket
-was pre-approved in the definition doc as one of two acceptable outcomes, the
-other being lettering if it turned out legible at schedule-row size — nothing
-here renders lettering that does not exist as vector artwork, so the plain
-version is what shipped. Anthony judges legibility on device (BACKLOG.md).
+one), so `tools/make-ticket-icons.mjs` now also emits `icon-ticket-soldout`:
+the paid ticket's outline reused with the "$" glyph dropped, recolored a
+lighter grey (`#6b7680`, chosen for ≥3:1 contrast against every kind tint,
+including the two lightest) than the app's usual muted-text tone — a first
+pass shipped this plain, which Anthony reviewed and found read as merely dark
+rather than greyed-out/unavailable. "SOLD OUT" now stacks across it in brand
+red, generated as plain SVG `<text>` (system font stack, brand red fill)
+rather than vector letterforms, since there is no brand artwork or approved
+wording to draw real glyph paths from the way FREE_TICKET.svg's "FREE" is. A
+lettering-less fallback stays pre-approved in the definition doc if the
+generated text does not hold up on a real device the way it does in the
+desktop screenshots; Anthony judges both the color and the lettering on device
+(BACKLOG.md).
 
 Fixtures: `content/fixtures/events.csv` gained the `ticketURL` column, with
 three previously-blank-URL ticketed rows given valid links (`somali-stars`,

@@ -206,7 +206,7 @@ neither is a build error.
   the emitted content.json always carries plain `lat`/`lng` numbers, so the
   site itself never sees plus codes.
 
-**events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, age_limit, description, url`
+**events.csv** — `id, title, venue_id, date, start_time, end_time, kind, tickets, age_limit, description, url` (plus optional `ticketURL`, below)
 - `date`: `YYYY-MM-DD`, **or** the `M/D/YYYY` a Google Sheets date cell exports,
   which is rewritten to `YYYY-MM-DD`. Every rewrite is printed, one line per row
   (`events.csv row 2 (Miss Georgia Peach): date "10/2/2026" -> "2026-10-02"`).
@@ -237,7 +237,9 @@ neither is a build error.
 - `tickets`: the column is required, its value optional — exact values (sheet
   dropdown enforces): `General Admission` (default when blank) · `General
   Admission (limited capacity)` · `Free Ticket Required` · `Paid Ticket
-  Required`. Any other value is a build error.
+  Required` · `Sold Out`. Any other value is a build error (unlike a
+  `ticketURL` problem, below, which is never a build error and never drops the
+  row).
 - `age_limit` (accepted alternative spelling: `age`, which is what the live
   sheet uses): optional, blank (the default — all ages) or exactly `18+` or
   `21+`. The sheet's dropdown also offers `all ages`, which means exactly what
@@ -250,6 +252,20 @@ neither is a build error.
   above). Consumed by the Squarespace performers page
   (`definitions/performers-page.md`); the festival app itself ignores it for
   now.
+- `ticketURL` — **header optional**, unlike every other column above: it may
+  be entirely absent (older snapshots and the committed fixtures predate it),
+  and its absence is never a build error the way a missing required column is.
+  A present header must still be spelled exactly `ticketURL`; a near-miss
+  spelling is not detected as a near-miss (there is nothing to compare it
+  against), so a renamed header just reads as absent and every ticketed row
+  warns — the failure self-reports rather than failing loudly. Where the
+  column is present, the cell is optional per row and validated/completed by
+  the same link rule as `url`, with one difference: a `ticketURL` problem
+  **never fails the build and never drops the row** — it only costs the link,
+  and is reported as a `warnings` entry (below) instead of an error. The app
+  itself ignores this column directly; only content.json's `ticket_url` (next
+  section) matters to it. Full behavior, including the three warning cases:
+  `definitions/ticket-links-and-sold-out.md`.
 
 **vendors.csv** — `id, name, type, description, location`
 - `type`: one of `food|art|retail`. All required except `description`.
@@ -452,6 +468,17 @@ the build found them. It is what the run's "Published without N invalid row(s)"
 warning, job summary and email are built from, and it is empty on every clean
 build.
 
+It also carries `warnings`: one `{ source, rowNum, message }` entry per
+non-blocking ticket-link problem (events.csv `ticketURL` — see above and
+`definitions/ticket-links-and-sold-out.md`), empty on every build with nothing
+to warn about. Unlike `droppedRows`, a `warnings` entry never corresponds to a
+row that was left out — every row it names still published. `strict` does not
+change this: a ticketURL problem is non-blocking in both modes, since the
+`--strict` refusal exists for validation errors, and a ticket-link problem
+never becomes one. It is what the run's "Published with N warning(s)"
+annotation, job summary section, and share of the skipped-rows email are
+built from.
+
 `snapshot.used` carries one entry per resource served from the snapshot
 (`{ id, label, url, lastChanged }`); it is what the run's staleness warning and
 job summary are built from. `snapshot.changed` is non-empty exactly when the
@@ -466,16 +493,25 @@ curl/SMTP path.
   the `validation` class reaches the organizers too. Runs under `if: failure()`,
   and an email that did not go out exits 1 so the alarm's own failure is visible.
 - `notify.mjs skipped-rows` — runs after a publish and mails the rows that
-  publish left out, to the deploy list **and** the content list (it is the
-  organizers' edit and their fix). Subject:
-  `[Midway site] Published without N invalid row(s)`. It sends **only** when
-  `droppedRows` is non-empty **and** `snapshot.changed` is non-empty — a source
-  changed since the last publish. Otherwise it says why and exits 0: without
-  that gate every code push and every 6-hourly cron would re-mail the same
-  unfixed rows. A snapshot commit that failed to push can cost one repeat, which
+  publish left out, **and** the ticket-link `warnings` (own list, same email —
+  definitions/ticket-links-and-sold-out.md: no separate warnings email and no
+  separate send gate), to the deploy list **and** the content list (it is the
+  organizers' edit and their fix, either way). Subject reflects what it
+  carries: `[Midway site] Published without N invalid row(s)` when only
+  `droppedRows` is non-empty, `[Midway site] Published with N warning(s)` when
+  only `warnings` is, and both counts when both are. It sends **only** when
+  (`droppedRows` is non-empty **or** `warnings` is non-empty) **and**
+  `snapshot.changed` is non-empty — a source changed since the last publish.
+  Otherwise it says why and exits 0: without that gate every code push and
+  every 6-hourly cron would re-mail the same unfixed rows (or the same unfixed
+  warnings). A snapshot commit that failed to push can cost one repeat, which
   is the accepted price. The step is `continue-on-error: true`, so an unsent
   email exits 1 **and** prints an `::error` annotation rather than reddening a
-  run that published fine.
+  run that published fine. The CI run itself carries the same information
+  independently: a `::warning` annotation and a job-summary section for each
+  of `droppedRows` and `warnings` that is non-empty (`deploy.yml` /
+  `rebuild-content.yml`, "Flag skipped rows and warnings"), regardless of the
+  email's send gate.
 
 ## site/data/content.json (build output, UI input)
 
@@ -484,7 +520,7 @@ curl/SMTP path.
   "version": "a1b2c3d4e5f6",
   "settings": { "festival_name": "…", "banner_id": "…", "banner_text": "…", "you_are_here_enabled": "false", "donation_url": "…", "donation_label": "Donate", "…": "…" },
   "venues":   [ { "id": "…", "name": "…", "address": "…", "lat": 44.9557, "lng": -93.1668, "description": "…", "url": "…" } ],
-  "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "age_limit": "", "description": "…", "url": "…" } ],
+  "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "ticket_url": "", "age_limit": "", "description": "…", "url": "…" } ],
   "vendors":  [ { "id": "…", "name": "…", "type": "food", "description": "…", "lat": 44.9557, "lng": -93.1668 } ],
   "sponsors": [ { "id": "…", "name": "…", "tier": "Emerald Tier (Presenting Partner)", "tier_slug": "emerald", "tier_order": 1, "blurb": "…", "logo": "assets/sponsors/….svg", "mark": "assets/sponsors/…-pin.svg", "url": "…", "lat": 44.9557, "lng": -93.1668 } ]
 }
@@ -506,6 +542,15 @@ absent) when there is no `location`, and numbers when there is; and `mark` is
 `null` when the sponsor has no pin mark, and the bundled path when it has one.
 (`logo` keeps the `""` convention: a blank logo is a missing picture, not a
 different pin.)
+
+`events[].ticket_url` follows the `""` convention like every other optional
+string field, but is blank in more cases than "the sheet cell was empty": it
+is also blank when `tickets` is `General Admission` or `General Admission
+(limited capacity)` (a URL there is warned about and ignored, never
+published — see events.csv `ticketURL` above) and when the cell fails the
+shared link rule (warned, dropped). It is non-blank only for `tickets` of
+`Free Ticket Required`, `Paid Ticket Required`, or `Sold Out`, with a
+`ticketURL` cell that passed validation.
 
 ## Map + geo contract
 
@@ -1585,6 +1630,9 @@ UI code never needs to know about it beyond `js/sw-register.js`.
 - `[data-testid="venue-view"]` on the `#/venue/<id>` route's container
 - `[data-testid="share-btn"]` on every Share button (event detail, venue sheet, venue route)
 - `[data-testid="star-toggle"]` on the star button in event detail (attribute `aria-pressed` reflects state)
+- `[data-testid="ticket-link"]` on the event detail ticket fact's `<a>`, present
+  only when content.json's `ticket_url` is set (Paid/Free/Sold Out with a valid
+  `ticketURL` — CONTRACTS.md events.csv); plain text otherwise, with no hook
 - `[data-testid="row-star-toggle"]` on the star button within an event row (schedule/now/starred lists); attribute `aria-pressed` reflects state
 - `[data-testid="starred-list"]` on the starred-events view container
 - `[data-testid="vendor-list"]` on the vendors view container

@@ -19,7 +19,11 @@ list instead of the map.
 **Venues, events and sponsors are live from the organizers' Google Sheet**
 (URLs in `content/config.json`); `settings` is the only remaining fixture. As of
 the 2026-08-31 deploy the site carries 21 venues, 34 events across Oct 2–4 at
-11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. All six
+11 venues, and 6 sponsors (3 sapphire, 3 topaz) carrying their real logos. Since
+2026-09-23, an event's `tickets` value may also be `Sold Out` (grey ticket
+icon, no link required), and Paid/Free/Sold Out events link their ticket text
+to an optional `ticketURL` column (see the log below for the non-blocking
+warnings this adds to the build report and skipped-rows email). All six
 sponsors carry `location`s in the sheet as of 2026-09-04, so each gets a map
 pin: a sponsor may sit anywhere inside the map's calibration frame, not just
 the festival box (ruled 2026-09-04 — see the log). The three sapphire sponsors are
@@ -49,6 +53,62 @@ service worker and CI all landed and were audited in earlier rounds.
 ## Log
 
 Newest first.
+
+### 2026-09-23 — ticket links and Sold Out
+
+Event detail's ticket text ("Paid Ticket Required" etc.) was information with
+nowhere to go — organizers had ticket links but no column to put them in, and
+a sold-out event had no way to say so short of leaving it off the schedule.
+Both landed together (`definitions/ticket-links-and-sold-out.md`): an optional
+`ticketURL` events column, emitted as content.json's `ticket_url`; `Sold Out`
+added to the `tickets` enum, publishing with a grey ticket icon wherever
+Free/Paid already draw one; and the detail page linking the ticket text
+(`target="_blank"`, the usual `NEW_TAB_HINT`) whenever a usable URL exists for
+Paid/Free/Sold Out.
+
+**Every ticketURL problem is non-blocking — a warning, never a dropped row.**
+That is the one place this feature departs from every other validated field in
+events.csv: a bad `url` or an unknown `kind` costs the row by default, but the
+organizers were explicit that a ticket-link mistake must never cost the event.
+`tickets` itself is the exception to the exception — an unrecognized value
+(anything other than the five-item enum) is still a row error exactly as
+before, since that value has nowhere sensible to fall back to. Three cases
+warn: a ticket-requiring value with a blank `ticketURL`; a General Admission
+row with a `ticketURL` set (the link is ignored, not published — this is also
+what would have caught the sheet's own off-by-one row shift on 2026-09-23,
+where ticket URLs landed one row above the events they belonged to); and a
+`ticketURL` that fails the shared link rule (dropped, plain text remains).
+`build.mjs`'s report gained `warnings: [{ source, rowNum, message }]` beside
+`droppedRows`, and it rides in the same skipped-rows email, the same CI
+annotation, and the same job-summary section — no separate warnings channel,
+same send gate (something to report **and** a source changed since the last
+publish).
+
+**The `ticketURL` header itself is optional**, unlike every other events.csv
+column: it can be entirely absent (every fixture and the current live
+snapshot predate it) without failing the build the way a missing required
+column does. The cost of that leniency is deliberate: a renamed header is
+indistinguishable from a blank cell, so instead of a structural build error it
+surfaces as every ticketed row warning at once — self-reporting rather than
+silent.
+
+The Sold Out icon has no brand artwork behind it (organizers never supplied
+one) and no approved "SOLD OUT" wording to set as lettering, so
+`tools/make-ticket-icons.mjs` now also emits `icon-ticket-soldout`: the paid
+ticket's outline reused with the "$" glyph dropped, recolored grey
+(`--color-text-muted`'s `#4b5962`) instead of brand red. A plain grey ticket
+was pre-approved in the definition doc as one of two acceptable outcomes, the
+other being lettering if it turned out legible at schedule-row size — nothing
+here renders lettering that does not exist as vector artwork, so the plain
+version is what shipped. Anthony judges legibility on device (BACKLOG.md).
+
+Fixtures: `content/fixtures/events.csv` gained the `ticketURL` column, with
+three previously-blank-URL ticketed rows given valid links (`somali-stars`,
+`jazz-cats-2`, `poetry-reading-circle`) and one General Admission row
+(`polka-potatoes`) turned into the fixture's Sold Out example — so the
+committed "good" fixtures stay entirely warning-free, and every warning case
+is instead exercised by a one-cell mutation of them, the same pattern the
+existing dropped-row tests already use.
 
 ### 2026-09-07 — "Featured Destination" becomes "Featured Sponsor"
 

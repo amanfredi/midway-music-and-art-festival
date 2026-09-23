@@ -1871,11 +1871,14 @@ a:focus-visible, button:focus-visible {
 .badge--vendor { color: #4a2a66; } /* plum, harmonizes as a jewel tone — 9.18:1 worst case */
 .badge--other { color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 worst case */
 
-/* -- ticket icons: Free/Paid Ticket Required only (events.csv `tickets`).
+/* -- ticket icons: Free/Paid Ticket Required and Sold Out only (events.csv
+   `tickets`; General Admission and its limited-capacity variant get no icon).
    Brand artwork, defined once as a <symbol> in index.html and referenced with
-   <use>; colors are baked into the symbol (brand red body, knocked-out white
-   lettering). Labelled via role="img" + aria-label on the <svg> itself, so
-   this is deliberately not aria-hidden. Source aspect ratio is 624:384. -- */
+   <use>; colors are baked into the symbol (brand red body with knocked-out
+   white lettering for Free/Paid, plain grey with no lettering for Sold Out —
+   see tools/make-ticket-icons.mjs). Labelled via role="img" + aria-label on
+   the <svg> itself, so this is deliberately not aria-hidden. Source aspect
+   ratio is 624:384 for all three. -- */
 .ticket-icon {
   flex: none;
   width: 34px;

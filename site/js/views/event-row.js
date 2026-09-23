@@ -9,14 +9,15 @@ import { esc, groupBy } from '../util.js';
 import { parseEventTimes, formatTime, shortDayName, dateKey } from '../time.js';
 import { isStarred, toggleStar } from '../store.js';
 
-// Two of the four `tickets` values get a ticket icon next to the kind badge in
-// list rows (CONTRACTS.md events.csv). Artwork is the organizers' own brand
+// Three of the five `tickets` values get a ticket icon next to the kind badge
+// in list rows (CONTRACTS.md events.csv). Artwork is the organizers' own brand
 // ticket, defined once as a <symbol> in index.html and referenced here — see
 // tools/make-ticket-icons.mjs. Labelled (role="img" + aria-label) rather than
 // aria-hidden: the icon carries information no other part of the row does.
 const TICKET_ICONS = {
   'Free Ticket Required': { id: 'icon-ticket-free', label: 'Free ticket required' },
   'Paid Ticket Required': { id: 'icon-ticket-paid', label: 'Paid ticket required' },
+  'Sold Out': { id: 'icon-ticket-soldout', label: 'Sold out' },
 };
 
 export function ticketIconHtml(tickets) {

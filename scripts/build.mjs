@@ -71,8 +71,13 @@ const VALID_TICKETS = new Set([
   "General Admission (limited capacity)",
   "Free Ticket Required",
   "Paid Ticket Required",
+  "Sold Out",
 ]);
 const DEFAULT_TICKETS = "General Admission";
+// The three `tickets` values whose text can link to `ticketURL` (definitions/
+// ticket-links-and-sold-out.md). A General Admission row's URL is ignored —
+// warned, not published — because GA is never sold at a link.
+const TICKET_LINK_VALUES = new Set(["Free Ticket Required", "Paid Ticket Required", "Sold Out"]);
 // Optional events column. Blank is the common case (all ages) and stays blank
 // in content.json so the UI can test it falsily; only these two values render
 // a badge.
@@ -152,6 +157,14 @@ const SOURCE_LABEL = {
 };
 // The columns each tab must carry, per CONTRACTS.md. Extra columns beyond these
 // are still ignored — coordinators keep notes columns in the sheet.
+//
+// events.ticketURL is deliberately absent from this list: unlike every other
+// column, its header is optional (older snapshots and the committed fixtures
+// predate it), so a missing column must not fail the build the way a missing
+// required column does. Read directly off rec.fields.ticketURL instead, which
+// is simply undefined when the header never arrived — indistinguishable from a
+// blank cell, so a renamed header just makes every ticketed row warn rather
+// than failing loudly (accepted: see the risk note in the definition doc).
 const EXPECTED_COLUMNS = {
   venues: ["id", "name", "address", "location", "description", "url"],
   events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description", "url"],
@@ -690,6 +703,9 @@ function normalizeUrls(parsed) {
   rewrite("venues.csv", parsed.venues.records, "url", "name");
   rewrite("sponsors.csv", parsed.sponsors.records, "url", "name");
   rewrite("events.csv", parsed.events.records, "url", "title");
+  // A no-op wherever the ticketURL column never arrived: rec.fields.ticketURL
+  // is undefined there, and undefined stringifies to "" (skipped) below.
+  rewrite("events.csv", parsed.events.records, "ticketURL", "title");
   rewrite(
     "settings.csv",
     parsed.settings.records.filter((rec) => String(rec.fields.key ?? "").trim() === "donation_url"),
@@ -942,6 +958,11 @@ function validateEvents(records, venueIds) {
     ...validateIdFormat(fileLabel, records, "title"),
     ...validateUrlField(fileLabel, records, "title"),
   ];
+  // Non-blocking (definitions/ticket-links-and-sold-out.md): a ticketURL
+  // problem never costs the row, only the link. Collected separately from
+  // errors so runValidator's row-dropping never touches these — the row that
+  // triggered one is exactly the row that still publishes.
+  const warnings = [];
 
   for (const rec of records) {
     const ident = identifierFor(rec, "title");
@@ -967,6 +988,49 @@ function validateEvents(records, venueIds) {
           rec.rowNum,
           ident,
           `unknown tickets value "${ticketsRaw}" (expected one of: ${[...VALID_TICKETS].join(" | ")}).`
+        )
+      );
+    }
+
+    // Ticket link warnings, only over a tickets value this build can actually
+    // resolve to — an unknown value already failed above (and, by default,
+    // drops the row before any of this matters). Blank/unrecognized resolves
+    // to the same default DEFAULT_TICKETS the clean pass below uses, so the
+    // two stay in agreement about what "this row's tickets" means.
+    const ticketsTrimmed = String(ticketsRaw ?? "").trim();
+    const effectiveTickets =
+      ticketsTrimmed !== "" && VALID_TICKETS.has(ticketsTrimmed) ? ticketsTrimmed : DEFAULT_TICKETS;
+    const ticketURLRaw = String(rec.fields.ticketURL ?? "").trim();
+    if (TICKET_LINK_VALUES.has(effectiveTickets)) {
+      if (ticketURLRaw === "") {
+        warnings.push(
+          errorMsg(
+            fileLabel,
+            rec.rowNum,
+            ident,
+            `tickets is "${effectiveTickets}" but ticketURL is blank, so the ticket text will not link anywhere.`
+          )
+        );
+      } else {
+        const problem = urlValueError(ticketURLRaw);
+        if (problem) {
+          warnings.push(
+            errorMsg(
+              fileLabel,
+              rec.rowNum,
+              ident,
+              `ticketURL "${ticketURLRaw}" ${problem} The event still publishes, with plain ticket text and no link.`
+            )
+          );
+        }
+      }
+    } else if (ticketURLRaw !== "") {
+      warnings.push(
+        errorMsg(
+          fileLabel,
+          rec.rowNum,
+          ident,
+          `ticketURL "${ticketURLRaw}" is set but tickets is "${effectiveTickets}", which never links — the URL is ignored.`
         )
       );
     }
@@ -1074,6 +1138,15 @@ function validateEvents(records, venueIds) {
     const ageRaw = String(rec.fields.age_limit ?? "").trim();
     const age_limit = VALID_AGE_LIMITS.has(ageRaw) ? ageRaw : "";
 
+    // Blank whenever the link wouldn't be shown: no URL, a URL that fails the
+    // shared link rule (warned above, dropped here), or a tickets value that
+    // never links (GA — warned above if a URL was present, ignored here).
+    // normalizeUrls already completed a bare domain before this ran, the same
+    // way it does for events.url.
+    const ticketURLRaw = String(rec.fields.ticketURL ?? "").trim();
+    const ticket_url =
+      TICKET_LINK_VALUES.has(tickets) && ticketURLRaw !== "" && !urlValueError(ticketURLRaw) ? ticketURLRaw : "";
+
     return {
       id: rec.fields.id ?? "",
       title: rec.fields.title ?? "",
@@ -1082,12 +1155,13 @@ function validateEvents(records, venueIds) {
       end,
       kind: rec.fields.kind && rec.fields.kind.trim() !== "" ? rec.fields.kind : "music",
       tickets,
+      ticket_url,
       age_limit,
       description: rec.fields.description ?? "",
       url: rec.fields.url ?? "",
     };
   });
-  return { errors, clean };
+  return { errors, warnings, clean };
 }
 
 function validateSponsorFields(records) {
@@ -2028,6 +2102,10 @@ async function main() {
   // app never received.
   const venueIds = new Set(venuesResult.clean.map((v) => v.id).filter(Boolean));
   const eventsResult = runValidator("events", parsed.events.records, (records) => validateEvents(records, venueIds));
+  // Ticket link problems (definitions/ticket-links-and-sold-out.md): never a
+  // reason to drop a row or fail the build, so they never joined `errors` —
+  // just a list a clean build still has something to say about.
+  const warnings = eventsResult.warnings ?? [];
 
   const { failures: logoFailures, resolved: logoFiles } = resolveSponsorLogos(sponsorsResult.records);
   const { failures: markFailures, notes: markNotes, resolved: markFiles } = resolveSponsorMarks(sponsorsResult.records);
@@ -2206,6 +2284,14 @@ async function main() {
     );
   }
 
+  if (warnings.length > 0) {
+    console.log(`WARNED about ${warnings.length} ticket link issue(s); every row above still published:`);
+    for (const entry of warnings) {
+      console.log(`  - ${oneLine(entry.message)}`);
+    }
+    console.log(`  Fix these in the spreadsheet; the next build clears the warning.`);
+  }
+
   const shownSnapshotDir = path.relative(CWD, snapshotDir) || snapshotDir;
   const staleLines = snapshotStalenessLines(ctx);
   if (staleLines.length > 0) {
@@ -2237,6 +2323,7 @@ async function main() {
     failures: [],
     strict,
     droppedRows: dropped,
+    warnings,
     snapshot: {
       dir: shownSnapshotDir,
       used: snapshotUsedEntries(ctx),

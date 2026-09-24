@@ -310,6 +310,60 @@ describe("skipped-rows notification", () => {
     assert.doesNotMatch(result.stdout, /mail-rcpt/);
   });
 
+  // definitions/ticket-links-and-sold-out.md: warnings ride in the same email
+  // as skipped rows, under their own list, with the same send gate — no
+  // separate warnings email and no separate gate.
+  describe("ticket link warnings", () => {
+    const WARNING = { source: "events", rowNum: 41, message: 'events.csv row 41 ("The Jazz Cats"): tickets is "Paid Ticket Required" but ticketURL is blank, so the ticket text will not link anywhere.' };
+
+    test("the subject and body grow to carry warnings alongside dropped rows", () => {
+      const { subject, body } = summarizeSkippedRows({
+        report: report({ warnings: [WARNING] }),
+        context: { workflow: "Deploy", repo: "amanfredi/mmaf" },
+      });
+      assert.equal(subject, "[Midway site] Published without 2 invalid row(s), 1 warning(s)");
+      assert.match(body, /Left out \(2\):/);
+      assert.match(body, /Warnings \(1\):/);
+      assert.match(body, /The Jazz Cats/);
+    });
+
+    test("a warnings-only publish (no dropped rows) still names itself in the subject", () => {
+      const { subject, body } = summarizeSkippedRows({
+        report: report({ droppedRows: [], warnings: [WARNING] }),
+        context: { workflow: "Deploy" },
+      });
+      assert.equal(subject, "[Midway site] Published with 1 warning(s)");
+      assert.doesNotMatch(body, /Left out/);
+      assert.match(body, /Warnings \(1\):/);
+      // Nothing was dropped, so the tail must not claim any row is off the site.
+      assert.doesNotMatch(body, /not on the site/);
+    });
+
+    test("warnings-only with a source change sends", () => {
+      const result = runNotify("skipped-rows", report({ droppedRows: [], warnings: [WARNING] }));
+      assert.equal(result.status, 0, result.stdout);
+      assert.match(result.stdout, /mail-rcpt = "anthony@example\.com"/);
+      assert.match(result.stdout, /Subject: \[Midway site\] Published with 1 warning\(s\)/);
+    });
+
+    test("warnings with no source change does not send", () => {
+      const result = runNotify(
+        "skipped-rows",
+        report({ droppedRows: [], warnings: [WARNING], snapshot: { used: [], written: false, changed: [] } })
+      );
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /no content source has changed since the last publish/);
+      assert.doesNotMatch(result.stdout, /mail-rcpt/);
+    });
+
+    test("a publish with neither dropped rows nor warnings sends nothing", () => {
+      const result = runNotify("skipped-rows", report({ droppedRows: [], warnings: [] }));
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /published every row the sheet holds/);
+      assert.doesNotMatch(result.stdout, /mail-rcpt/);
+    });
+  });
+
   test("it mails the deploy list and the content list together", () => {
     const result = runNotify("skipped-rows", report());
     assert.equal(result.status, 0, result.stdout);

@@ -1,4 +1,4 @@
-import { esc, mapsDirectionsHref, NEW_TAB_HINT, wireShareButton } from '../util.js';
+import { esc, mapsDirectionsHref, safeHref, NEW_TAB_HINT, wireShareButton } from '../util.js';
 import { parseEventTimes, formatDayLabel, formatTime } from '../time.js';
 import { findVenue, isStarred, toggleStar } from '../store.js';
 import { navigate, getLastListRoute } from '../router.js';
@@ -12,6 +12,21 @@ const AGE_LIMIT_TEXT = {
   '18+': 'Must be age 18 or older',
   '21+': 'Must be age 21 or older',
 };
+
+/**
+ * The ticket fact's text: a link to content.json's `ticket_url` when the build
+ * set one (Paid/Free/Sold Out with a valid ticketURL — CONTRACTS.md), plain
+ * text otherwise. `ticket_url` is already blank for every case that shouldn't
+ * link (a GA row, a missing/malformed URL), so there is nothing left to check
+ * here beyond safeHref — same pattern as the sponsor link in sponsors.js.
+ */
+function ticketFactTextHtml(event) {
+  const href = safeHref(event.ticket_url);
+  const text = esc(event.tickets);
+  return href
+    ? `<a data-testid="ticket-link" href="${esc(href)}" target="_blank" rel="noopener">${text}${NEW_TAB_HINT}</a>`
+    : `<span>${text}</span>`;
+}
 
 export function renderEventDetail(container, content, eventId) {
   const event = content.events.find((e) => e.id === eventId);
@@ -36,7 +51,7 @@ export function renderEventDetail(container, content, eventId) {
       <span class="badge badge--${esc(kind)}">${esc(kind)}</span>
       <h1 class="event-detail__title">${esc(event.title)}</h1>
       <p class="event-detail__time">${esc(formatDayLabel(start))} &middot; ${esc(formatTime(start))}&ndash;${esc(formatTime(end))}</p>
-      <p class="event-detail__fact">${ticketIconHtml(event.tickets)}<span>${esc(event.tickets)}</span></p>
+      <p class="event-detail__fact">${ticketIconHtml(event.tickets)}${ticketFactTextHtml(event)}</p>
       ${AGE_LIMIT_TEXT[event.age_limit]
         ? `<p class="event-detail__fact">${ageBadgeHtml(event.age_limit)}<span>${esc(AGE_LIMIT_TEXT[event.age_limit])}</span></p>`
         : ''}

@@ -96,21 +96,32 @@ jobs:
       # A run that left rows out is green, so nothing else would say that the
       # site now holds less than the sheet does. The rows still need fixing, and
       # this is where whoever is watching the run goes looking.
-      - name: Flag skipped rows
+      - name: Flag skipped rows and warnings
         if: ${{ steps.gate.outputs.publish == 'true' }}
         run: |
           node -e '
             const { existsSync, readFileSync, appendFileSync } = require("node:fs");
             const reportPath = process.env.BUILD_REPORT;
             if (!existsSync(reportPath)) process.exit(0);
-            const dropped = JSON.parse(readFileSync(reportPath, "utf8")).droppedRows || [];
-            if (dropped.length === 0) process.exit(0);
-            // Flattened on the way out for the same reason the build log is:
-            // these strings quote spreadsheet cells, and a cell containing a
-            // newline must not forge extra log lines.
-            const lines = dropped.map((d) => String(d.message).replace(/\s+/g, " ").trim() + (d.logoOnly ? " (published without its logo)" : ""));
-            console.log("::warning title=Published without " + dropped.length + " invalid row(s)::" + lines.join("; "));
-            appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out; everything else in the sheet is live. The snapshot holds the bytes this build published from, so an emergency build would leave the same rows out and say so again. An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 6 hours, or run by hand) publishes them.", ""].join("\n"));
+            const report = JSON.parse(readFileSync(reportPath, "utf8"));
+            const dropped = report.droppedRows || [];
+            const warnings = report.warnings || [];
+            if (dropped.length > 0) {
+              // Flattened on the way out for the same reason the build log is:
+              // these strings quote spreadsheet cells, and a cell containing a
+              // newline must not forge extra log lines.
+              const lines = dropped.map((d) => String(d.message).replace(/\s+/g, " ").trim() + (d.logoOnly ? " (published without its logo)" : ""));
+              console.log("::warning title=Published without " + dropped.length + " invalid row(s)::" + lines.join("; "));
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out; everything else in the sheet is live. The snapshot holds the bytes this build published from, so an emergency build would leave the same rows out and say so again. An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 6 hours, or run by hand) publishes them.", ""].join("\n"));
+            }
+            if (warnings.length > 0) {
+              // Non-blocking (definitions/ticket-links-and-sold-out.md): every
+              // row here still published, so this is a second annotation next
+              // to (never instead of) the one above, not a replacement for it.
+              const lines = warnings.map((w) => String(w.message).replace(/\s+/g, " ").trim());
+              console.log("::warning title=Published with " + warnings.length + " ticket-link warning(s)::" + lines.join("; "));
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published with " + warnings.length + " ticket-link warning(s)", "", "These rows published, but a ticket link problem means the ticket text has no link (or a ticketURL was ignored). An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 6 hours, or run by hand) clears the warning.", ""].join("\n"));
+            }
           '
       - name: Commit the refreshed snapshot
         # Only from main: this workflow can be dispatched against any ref, and

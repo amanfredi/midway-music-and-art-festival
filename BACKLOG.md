@@ -465,6 +465,13 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
       (procedure in README; standing gate, last passed 2026-08-10 — **owed
       again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
+- [ ] **Sold Out ticket icon and ticket link on a real phone** (added
+      2026-09-23, `definitions/ticket-links-and-sold-out.md`; design history in
+      PROGRESS.md). Does "SOLD OUT" read at schedule-row size (34×21 px) —
+      it's generated `<text>`, so phone font rendering may differ from the
+      Chromium screenshots — and does the thin dashed outline read as dashed
+      rather than a smear? Does the linked ticket text on the event detail page
+      (`[data-testid="ticket-link"]`) read as tappable?
 - [ ] **Featured-pin marks on a real phone.** All three live marks draw, but the
       judgement is a 3× one and the screenshots are 1×. Wellington Management's
       is 318×144, which contain-fit makes ~21 × 9.5 px inside the square, and it

@@ -176,6 +176,7 @@ describe("good fixtures", () => {
       "General Admission (limited capacity)",
       "Free Ticket Required",
       "Paid Ticket Required",
+      "Sold Out",
     ]);
     for (const e of content.events) {
       assert.ok(VALID_TICKETS.has(e.tickets), `event ${e.id} has unexpected tickets value ${JSON.stringify(e.tickets)}`);
@@ -185,6 +186,26 @@ describe("good fixtures", () => {
     for (const value of VALID_TICKETS) {
       assert.ok((byTickets[value] ?? 0) >= 1, `expected at least one event with tickets ${JSON.stringify(value)}`);
     }
+
+    // ticket_url: always a string (never absent/null, matching every other
+    // optional string field), set only for the three ticket-requiring values,
+    // and blank for General Admission even where the fixtures leave every row
+    // otherwise clean (definitions/ticket-links-and-sold-out.md).
+    const TICKET_LINK_VALUES = new Set(["Free Ticket Required", "Paid Ticket Required", "Sold Out"]);
+    for (const e of content.events) {
+      assert.equal(typeof e.ticket_url, "string", `event ${e.id} ticket_url should be a string, got ${JSON.stringify(e.ticket_url)}`);
+      if (!TICKET_LINK_VALUES.has(e.tickets)) {
+        assert.equal(e.ticket_url, "", `event ${e.id} (${e.tickets}) should never carry a ticket_url`);
+      }
+    }
+    assert.ok(
+      content.events.some((e) => TICKET_LINK_VALUES.has(e.tickets) && e.ticket_url !== ""),
+      "fixtures should cover at least one linked ticketed event"
+    );
+    const soldOut = content.events.find((e) => e.id === "polka-potatoes");
+    assert.ok(soldOut, "expected event polka-potatoes");
+    assert.equal(soldOut.tickets, "Sold Out");
+    assert.equal(soldOut.ticket_url, "https://example-tickets.test/polka-potatoes");
 
     // spot-check the past-midnight event: end_time < start_time rolls to the next date
     const pastMidnight = content.events.find((e) => e.id === "cedar-and-sage");
@@ -265,6 +286,128 @@ describe("good fixtures", () => {
     // site bytes) stable across no-change deploys, so clients don't re-download
     // the whole precache after every cron rebuild.
     assert.equal(bytes1, bytes2, "unchanged sources must produce byte-identical content.json");
+  });
+});
+
+// definitions/ticket-links-and-sold-out.md: a ticketURL problem is always
+// non-blocking — the row still publishes, only the link (or the warning
+// itself) is affected. The good fixtures start from a clean, warning-free
+// state (somali-stars/jazz-cats-2/poetry-reading-circle/polka-potatoes all
+// carry valid ticketURLs), so each case below mutates exactly the one cell
+// its warning is about.
+describe("ticket links and sold-out events", () => {
+  const isSomaliStars = (fields) => fields.id === "somali-stars";
+  const isPettingZoo = (fields) => fields.id === "instrument-petting-zoo";
+  const isJazzCats2 = (fields) => fields.id === "jazz-cats-2";
+
+  test("a Sold Out row publishes with the icon-eligible tickets value and its link", () => {
+    const content = JSON.parse(readFileSync(runBuild(GOOD_CONFIG).contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "polka-potatoes");
+    assert.ok(event, "expected event polka-potatoes");
+    assert.equal(event.tickets, "Sold Out");
+    assert.equal(event.ticket_url, "https://example-tickets.test/polka-potatoes");
+  });
+
+  test("Paid/Free/Sold Out with a blank ticketURL warns but still publishes", () => {
+    const config = makeFixtureSet(TMP_ROOT, "ticket-warn-blank", [setCell("events.csv", isSomaliStars, "ticketURL", "")]);
+    const reportPath = path.join(TMP_ROOT, "ticket-warn-blank.json");
+    const result = runBuild(config, ["--report", reportPath]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.droppedRows, [], "a blank ticketURL must never drop the row");
+    const warning = report.warnings.find((w) => w.message.includes("Somali Stars"));
+    assert.ok(warning, `expected a warning naming Somali Stars\n${JSON.stringify(report.warnings, null, 2)}`);
+    assert.match(warning.message, /events\.csv row \d+/);
+    assert.match(warning.message, /ticketURL is blank/);
+
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "somali-stars");
+    assert.ok(event, "the row must still publish");
+    assert.equal(event.tickets, "Paid Ticket Required");
+    assert.equal(event.ticket_url, "", "no link to show without a ticketURL");
+
+    // The build log prints warnings the same way it prints dropped rows.
+    assert.match(result.stdout, /WARNED about 1 ticket link issue\(s\)/);
+    assert.ok(result.stdout.includes(warning.message), "the build log should print the warning text");
+  });
+
+  test("General Admission with a ticketURL warns and the link is ignored, not published", () => {
+    const config = makeFixtureSet(TMP_ROOT, "ticket-warn-ga-url", [
+      setCell("events.csv", isPettingZoo, "ticketURL", "https://example-tickets.test/instrument-petting-zoo"),
+    ]);
+    const reportPath = path.join(TMP_ROOT, "ticket-warn-ga-url.json");
+    const result = runBuild(config, ["--report", reportPath]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.droppedRows, []);
+    const warning = report.warnings.find((w) => w.message.includes("Instrument Petting Zoo"));
+    assert.ok(warning, `expected a warning naming Instrument Petting Zoo\n${JSON.stringify(report.warnings, null, 2)}`);
+    assert.match(warning.message, /never links|ignored/);
+
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "instrument-petting-zoo");
+    assert.equal(event.tickets, "General Admission (limited capacity)");
+    assert.equal(event.ticket_url, "", "a GA row's ticketURL is never published, warned or not");
+  });
+
+  test("a malformed ticketURL warns, drops only the link, and keeps the row", () => {
+    const config = makeFixtureSet(TMP_ROOT, "ticket-warn-malformed", [
+      setCell("events.csv", isJazzCats2, "ticketURL", "javascript:alert(1)"),
+    ]);
+    const reportPath = path.join(TMP_ROOT, "ticket-warn-malformed.json");
+    const result = runBuild(config, ["--report", reportPath]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.droppedRows, [], "a malformed ticketURL must never drop the row — only an unknown tickets value does");
+    const warning = report.warnings.find((w) => w.message.includes("The Jazz Cats"));
+    assert.ok(warning, `expected a warning naming The Jazz Cats\n${JSON.stringify(report.warnings, null, 2)}`);
+    assert.match(warning.message, /only https, http, and mailto/);
+
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const event = content.events.find((e) => e.id === "jazz-cats-2");
+    assert.ok(event, "the row must still publish");
+    assert.equal(event.tickets, "Paid Ticket Required", "plain ticket text, unaffected by the dropped link");
+    assert.equal(event.ticket_url, "", "the link is dropped");
+
+    // --strict does not turn this into a build-stopping error either: the
+    // organizers explicitly want ticket problems to be non-blocking, full stop.
+    const strictResult = runStrictBuild(config);
+    assert.equal(strictResult.status, 0, `--strict must still publish over a ticket-link-only warning\n${strictResult.stderr}`);
+  });
+
+  test("an unknown tickets value is still a row error, unlike a ticket link problem", () => {
+    // "Sold Out" is now valid, but anything else in that column is exactly as
+    // much an error as before — ticket link warnings never widen the enum.
+    const config = makeFixtureSet(TMP_ROOT, "ticket-still-an-error", [setCell("events.csv", isSomaliStars, "tickets", "Waitlist")]);
+    const result = runStrictBuild(config);
+    assert.notEqual(result.status, 0, "an unknown tickets value must still fail a --strict build");
+    assert.match(result.stderr, /unknown tickets value "Waitlist"/);
+  });
+
+  test("fixtures without a ticketURL column still build, and every ticketed row warns", () => {
+    // The self-reporting failure mode the definition doc calls out: a renamed
+    // or missing header is indistinguishable from every row's cell being
+    // blank, so it shows up as a warning on every ticketed row rather than a
+    // silent loss.
+    const config = makeFixtureSet(TMP_ROOT, "ticket-url-column-missing", [dropColumn("events.csv", "ticketURL")]);
+    const reportPath = path.join(TMP_ROOT, "ticket-url-column-missing.json");
+    const result = runBuild(config, ["--report", reportPath]);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+
+    const before = JSON.parse(readFileSync(runBuild(GOOD_CONFIG).contentPath, "utf8"));
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    assert.equal(content.events.length, before.events.length, "a missing optional column must drop nothing");
+    for (const event of content.events) assert.equal(event.ticket_url, "");
+
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.droppedRows, []);
+    const ticketedCount = before.events.filter((e) =>
+      ["Free Ticket Required", "Paid Ticket Required", "Sold Out"].includes(e.tickets)
+    ).length;
+    assert.equal(report.warnings.length, ticketedCount, "every ticketed row should warn once the column is gone");
   });
 });
 
@@ -1670,7 +1813,10 @@ describe("invalid rows are left out by default", () => {
       readFileSync(runStrictBuild(GOOD_CONFIG).contentPath, "utf8")
     );
     assert.ok(!result.stdout.includes("LEFT OUT"), "a clean build must not claim to have left anything out");
-    assert.deepEqual(JSON.parse(readFileSync(reportPath, "utf8")).droppedRows, []);
+    assert.ok(!result.stdout.includes("WARNED"), "a clean build must not claim to have warned about anything");
+    const report = JSON.parse(readFileSync(reportPath, "utf8"));
+    assert.deepEqual(report.droppedRows, []);
+    assert.deepEqual(report.warnings, []);
   });
 
   test("--strict publishes nothing at all over the same rows", () => {

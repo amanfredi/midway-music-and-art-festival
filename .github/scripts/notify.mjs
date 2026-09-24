@@ -105,6 +105,11 @@ function droppedRowLine(row) {
   );
 }
 
+/** One ticket-link warning as a single line — same flattening as a dropped row. */
+function warningLine(warning) {
+  return `  - ${String(warning.message ?? "").replace(/\s+/g, " ").trim()}`;
+}
+
 /** The stale-source lines both mails print, when a run served saved bytes. */
 function staleSourceLines(report) {
   const used = report?.snapshot?.used ?? [];
@@ -173,35 +178,74 @@ export function summarize({ report, context }) {
 }
 
 /**
- * The mail a green run sends: the site is live and complete except for these
- * rows. Written for the organizers, who are the ones who can fix the cells.
+ * Subject line for the skipped-rows/warnings mail — deliberately keeps the
+ * original "Published without N invalid row(s)" wording for the dropped-rows-
+ * only case (the common one, and the one an existing filter or search may
+ * already key on), and only grows the sentence when a warning has something to
+ * add (definitions/ticket-links-and-sold-out.md — exact wording for the mixed
+ * case was left to the implementer).
+ */
+function skippedRowsSubject(droppedCount, warningCount) {
+  if (droppedCount > 0 && warningCount > 0) {
+    return `[Midway site] Published without ${droppedCount} invalid row(s), ${warningCount} warning(s)`;
+  }
+  if (droppedCount > 0) return `[Midway site] Published without ${droppedCount} invalid row(s)`;
+  return `[Midway site] Published with ${warningCount} warning(s)`;
+}
+
+/**
+ * The mail a green run sends: the site is live, with either some rows left
+ * out, some non-blocking ticket-link warnings, or both. Written for the
+ * organizers, who are the ones who can fix the cells either way.
  */
 export function summarizeSkippedRows({ report, context }) {
   const workflow = context.workflow || "Workflow";
   const repo = context.repo || "the site repo";
   const dropped = report?.droppedRows ?? [];
-  const subject = `[Midway site] Published without ${dropped.length} invalid row(s)`;
+  const warnings = report?.warnings ?? [];
+  const subject = skippedRowsSubject(dropped.length, warnings.length);
+
+  const clauses = [];
+  if (dropped.length > 0) clauses.push(`leaving out ${dropped.length} row(s) that failed validation`);
+  if (warnings.length > 0) clauses.push(`with ${warnings.length} non-blocking ticket-link warning(s)`);
 
   const lines = [
     `The "${workflow}" workflow published ${repo}${context.sha ? ` at ${context.sha.slice(0, 7)}` : ""}${
       context.event ? ` (${context.event})` : ""
-    }, leaving out ${dropped.length} row(s) that failed validation.`,
+    }${clauses.length > 0 ? `, ${clauses.join(" and ")}` : ""}.`,
     "",
     `Run log: ${runUrlFor(context)}`,
-    "",
-    `Left out (${dropped.length}):`,
   ];
-  for (const row of dropped.slice(0, MAX_LISTED_FAILURES)) lines.push(droppedRowLine(row));
-  if (dropped.length > MAX_LISTED_FAILURES) lines.push(`  - …and ${dropped.length - MAX_LISTED_FAILURES} more.`);
+
+  if (dropped.length > 0) {
+    lines.push("", `Left out (${dropped.length}):`);
+    for (const row of dropped.slice(0, MAX_LISTED_FAILURES)) lines.push(droppedRowLine(row));
+    if (dropped.length > MAX_LISTED_FAILURES) lines.push(`  - …and ${dropped.length - MAX_LISTED_FAILURES} more.`);
+  }
+
+  if (warnings.length > 0) {
+    lines.push("", `Warnings (${warnings.length}):`);
+    for (const warning of warnings.slice(0, MAX_LISTED_FAILURES)) lines.push(warningLine(warning));
+    if (warnings.length > MAX_LISTED_FAILURES) lines.push(`  - …and ${warnings.length - MAX_LISTED_FAILURES} more.`);
+  }
 
   lines.push(...staleSourceLines(report));
 
-  lines.push(
-    "",
-    "Everything else in the spreadsheet is live on the site right now.",
-    "Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 6 hours)",
-    "or a manual one publishes them. Until then those rows are not on the site."
-  );
+  if (dropped.length > 0) {
+    lines.push(
+      "",
+      "Everything else in the spreadsheet is live on the site right now.",
+      "Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 6 hours)",
+      "or a manual one publishes them. Until then those rows are not on the site."
+    );
+  } else {
+    lines.push(
+      "",
+      "Everything in the spreadsheet is live on the site right now — the warnings above did not stop anything",
+      "from publishing. Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 6 hours)",
+      "or a manual one clears the warning."
+    );
+  }
 
   return { subject, body: lines.join("\n") + "\n" };
 }
@@ -393,19 +437,23 @@ function notifyFailure() {
 function notifySkippedRows() {
   const report = readReport(process.env.BUILD_REPORT);
   const dropped = report?.droppedRows ?? [];
-  if (dropped.length === 0) {
-    console.log("This run published every row the sheet holds; no skipped-rows email to send.");
+  const warnings = report?.warnings ?? [];
+  if (dropped.length === 0 && warnings.length === 0) {
+    console.log("This run published every row the sheet holds with nothing to warn about; no skipped-rows email to send.");
     return;
   }
   // The gate on re-mailing: the snapshot changed exactly when a source's bytes
   // differ from the last publish. Without it every code push and every 6-hourly
-  // cron would mail the same unfixed rows again. A snapshot commit that failed
-  // to push can cost one repeat, which is cheaper than the alternative.
+  // cron would mail the same unfixed rows (or the same unfixed warnings) again.
+  // A snapshot commit that failed to push can cost one repeat, which is
+  // cheaper than the alternative. One gate for both droppedRows and warnings —
+  // definitions/ticket-links-and-sold-out.md is explicit that there is no
+  // separate warnings send gate.
   const changed = report?.snapshot?.changed ?? [];
   if (changed.length === 0) {
     console.log(
-      `${dropped.length} invalid row(s) were left out, but no content source has changed since the last publish; ` +
-        "not mailing the same rows again."
+      `${dropped.length} invalid row(s) were left out and ${warnings.length} warning(s) were raised, but no content ` +
+        "source has changed since the last publish; not mailing the same rows again."
     );
     return;
   }

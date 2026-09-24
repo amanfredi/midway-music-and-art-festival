@@ -7,8 +7,8 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1159361423&single=true&output=csv",
       "file": "sources/events.csv",
       "contentType": "text/csv",
-      "sha256": "2914de8c16c4d0d620fda1624ca47d2646daecfe3b16c47c92a596edd796c3f7",
-      "bytes": 43407,
+      "sha256": "3ba0e2b72c214100141d75d015336587a7d327cc88bd57c08d23e1e3082548c9",
+      "bytes": 46651,
       "lastChanged": "2026-09-24"
     },
     {
@@ -27,9 +27,9 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1306919477&single=true&output=csv",
       "file": "sources/venues.csv",
       "contentType": "text/csv",
-      "sha256": "ad8f9d5d134f540adb1cfdd287828ee036661ac723b98f513c896a771add67ab",
-      "bytes": 11394,
-      "lastChanged": "2026-09-22"
+      "sha256": "162685b39ba13d153e3fe35502f5a857c38d7536a48c75efde0fa5afc81a8efe",
+      "bytes": 11767,
+      "lastChanged": "2026-09-24"
     }
   ]
 }

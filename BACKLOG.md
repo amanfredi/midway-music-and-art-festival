@@ -470,17 +470,20 @@ None of these can be checked from the screenshot harness or the test suite.
       more the same day, `definitions/ticket-links-and-sold-out.md`). Three
       variants for Anthony to compare, differing only in
       `tools/make-ticket-icons.mjs`'s body treatment for `icon-ticket-soldout`:
-      - **Variant A** (this branch, `worktree-agent-aa210c0bd3f59943a`): a
-        light grey (`#c8ced4`) body with a thin solid `#4b5962` outline — the
-        fill alone is ~1.3:1 against the palest kind tints (`--kind-music`
-        `#ddeaf3`, `--kind-performance` `#f9e3e3`), well under the 3:1 WCAG
-        non-text floor, so the outline is what keeps the silhouette visible
-        there; the outline color is 5.9:1 against both. Perforation holes:
-        white.
-      - **Variant B** (`ticket-icon-variant-b`): a white body with a *thin*
-        dashed `#1d2a33` (near-black) outline. Perforation holes: `#1d2a33`
-        (the outline's own color) unless that reads badly, in which case the
-        actual choice and why are in that branch's own PROGRESS.md entry.
+      - **Variant A** (`worktree-agent-aa210c0bd3f59943a`): a light grey
+        (`#c8ced4`) body with a thin solid `#4b5962` outline — the fill alone
+        is ~1.3:1 against the palest kind tints (`--kind-music` `#ddeaf3`,
+        `--kind-performance` `#f9e3e3`), well under the 3:1 WCAG non-text
+        floor, so the outline is what keeps the silhouette visible there; the
+        outline color is 5.9:1 against both. Perforation holes: white.
+      - **Variant B** (this branch, `ticket-icon-variant-b`): a white body
+        with a thin dashed `#1d2a33` (near-black, 12–14.7:1 against every
+        tint and white alike) outline — `stroke-width` 13, `stroke-dasharray`
+        "28 19" in the source path's own units (half round 3's 26-unit
+        weight, per Anthony's round-4 ask to thin it as much as reasonably
+        possible while still reading as dashed). Perforation holes: `#1d2a33`
+        (the outline's own color — a hole this small reads as a punched dot
+        either way, and it keeps the icon to two colors).
       - **Variant C** (`ticket-icon-variant-c`): identical to B, but the
         dashed outline (and, by the same rule, the holes) is dark grey
         (`#4b5962`) instead of near-black.

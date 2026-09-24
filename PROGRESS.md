@@ -102,42 +102,59 @@ found read as merely dark rather than greyed-out/unavailable, and asked for
 added the lettering — but that grey only reached ~1.7:1 against the brand-red
 text sitting on it, too low to read as text-on-body rather than noise.
 
-**This pass (variant A, this branch) is the one committed here:** body
-`#c8ced4` (Anthony's own suggestion, checked at ~4.8:1 against the red
-lettering), with a thin `--color-text-muted` outline added because that light
-a fill is only ~1.3:1 against the palest kind tints on its own — under the 3:1
-WCAG non-text floor, so without the outline the ticket's silhouette nearly
-disappears into `--kind-music`/`--kind-performance` rows. The lettering itself
-moved too: larger, and re-centered in the gap between the ticket's left-edge
-notch and its right-edge perforation line (previously it sat left of that gap
-under a size/position guess; it is now measured against the real rendered
-glyph bounds via a headless-browser `getBBox`, the same technique the tool
-already used for the outline's own crop).
+**Variant A, branch `worktree-agent-aa210c0bd3f59943a`:** body `#c8ced4`
+(Anthony's own suggestion, checked at ~4.8:1 against the red lettering), with
+a thin `--color-text-muted` outline added because that light a fill is only
+~1.3:1 against the palest kind tints on its own — under the 3:1 WCAG non-text
+floor, so without the outline the ticket's silhouette nearly disappears into
+`--kind-music`/`--kind-performance` rows. The lettering itself moved too:
+larger, and re-centered in the gap between the ticket's left-edge notch and
+its right-edge perforation line (previously it sat left of that gap under a
+size/position guess; it is now measured against the real rendered glyph
+bounds via a headless-browser `getBBox`, the same technique the tool already
+used for the outline's own crop).
 
-**A fourth pass, on this branch, fixed how the tear-line perforation holes
-draw.** Rounds 2–3 stroked the outline color onto the whole compound path —
-the ticket's outer silhouette and the five small perforation-hole circles
+**A fourth pass, on variant A's branch, fixed how the tear-line perforation
+holes draw**, and this branch inherits it (re-cut from that pass's commit).
+Rounds 2–3 stroked the outline color onto the whole compound path — the
+ticket's outer silhouette and the five small perforation-hole circles
 together, since they are one `<path>` in the source artwork — which rang
 every tiny hole with the outline color. Fine on variant A's solid outline,
-but on variant B's dashed one (see below) each hole's own path length does
-not divide evenly into the dash pattern, so every hole rendered a different,
-messy fraction of one dash cycle. `splitTicketPath()` in
-`tools/make-ticket-icons.mjs` now separates the silhouette from the holes at
-the source path's own first `Z` (exact, not a heuristic, since every source
-file closes the outer boundary before starting the next subpath) — the
+but on this variant's dashed one each hole's own path length does not divide
+evenly into the dash pattern, so every hole rendered a different, messy
+fraction of one dash cycle — the "squiggly mess" Anthony flagged. `splitTicketPath()`
+in `tools/make-ticket-icons.mjs` now separates the silhouette from the holes
+at the source path's own first `Z` (exact, not a heuristic, since every
+source file closes the outer boundary before starting the next subpath) — the
 silhouette keeps the outline stroke, and the holes become a second `<path>`,
-plain-filled in a contrasting color with no stroke of their own. Variant A's
-holes are white; the light-grey body needed a white contrast the same way its
-red lettering needed the light body.
+plain-filled in a contrasting color with no stroke of their own.
 
-**Variants B and C live on separate branches, `ticket-icon-variant-b` and
-`ticket-icon-variant-c`, re-cut from this pass's commit.** Both are a white
-body with a thin dashed outline instead of variant A's light-grey-plus-solid
-one — near-black for B, dark grey for C — thinned from round 3's 26-unit
-stroke on Anthony's own instruction once the ringed-hole "squiggly mess" made
-it hard to judge the dash itself. Each branch's own PROGRESS.md entry has the
-exact width chosen and how it reads at 1×/2×/3× device scale. Anthony compares
-all three on device before any ships to `main`; a lettering-less plain grey
+**Variant B, branch `ticket-icon-variant-b` (re-cut from variant A's fourth
+pass) — the branch this log entry is now recording:** white body, a *thin*
+dashed near-black (`--color-text`, `#1d2a33`) outline, and holes filled in
+that same color (matching the outline rather than white or grey — a hole this
+small reads as a punched dot regardless of exact shade, and matching keeps the
+icon to two colors instead of three). The outline itself thinned
+substantially from round 3's 26 source units: Anthony's round-4 ask was to go
+as thin as it could reasonably be while still reading as dashed at row size,
+and a follow-up widened the acceptable range to "9–13 is all fine, use
+judgment." Checked 9, 11 and 13 units at 1×/2×/3× device scale (a schedule row
+is 34×21 CSS px, so 1 source unit ≈ 0.055 px there); **13 units shipped**
+(`stroke-dasharray` "28 19", scaled down from round 3's "55 37" in proportion
+to the stroke) — exactly half of round 3's weight, and the top of Anthony's
+range rather than the bottom, because 13 held up very slightly better at 1×
+with no visible cost at 2×/3× against either thinner candidate. At 2× and 3×
+all three widths read clearly as a dashed line. At true 1× the outline
+antialiases faint regardless of which width in the 9–13 range is chosen —
+narrower reads more like a smudge than a line, and even 13 is not crisp — but
+1× is not really how a 34×21 px icon is viewed on a modern phone, and thinner
+is exactly what Anthony asked for; reported here rather than quietly
+thickened back up to compensate.
+
+**Variant C lives on its own branch, `ticket-icon-variant-c`**, identical to
+this one but with `--color-text-muted` (`#4b5962`, dark grey) in place of
+`--color-text` for both the outline and the holes. Anthony compares all three
+variants on device before any ships to `main`; a lettering-less plain grey
 fallback also stays available if none of the generated-text treatments holds
 up off-device (BACKLOG.md).
 

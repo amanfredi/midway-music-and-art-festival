@@ -25,10 +25,11 @@
 // Three body treatments exist as of 2026-09-23, for Anthony to compare on
 // device (BACKLOG.md) — this file and its config below are the only
 // difference between them:
-//   - variant A (this branch): a light grey body, with a thin solid outline
-//     so the silhouette survives against the palest row tints.
-//   - variant B (`ticket-icon-variant-b`): a white body with a thin dashed
-//     near-black outline.
+//   - variant A (`worktree-agent-aa210c0bd3f59943a`): a light grey body, with
+//     a thin solid outline so the silhouette survives against the palest row
+//     tints.
+//   - variant B (this branch): a white body with a thin dashed near-black
+//     outline.
 //   - variant C (`ticket-icon-variant-c`): the same as B, but the dashed
 //     outline is dark grey instead of near-black.
 // All three fill the tear-line perforation holes plain (a contrasting color,
@@ -49,30 +50,42 @@ import { join } from 'node:path';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const INDEX = join(ROOT, 'site/index.html');
 const BRAND_RED = '#a11f22';
-// Light enough that BRAND_RED lettering on top reaches ~4.8:1 (Anthony's
-// ask was "at least 3:1"; #c8ced4 was his own suggestion, checked here).
-// The cost of going this light is that the body itself nearly disappears
-// against the palest row tints — --kind-music (#ddeaf3) and --kind-performance
-// (#f9e3e3) both give ~1.3:1, well under the 3:1 WCAG non-text-contrast floor
-// — so SOLD_OUT_OUTLINE below exists to keep the silhouette visible. (The
-// previous pass used #6b7680, a darker grey with only ~1.7:1 against the red
-// lettering — too low to read as text-on-body rather than text-on-noise;
-// that is what changed here.)
-const SOLD_OUT_GREY = '#c8ced4';
-// --color-text-muted in app.css: 5.9:1 against both tints above, so a thin
-// stroke in it is enough to keep the ticket's edge legible without the body
-// fill itself needing to carry that contrast.
-const SOLD_OUT_OUTLINE = { color: '#4b5962', width: 20 };
-// The tear-line perforation holes are now filled plain white — a contrasting
-// color against the grey body — rather than sharing the body's own outline
-// treatment. Round 3 stroked the whole compound path (silhouette + holes)
-// as one shape, which rings every tiny hole with the outline color; that
-// reads fine on a solid outline but produced a "squiggly mess" on variant
-// B's dashed one, since each hole's own path length does not divide evenly
-// into the dash pattern. Splitting the silhouette from the holes (see
-// SOURCES below and the loop's use of splitTicketPath) fixes both variants
-// at once, since it is the same underlying path.
-const SOLD_OUT_HOLE = '#ffffff';
+// White: ~7.7:1 against BRAND_RED lettering, and never fades into a kind tint
+// the way a grey fill can, since it is the row's own near-white surface color
+// pushed to its lightest extreme. What white alone cannot do is read as a
+// ticket shape against --color-surface/--color-bg (both near-white) or the
+// palest kind tints — SOLD_OUT_OUTLINE below carries the silhouette instead.
+const SOLD_OUT_BODY = '#ffffff';
+// --color-text (app.css), 12–14.7:1 against every kind tint and white alike.
+// Dashed rather than solid (Anthony's ask for this variant); width and
+// dasharray are in source-path units, chosen for the icon's actual render
+// scale (viewBox width 624 -> 34 CSS px, so 1 unit ~= 0.055 px) rather than
+// for how a dash looks blown up in this generator's own preview output.
+//
+// Round 3 shipped width 26 (~1.4 px on screen); Anthony's round-4 ask was "as
+// thin as it can reasonably be while still reading as dashed at row size",
+// roughly a third to a half of that (~9-13 units), once the ringed-
+// perforation "squiggly mess" (fixed by splitTicketPath, below) stopped
+// obscuring the dash itself. 13 units (~0.7 px, exactly half of round 3's
+// weight) is the top of that range: checked against 11 side by side, both
+// read clearly as dashed at 2x/3x device scale — the range these icons are
+// actually viewed at, a schedule row being 34x21 CSS px — and 13 held up
+// very slightly better at 1x, for no visible cost at the higher densities.
+// At true 1x it still antialiases faint regardless of which end of the range
+// is picked — expected at this weight, and reported rather than quietly
+// thickened back up. Dash/gap length (28/19) keep roughly round 3's
+// dash:gap:width proportions, scaled down with the stroke rather than left
+// at a size tuned for a 26-unit line.
+const SOLD_OUT_OUTLINE = { color: '#1d2a33', width: 13, dasharray: '28 19' };
+// The tear-line perforation holes are a separate filled shape from the outer
+// silhouette (splitTicketPath, below) — fixed this round after rounds 2-3
+// stroked the whole compound path as one shape, ringing every tiny hole with
+// the outline color and, on this variant's dashed stroke, turning each hole
+// into a different meaningless fraction of one dash cycle ("squiggly mess").
+// Filled in the outline's own color: on a white body a hole this small reads
+// as a punched dot either way, and matching the outline avoids introducing a
+// fourth color into a two-color icon.
+const SOLD_OUT_HOLE = SOLD_OUT_OUTLINE.color;
 const PAD = 12; // breathing room around the artwork, in source units
 
 // Landmarks in PAID_TICKET.svg's own path coordinate system, read off its
@@ -95,7 +108,7 @@ const SOURCES = [
   {
     file: 'PAID_TICKET.svg',
     id: 'icon-ticket-soldout',
-    color: SOLD_OUT_GREY,
+    color: SOLD_OUT_BODY,
     outline: SOLD_OUT_OUTLINE,
     holeColor: SOLD_OUT_HOLE,
     glyph: false,

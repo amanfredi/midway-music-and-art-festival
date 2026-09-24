@@ -114,12 +114,32 @@ under a size/position guess; it is now measured against the real rendered
 glyph bounds via a headless-browser `getBBox`, the same technique the tool
 already used for the outline's own crop).
 
-**Variant B lives on a separate branch, `ticket-icon-variant-b`, cut from this
-one**: same lettering, a white body with a dashed `--color-text` (`#1d2a33`)
-outline instead of variant A's light-grey-plus-solid-outline. Anthony compares
-both on device before either ships to `main`; a lettering-less plain grey
-fallback also stays available if neither generated-text treatment holds up
-off-device (BACKLOG.md).
+**A fourth pass, on this branch, fixed how the tear-line perforation holes
+draw.** Rounds 2–3 stroked the outline color onto the whole compound path —
+the ticket's outer silhouette and the five small perforation-hole circles
+together, since they are one `<path>` in the source artwork — which rang
+every tiny hole with the outline color. Fine on variant A's solid outline,
+but on variant B's dashed one (see below) each hole's own path length does
+not divide evenly into the dash pattern, so every hole rendered a different,
+messy fraction of one dash cycle. `splitTicketPath()` in
+`tools/make-ticket-icons.mjs` now separates the silhouette from the holes at
+the source path's own first `Z` (exact, not a heuristic, since every source
+file closes the outer boundary before starting the next subpath) — the
+silhouette keeps the outline stroke, and the holes become a second `<path>`,
+plain-filled in a contrasting color with no stroke of their own. Variant A's
+holes are white; the light-grey body needed a white contrast the same way its
+red lettering needed the light body.
+
+**Variants B and C live on separate branches, `ticket-icon-variant-b` and
+`ticket-icon-variant-c`, re-cut from this pass's commit.** Both are a white
+body with a thin dashed outline instead of variant A's light-grey-plus-solid
+one — near-black for B, dark grey for C — thinned from round 3's 26-unit
+stroke on Anthony's own instruction once the ringed-hole "squiggly mess" made
+it hard to judge the dash itself. Each branch's own PROGRESS.md entry has the
+exact width chosen and how it reads at 1×/2×/3× device scale. Anthony compares
+all three on device before any ships to `main`; a lettering-less plain grey
+fallback also stays available if none of the generated-text treatments holds
+up off-device (BACKLOG.md).
 
 Fixtures: `content/fixtures/events.csv` gained the `ticketURL` column, with
 three previously-blank-URL ticketed rows given valid links (`somali-stars`,

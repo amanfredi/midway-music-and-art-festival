@@ -22,12 +22,18 @@
 // <text> rather than vector letterforms, since there is no source artwork to
 // draw real glyph paths from the way FREE_TICKET.svg's "FREE" is.
 //
-// Two body treatments exist as of 2026-09-23, for Anthony to compare on
+// Three body treatments exist as of 2026-09-23, for Anthony to compare on
 // device (BACKLOG.md) — this file and its config below are the only
 // difference between them:
 //   - variant A (this branch): a light grey body, with a thin solid outline
 //     so the silhouette survives against the palest row tints.
-//   - variant B (`ticket-icon-variant-b`): a white body with a dashed outline.
+//   - variant B (`ticket-icon-variant-b`): a white body with a thin dashed
+//     near-black outline.
+//   - variant C (`ticket-icon-variant-c`): the same as B, but the dashed
+//     outline is dark grey instead of near-black.
+// All three fill the tear-line perforation holes plain (a contrasting color,
+// no stroke of their own) rather than stroking them along with the outer
+// silhouette — see splitTicketPath below for why that split exists.
 // Per definitions/ticket-links-and-sold-out.md.
 //
 // The brand assets themselves are never modified.
@@ -57,6 +63,16 @@ const SOLD_OUT_GREY = '#c8ced4';
 // stroke in it is enough to keep the ticket's edge legible without the body
 // fill itself needing to carry that contrast.
 const SOLD_OUT_OUTLINE = { color: '#4b5962', width: 20 };
+// The tear-line perforation holes are now filled plain white — a contrasting
+// color against the grey body — rather than sharing the body's own outline
+// treatment. Round 3 stroked the whole compound path (silhouette + holes)
+// as one shape, which rings every tiny hole with the outline color; that
+// reads fine on a solid outline but produced a "squiggly mess" on variant
+// B's dashed one, since each hole's own path length does not divide evenly
+// into the dash pattern. Splitting the silhouette from the holes (see
+// SOURCES below and the loop's use of splitTicketPath) fixes both variants
+// at once, since it is the same underlying path.
+const SOLD_OUT_HOLE = '#ffffff';
 const PAD = 12; // breathing room around the artwork, in source units
 
 // Landmarks in PAID_TICKET.svg's own path coordinate system, read off its
@@ -81,6 +97,7 @@ const SOURCES = [
     id: 'icon-ticket-soldout',
     color: SOLD_OUT_GREY,
     outline: SOLD_OUT_OUTLINE,
+    holeColor: SOLD_OUT_HOLE,
     glyph: false,
     label: ['SOLD', 'OUT'],
     labelColor: BRAND_RED,
@@ -155,12 +172,37 @@ async function labelMarkup(page, lines, box, color) {
   return parts.join('');
 }
 
-/** Adds stroke attributes to a single self-closing `<path .../>` string. */
-function applyOutline(pathMarkup, outline) {
-  if (!outline) return pathMarkup;
+/** `stroke`/`stroke-width`/`stroke-dasharray` as a markup fragment, or ''. */
+function outlineAttrs(outline) {
+  if (!outline) return '';
   const attrs = [`stroke="${outline.color}"`, `stroke-width="${outline.width}"`];
   if (outline.dasharray) attrs.push(`stroke-dasharray="${outline.dasharray}"`, 'stroke-linecap="butt"');
-  return pathMarkup.replace(/\/>\s*$/, ` ${attrs.join(' ')} />`);
+  return ' ' + attrs.join(' ');
+}
+
+/**
+ * PAID_TICKET.svg's outline is one compound path: the ticket's own silhouette
+ * (the outer boundary, including the notch bump on the left edge and the
+ * stub's rounded corner on the right), followed by five small circles that
+ * punch the tear-line perforation near the right edge. They are two visually
+ * different things sharing one `d` — the silhouette wants an outline stroke,
+ * the holes want a plain contrasting fill and no stroke of their own (a
+ * stroke there rings every tiny hole, and on a dashed stroke each hole's own
+ * path length does not divide evenly into the dash pattern, which is what
+ * produced the "squiggly mess" round 3 shipped). Splitting them is what lets
+ * each get its own treatment.
+ *
+ * The split point is the first `Z`: every source file here draws the outer
+ * boundary first and closes it before starting the next subpath, so slicing
+ * there is exact rather than a heuristic.
+ */
+function splitTicketPath(d) {
+  const firstZ = d.indexOf('Z');
+  return { boundary: d.slice(0, firstZ + 1).trim(), holes: d.slice(firstZ + 1).trim() };
+}
+
+function pathTag(d, fill, extraAttrs = '') {
+  return `<path d="${d}" fill="${fill}" fill-opacity="1" fill-rule="nonzero"${extraAttrs}/>`;
 }
 
 const START = '<!-- BEGIN generated ticket sprite (tools/make-ticket-icons.mjs) -->';
@@ -170,7 +212,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage();
 const symbols = [];
 
-for (const { file, id, color, outline, glyph, label, labelColor } of SOURCES) {
+for (const { file, id, color, outline, holeColor, glyph, label, labelColor } of SOURCES) {
   const raw = await readFile(join(ROOT, 'MMAF Brand Assets', file), 'utf8');
   await page.setContent(`<body style="margin:0">${raw}</body>`);
   const box = await page.evaluate((keepGlyph) => {
@@ -193,12 +235,23 @@ for (const { file, id, color, outline, glyph, label, labelColor } of SOURCES) {
   // Strip the outer <svg> wrapper, keep everything inside (defs included --
   // PAID_TICKET's "$" glyph depends on a clipPath living in <defs>).
   const inner = raw.replace(/^[\s\S]*?<svg\b[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-  // The glyph-less variant keeps only the ticket-body outline — the first
-  // top-level element in both source files — and none of the <defs> the
-  // glyph's clipPath needs, since nothing here references it.
-  const body = glyph ? inner : (inner.match(/<path fill="#000000"[^>]*\/>/) ?? [])[0];
-  if (!body) throw new Error(`${file}: expected a ticket-outline path to reuse for ${id}`);
-  const recolored = applyOutline(body.replaceAll('fill="#000000"', `fill="${color}"`), outline);
+  let recolored;
+  if (glyph) {
+    recolored = inner.replaceAll('fill="#000000"', `fill="${color}"`);
+  } else {
+    // The glyph-less variant keeps only the ticket-body outline — the first
+    // top-level element in both source files — and none of the <defs> the
+    // glyph's clipPath needs, since nothing here references it. Split into
+    // silhouette + holes (see splitTicketPath) so the outline stroke lands on
+    // the silhouette only.
+    const sourceTag = (inner.match(/<path fill="#000000"[^>]*\/>/) ?? [])[0];
+    if (!sourceTag) throw new Error(`${file}: expected a ticket-outline path to reuse for ${id}`);
+    const d = (sourceTag.match(/d="([^"]+)"/) ?? [])[1];
+    if (!d) throw new Error(`${file}: expected a d attribute on the ticket-outline path for ${id}`);
+    const { boundary, holes } = splitTicketPath(d);
+    recolored =
+      pathTag(boundary, color, outlineAttrs(outline)) + (holes && holeColor ? pathTag(holes, holeColor) : '');
+  }
   const text = label ? await labelMarkup(page, label, box, labelColor) : '';
 
   const vb = [

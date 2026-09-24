@@ -1877,12 +1877,17 @@ a:focus-visible, button:focus-visible {
    <use>; colors are baked into the symbol (brand red ticket body with
    knocked-out white lettering for Free/Paid; a light grey ticket body with a
    thin darker outline — the fill alone is too pale to read against the
-   lightest kind tints — and "SOLD OUT" in brand red, stacked two lines, for
-   Sold Out). This is variant A of two Anthony is comparing (BACKLOG.md); variant
-   B is the `ticket-icon-variant-b` branch, a white body with a dashed outline
-   instead. tools/make-ticket-icons.mjs generates the Sold Out lettering as
-   plain SVG text rather than vector letterforms, there being no brand
-   artwork to draw those from. Labelled via role="img" + aria-label on
+   lightest kind tints — white-filled tear-line perforation holes, and
+   "SOLD OUT" in brand red, stacked two lines, for Sold Out). This is variant
+   A of three Anthony is comparing (BACKLOG.md); variant B
+   (`ticket-icon-variant-b`) and variant C (`ticket-icon-variant-c`) are both
+   a white body with a thin dashed outline — near-black for B, dark grey for
+   C — and grey perforation holes instead. tools/make-ticket-icons.mjs
+   generates the Sold Out lettering as plain SVG text rather than vector
+   letterforms, there being no brand artwork to draw those from; it also
+   fills the perforation holes as a plain shape separate from the outline
+   stroke (`splitTicketPath`), rather than stroking them along with the
+   ticket's outer silhouette. Labelled via role="img" + aria-label on
    the <svg> itself, so this is deliberately not aria-hidden. Source aspect
    ratio is 624:384 for all three. -- */
 .ticket-icon {

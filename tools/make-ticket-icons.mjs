@@ -22,19 +22,11 @@
 // <text> rather than vector letterforms, since there is no source artwork to
 // draw real glyph paths from the way FREE_TICKET.svg's "FREE" is.
 //
-// Three body treatments exist as of 2026-09-23, for Anthony to compare on
-// device (BACKLOG.md) — this file and its config below are the only
-// difference between them:
-//   - variant A (`worktree-agent-aa210c0bd3f59943a`): a light grey body, with
-//     a thin solid outline so the silhouette survives against the palest row
-//     tints.
-//   - variant B (this branch): a white body with a thin dashed near-black
-//     outline.
-//   - variant C (`ticket-icon-variant-c`): the same as B, but the dashed
-//     outline is dark grey instead of near-black.
-// All three fill the tear-line perforation holes plain (a contrasting color,
-// no stroke of their own) rather than stroking them along with the outer
-// silhouette — see splitTicketPath below for why that split exists.
+// The body is white with a thin dashed near-black outline (chosen on
+// 2026-09-23 over grey-bodied and dark-grey-outlined alternatives; see
+// PROGRESS.md). The tear-line perforation holes are filled plain (no stroke of
+// their own) rather than stroked along with the outer silhouette — see
+// splitTicketPath below for why that split exists.
 // Per definitions/ticket-links-and-sold-out.md.
 //
 // The brand assets themselves are never modified.

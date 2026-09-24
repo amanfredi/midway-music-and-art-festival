@@ -1,5 +1,8 @@
 # Ticket links and sold-out events
 Status: defined 2026-09-23 | Overall confidence: high
+Outcome note: the shipped Sold Out icon is a white ticket with a thin dashed
+near-black outline and red "SOLD OUT" lettering, not the grey sketched below
+(chosen after four review rounds; see PROGRESS.md 2026-09-23).
 
 ## Problem & motivation
 Event detail pages say "Paid Ticket Required" / "Free Ticket Required" but give

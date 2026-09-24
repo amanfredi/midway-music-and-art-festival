@@ -465,56 +465,13 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
       (procedure in README; standing gate, last passed 2026-08-10 — **owed
       again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
-- [ ] **Sold Out ticket icon: pick a body variant, on a real phone, and check
-      the detail-page ticket link** (added 2026-09-23, revised three times
-      more the same day, `definitions/ticket-links-and-sold-out.md`). Three
-      variants for Anthony to compare, differing only in
-      `tools/make-ticket-icons.mjs`'s body treatment for `icon-ticket-soldout`:
-      - **Variant A** (`worktree-agent-aa210c0bd3f59943a`): a light grey
-        (`#c8ced4`) body with a thin solid `#4b5962` outline — the fill alone
-        is ~1.3:1 against the palest kind tints (`--kind-music` `#ddeaf3`,
-        `--kind-performance` `#f9e3e3`), well under the 3:1 WCAG non-text
-        floor, so the outline is what keeps the silhouette visible there; the
-        outline color is 5.9:1 against both. Perforation holes: white.
-      - **Variant B** (this branch, `ticket-icon-variant-b`): a white body
-        with a thin dashed `#1d2a33` (near-black, 12–14.7:1 against every
-        tint and white alike) outline — `stroke-width` 13, `stroke-dasharray`
-        "28 19" in the source path's own units (half round 3's 26-unit
-        weight, per Anthony's round-4 ask to thin it as much as reasonably
-        possible while still reading as dashed). Perforation holes: `#1d2a33`
-        (the outline's own color — a hole this small reads as a punched dot
-        either way, and it keeps the icon to two colors).
-      - **Variant C** (`ticket-icon-variant-c`): identical to B, but the
-        dashed outline (and, by the same rule, the holes) is dark grey
-        (`#4b5962`) instead of near-black.
-      All three stack "SOLD" / "OUT" in brand red (`#a11f22`, ~4.8–7.7:1
-      depending on the body), generated as plain SVG `<text>` rather than
-      vector letterforms — there is no brand artwork or approved wording to
-      draw real glyph paths from the way FREE_TICKET.svg's "FREE" is —
-      centered in the gap between the ticket's left-edge notch and its
-      right-edge perforation line. The perforation holes are a separate filled
-      shape from the outer silhouette (`splitTicketPath` in the tool) rather
-      than sharing its outline stroke, fixed after round 3 rang every tiny
-      hole with the outline color and turned variant B's dashed one into a
-      "squiggly mess" (each hole's own path length not dividing evenly into
-      the dash pattern). Screenshots of all three variants (320 px schedule
-      rows on both the blue and pink tints, a 3× close-up of each icon, and
-      side-by-side comparisons at both 3× and 1×) are in the commits that
-      added them. Judgements only a device answers: which body variant (or
-      the plain-grey-no-lettering fallback, still available if none holds up)
-      Anthony prefers; does "SOLD OUT" actually read at real schedule-row size
-      (34×21 px, `.ticket-icon` in app.css) — the desktop close-ups read
-      clearly, but generated `<text>` may render differently across phone
-      browsers/font-rendering than the vector letterforms the other two icons
-      use; and do variants B/C's thin dashed outlines actually read as dashed
-      (not a faint smear) at that size — round 4 thinned them from round 3's
-      26 source units on Anthony's own instruction, which trades legibility at
-      1× for a less heavy look, and the actual width chosen plus how it reads
-      at 1×/2×/3× are in each branch's own PROGRESS.md entry. Separately: does
-      the linked ticket text on the event detail page
-      (`[data-testid="ticket-link"]`, underlined in `--color-primary`) read
-      clearly as tappable next to the plain-text venue name and age badge on
-      the same page.
+- [ ] **Sold Out ticket icon and ticket link on a real phone** (added
+      2026-09-23, `definitions/ticket-links-and-sold-out.md`; design history in
+      PROGRESS.md). Does "SOLD OUT" read at schedule-row size (34×21 px) —
+      it's generated `<text>`, so phone font rendering may differ from the
+      Chromium screenshots — and does the thin dashed outline read as dashed
+      rather than a smear? Does the linked ticket text on the event detail page
+      (`[data-testid="ticket-link"]`) read as tappable?
 - [ ] **Featured-pin marks on a real phone.** All three live marks draw, but the
       judgement is a 3× one and the screenshots are 1×. Wellington Management's
       is 318×144, which contain-fit makes ~21 × 9.5 px inside the square, and it

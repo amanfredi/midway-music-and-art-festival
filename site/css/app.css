@@ -1879,18 +1879,12 @@ a:focus-visible, button:focus-visible {
    dashed near-black outline, near-black-filled tear-line perforation holes
    (matching the outline — a hole this small reads as a punched dot either
    way, and it keeps the icon to two colors), and "SOLD OUT" in brand red,
-   stacked two lines, for Sold Out). This is variant B of three Anthony is
-   comparing (BACKLOG.md); variant A (`worktree-agent-aa210c0bd3f59943a`) is a
-   light grey body with a thin solid outline and white holes instead, and
-   variant C (`ticket-icon-variant-c`) is identical to this one but with a
-   dark grey outline/holes rather than near-black. tools/make-ticket-icons.mjs
-   generates the Sold Out lettering as plain SVG text rather than vector
-   letterforms, there being no brand artwork to draw those from; it also
-   fills the perforation holes as a plain shape separate from the outline
-   stroke (`splitTicketPath`), rather than stroking them along with the
-   ticket's outer silhouette — stroking the whole compound shape (round 3) is
-   what made this variant's dashed outline ring every tiny hole into a
-   "squiggly mess". Labelled via role="img" + aria-label on
+   stacked two lines, for Sold Out). tools/make-ticket-icons.mjs generates
+   the Sold Out lettering as plain SVG text rather than vector letterforms,
+   there being no brand artwork to draw those from; it also fills the
+   perforation holes as a plain shape separate from the outline stroke
+   (`splitTicketPath`) — stroking the whole compound shape rings every tiny
+   hole with dashes. Labelled via role="img" + aria-label on
    the <svg> itself, so this is deliberately not aria-hidden. Source aspect
    ratio is 624:384 for all three. -- */
 .ticket-icon {

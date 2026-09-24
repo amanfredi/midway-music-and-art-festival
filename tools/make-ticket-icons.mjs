@@ -17,14 +17,18 @@
 //      glyph paths (~3KB x ~60 rows).
 //
 // Sold Out has no brand artwork of its own (organizers never supplied one), so
-// it reuses the paid ticket's outline with the "$" glyph dropped — recolored a
-// lighter grey than the app's usual muted-text tone, so the ticket itself
-// reads as greyed out/unavailable rather than merely dark — and gets its own
-// "SOLD OUT" lettering, generated here (not hand-pasted) as plain SVG <text>
-// rather than vector letterforms, since there is no source artwork to draw
-// real glyph paths from the way FREE_TICKET.svg's "FREE" is. Per
-// definitions/ticket-links-and-sold-out.md; Anthony judges legibility on
-// device (BACKLOG.md).
+// it reuses the paid ticket's outline with the "$" glyph dropped, and gets its
+// own "SOLD OUT" lettering, generated here (not hand-pasted) as plain SVG
+// <text> rather than vector letterforms, since there is no source artwork to
+// draw real glyph paths from the way FREE_TICKET.svg's "FREE" is.
+//
+// Two body treatments exist as of 2026-09-23, for Anthony to compare on
+// device (BACKLOG.md) — this file and its config below are the only
+// difference between them:
+//   - variant A (this branch): a light grey body, with a thin solid outline
+//     so the silhouette survives against the palest row tints.
+//   - variant B (`ticket-icon-variant-b`): a white body with a dashed outline.
+// Per definitions/ticket-links-and-sold-out.md.
 //
 // The brand assets themselves are never modified.
 //
@@ -39,62 +43,124 @@ import { join } from 'node:path';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const INDEX = join(ROOT, 'site/index.html');
 const BRAND_RED = '#a11f22';
-// Lighter than --color-text-muted (#4b5962, the app's usual de-emphasized
-// grey): Anthony's call after reviewing the darker first pass was that the
-// ticket itself should read as greyed out/unavailable, not merely dark.
-// #6b7680 keeps >=3:1 contrast (WCAG non-text minimum) against every kind
-// tint in app.css, including the two lightest — --kind-music (#ddeaf3) and
-// --kind-performance (#f9e3e3) — at 3.78:1 each; the previous #4b5962 sat at
-// 5.9:1 on the same two. Icon colors are baked into the symbol rather than
-// driven by a CSS custom property, so this is restated here rather than
-// shared with app.css.
-const SOLD_OUT_GREY = '#6b7680';
+// Light enough that BRAND_RED lettering on top reaches ~4.8:1 (Anthony's
+// ask was "at least 3:1"; #c8ced4 was his own suggestion, checked here).
+// The cost of going this light is that the body itself nearly disappears
+// against the palest row tints — --kind-music (#ddeaf3) and --kind-performance
+// (#f9e3e3) both give ~1.3:1, well under the 3:1 WCAG non-text-contrast floor
+// — so SOLD_OUT_OUTLINE below exists to keep the silhouette visible. (The
+// previous pass used #6b7680, a darker grey with only ~1.7:1 against the red
+// lettering — too low to read as text-on-body rather than text-on-noise;
+// that is what changed here.)
+const SOLD_OUT_GREY = '#c8ced4';
+// --color-text-muted in app.css: 5.9:1 against both tints above, so a thin
+// stroke in it is enough to keep the ticket's edge legible without the body
+// fill itself needing to carry that contrast.
+const SOLD_OUT_OUTLINE = { color: '#4b5962', width: 20 };
 const PAD = 12; // breathing room around the artwork, in source units
+
+// Landmarks in PAID_TICKET.svg's own path coordinate system, read off its
+// path data once (both variants and both ticket icons reuse this outline):
+// the semicircular notch cut into the left edge reaches its rightmost point
+// around x=510, and the dotted perforation line that divides the main face
+// from the small right-hand stub sits at x=915. The label centers in the gap
+// between them — the ticket's actual open face — not on the ticket as a
+// whole, which would drift it under the stub.
+const LEFT_NOTCH_RIGHT_EDGE = 510;
+const PERFORATION_X = 915;
 
 const SOURCES = [
   { file: 'FREE_TICKET.svg', id: 'icon-ticket-free', color: BRAND_RED, glyph: true },
   { file: 'PAID_TICKET.svg', id: 'icon-ticket-paid', color: BRAND_RED, glyph: true },
-  // Reuses PAID_TICKET.svg's outline only, recolored grey, with generated
-  // "SOLD OUT" lettering in brand red — see the header comment above.
+  // Reuses PAID_TICKET.svg's outline only, with generated "SOLD OUT"
+  // lettering in brand red — see the header comment above for the body
+  // treatment, which is the one thing that differs between the two variant
+  // branches.
   {
     file: 'PAID_TICKET.svg',
     id: 'icon-ticket-soldout',
     color: SOLD_OUT_GREY,
+    outline: SOLD_OUT_OUTLINE,
     glyph: false,
     label: ['SOLD', 'OUT'],
     labelColor: BRAND_RED,
   },
 ];
 
+const LABEL_FONT_FAMILY = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+const LABEL_FONT_WEIGHT = 800;
+
+/** Renders `text` off-screen at the given size and returns its tight glyph bbox. */
+async function measureText(page, text, fontSize) {
+  return page.evaluate(
+    ({ text, fontSize, fontFamily, fontWeight, letterSpacing }) => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      el.setAttribute('font-family', fontFamily);
+      el.setAttribute('font-weight', String(fontWeight));
+      el.setAttribute('font-size', String(fontSize));
+      el.setAttribute('letter-spacing', String(letterSpacing));
+      el.textContent = text;
+      svg.appendChild(el);
+      document.body.appendChild(svg);
+      const b = el.getBBox();
+      svg.remove();
+      return { x: b.x, y: b.y, width: b.width, height: b.height };
+    },
+    { text, fontSize, fontFamily: LABEL_FONT_FAMILY, fontWeight: LABEL_FONT_WEIGHT, letterSpacing: round(fontSize * 0.02) }
+  );
+}
+
 /**
  * "SOLD OUT" as plain SVG <text>, stacked two lines (it does not fit legibly
- * on one line at schedule-row size), centered over the ticket's main face —
- * left of the perforated tear line near the right edge (the small dashed
- * circles and the notched top/bottom curves in the outline path, roughly the
- * right third of `box`), the same way PAID's "$" and FREE's lettering sit
- * left-of-center rather than centered on the whole ticket.
+ * on one line at schedule-row size), centered horizontally in the gap between
+ * LEFT_NOTCH_RIGHT_EDGE and PERFORATION_X — the ticket's actual open face —
+ * and vertically centered on the ticket as a whole. Sized from `box.h`, then
+ * measured with a real render and shrunk only if the wider line ("SOLD")
+ * would not fit that gap, so the two lines share one font size and true glyph
+ * bounds (not font-metric guesses) drive every offset.
  *
  * font-family is the app's own system-ui stack (CLAUDE.md: no CDN fonts), and
  * <text> inside a <symbol> resolves it against the referencing document, not
  * this generator's headless page — same as any other inherited SVG property
  * reached through <use>.
  */
-function labelMarkup(lines, box, color) {
-  const centerX = box.x + box.w * 0.365;
-  const fontSize = box.h * 0.285;
-  const lineGap = fontSize * 1.02;
-  const blockHeight = lineGap * lines.length;
-  const firstBaseline = box.y + (box.h - blockHeight) / 2 + fontSize * 0.8;
-  return lines
-    .map((line, i) => {
-      const y = round(firstBaseline + i * lineGap);
-      return (
-        `<text x="${round(centerX)}" y="${y}" text-anchor="middle" ` +
-        `font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-weight="800" ` +
-        `font-size="${round(fontSize)}" letter-spacing="${round(fontSize * 0.03)}" fill="${color}">${line}</text>`
-      );
-    })
-    .join('');
+async function labelMarkup(page, lines, box, color) {
+  const centerX = (LEFT_NOTCH_RIGHT_EDGE + PERFORATION_X) / 2;
+  const maxWidth = (PERFORATION_X - LEFT_NOTCH_RIGHT_EDGE) * 0.9;
+
+  let fontSize = box.h * 0.34;
+  const measurements = await Promise.all(lines.map((line) => measureText(page, line, fontSize)));
+  const widest = Math.max(...measurements.map((m) => m.width));
+  if (widest > maxWidth) fontSize *= maxWidth / widest;
+
+  const lineGap = fontSize * 1.05;
+  const blockHeight = lineGap * (lines.length - 1);
+  const firstCenterY = box.y + box.h / 2 - blockHeight / 2;
+
+  const parts = [];
+  for (let i = 0; i < lines.length; i++) {
+    const lineCenterY = firstCenterY + i * lineGap;
+    // Re-measure at the final size: getBBox's y/height describe the glyphs'
+    // extent relative to the baseline (y=0), which is what lets the block —
+    // not the baseline — land exactly on lineCenterY regardless of font.
+    const m = await measureText(page, lines[i], fontSize);
+    const baselineY = lineCenterY - m.y - m.height / 2;
+    parts.push(
+      `<text x="${round(centerX)}" y="${round(baselineY)}" text-anchor="middle" ` +
+        `font-family="${LABEL_FONT_FAMILY}" font-weight="${LABEL_FONT_WEIGHT}" ` +
+        `font-size="${round(fontSize)}" letter-spacing="${round(fontSize * 0.02)}" fill="${color}">${lines[i]}</text>`
+    );
+  }
+  return parts.join('');
+}
+
+/** Adds stroke attributes to a single self-closing `<path .../>` string. */
+function applyOutline(pathMarkup, outline) {
+  if (!outline) return pathMarkup;
+  const attrs = [`stroke="${outline.color}"`, `stroke-width="${outline.width}"`];
+  if (outline.dasharray) attrs.push(`stroke-dasharray="${outline.dasharray}"`, 'stroke-linecap="butt"');
+  return pathMarkup.replace(/\/>\s*$/, ` ${attrs.join(' ')} />`);
 }
 
 const START = '<!-- BEGIN generated ticket sprite (tools/make-ticket-icons.mjs) -->';
@@ -104,7 +170,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage();
 const symbols = [];
 
-for (const { file, id, color, glyph, label, labelColor } of SOURCES) {
+for (const { file, id, color, outline, glyph, label, labelColor } of SOURCES) {
   const raw = await readFile(join(ROOT, 'MMAF Brand Assets', file), 'utf8');
   await page.setContent(`<body style="margin:0">${raw}</body>`);
   const box = await page.evaluate((keepGlyph) => {
@@ -132,8 +198,8 @@ for (const { file, id, color, glyph, label, labelColor } of SOURCES) {
   // glyph's clipPath needs, since nothing here references it.
   const body = glyph ? inner : (inner.match(/<path fill="#000000"[^>]*\/>/) ?? [])[0];
   if (!body) throw new Error(`${file}: expected a ticket-outline path to reuse for ${id}`);
-  const recolored = body.replaceAll('fill="#000000"', `fill="${color}"`);
-  const text = label ? labelMarkup(label, box, labelColor) : '';
+  const recolored = applyOutline(body.replaceAll('fill="#000000"', `fill="${color}"`), outline);
+  const text = label ? await labelMarkup(page, label, box, labelColor) : '';
 
   const vb = [
     round(box.x - PAD),

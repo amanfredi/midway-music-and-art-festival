@@ -94,18 +94,32 @@ silent.
 
 The Sold Out icon has no brand artwork behind it (organizers never supplied
 one), so `tools/make-ticket-icons.mjs` now also emits `icon-ticket-soldout`:
-the paid ticket's outline reused with the "$" glyph dropped, recolored a
-lighter grey (`#6b7680`, chosen for ≥3:1 contrast against every kind tint,
-including the two lightest) than the app's usual muted-text tone — a first
-pass shipped this plain, which Anthony reviewed and found read as merely dark
-rather than greyed-out/unavailable. "SOLD OUT" now stacks across it in brand
-red, generated as plain SVG `<text>` (system font stack, brand red fill)
-rather than vector letterforms, since there is no brand artwork or approved
-wording to draw real glyph paths from the way FREE_TICKET.svg's "FREE" is. A
-lettering-less fallback stays pre-approved in the definition doc if the
-generated text does not hold up on a real device the way it does in the
-desktop screenshots; Anthony judges both the color and the lettering on device
-(BACKLOG.md).
+the paid ticket's outline reused with the "$" glyph dropped. Three passes so
+far, all the same day. The first shipped a plain grey body
+(`--color-text-muted`'s `#4b5962`, no lettering), which Anthony reviewed and
+found read as merely dark rather than greyed-out/unavailable, and asked for
+"SOLD OUT" lettering instead. The second lightened the body to `#6b7680` and
+added the lettering — but that grey only reached ~1.7:1 against the brand-red
+text sitting on it, too low to read as text-on-body rather than noise.
+
+**This pass (variant A, this branch) is the one committed here:** body
+`#c8ced4` (Anthony's own suggestion, checked at ~4.8:1 against the red
+lettering), with a thin `--color-text-muted` outline added because that light
+a fill is only ~1.3:1 against the palest kind tints on its own — under the 3:1
+WCAG non-text floor, so without the outline the ticket's silhouette nearly
+disappears into `--kind-music`/`--kind-performance` rows. The lettering itself
+moved too: larger, and re-centered in the gap between the ticket's left-edge
+notch and its right-edge perforation line (previously it sat left of that gap
+under a size/position guess; it is now measured against the real rendered
+glyph bounds via a headless-browser `getBBox`, the same technique the tool
+already used for the outline's own crop).
+
+**Variant B lives on a separate branch, `ticket-icon-variant-b`, cut from this
+one**: same lettering, a white body with a dashed `--color-text` (`#1d2a33`)
+outline instead of variant A's light-grey-plus-solid-outline. Anthony compares
+both on device before either ships to `main`; a lettering-less plain grey
+fallback also stays available if neither generated-text treatment holds up
+off-device (BACKLOG.md).
 
 Fixtures: `content/fixtures/events.csv` gained the `ticketURL` column, with
 three previously-blank-URL ticketed rows given valid links (`somali-stars`,

@@ -465,23 +465,37 @@ None of these can be checked from the screenshot harness or the test suite.
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
       (procedure in README; standing gate, last passed 2026-08-10 — **owed
       again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
-- [ ] **Sold Out ticket icon legibility, and the detail-page ticket link, on a
-      real phone** (added 2026-09-23, revised 2026-09-23,
-      `definitions/ticket-links-and-sold-out.md`). `tools/make-ticket-icons.mjs`
-      ships a lighter grey ticket body (`#6b7680`, chosen for ≥3:1 contrast
-      against every kind tint) with "SOLD OUT" stacked in brand red
-      (`#a11f22`) across two lines, generated as plain SVG `<text>` rather than
-      vector letterforms — there is no brand artwork or approved wording to
-      draw real glyph paths from the way FREE_TICKET.svg's "FREE" is.
-      Screenshots at 320 px, and a 2× close-up of the icon alone, are in the
-      commit that added this (both the first, lettering-less pass and this
-      revision). Two judgements only a device answers: does "SOLD OUT" actually
+- [ ] **Sold Out ticket icon: pick a body variant, on a real phone, and check
+      the detail-page ticket link** (added 2026-09-23, revised twice more the
+      same day, `definitions/ticket-links-and-sold-out.md`). Two variants for
+      Anthony to compare, differing only in `tools/make-ticket-icons.mjs`'s
+      body treatment for `icon-ticket-soldout`:
+      - **Variant A** (this branch, `worktree-agent-aa210c0bd3f59943a`): a
+        light grey (`#c8ced4`) body with a thin `#4b5962` outline — the fill
+        alone is ~1.3:1 against the palest kind tints (`--kind-music`
+        `#ddeaf3`, `--kind-performance` `#f9e3e3`), well under the 3:1 WCAG
+        non-text floor, so the outline is what keeps the silhouette visible
+        there; the outline color is 5.9:1 against both.
+      - **Variant B** (`ticket-icon-variant-b`): a white body with a dashed
+        `#1d2a33` outline instead of a solid one.
+      Both stack "SOLD" / "OUT" in brand red (`#a11f22`, ~4.8:1 against
+      variant A's body), generated as plain SVG `<text>` rather than vector
+      letterforms — there is no brand artwork or approved wording to draw real
+      glyph paths from the way FREE_TICKET.svg's "FREE" is — centered in the
+      gap between the ticket's left-edge notch and its right-edge perforation
+      line, sized larger than the first lettered pass. Screenshots of both
+      variants (320 px schedule rows on both the blue and pink tints, plus a
+      3× close-up of the icon alone and a side-by-side of the two close-ups)
+      are in the commits that added them. Judgements only a device answers:
+      which body variant (or the plain-grey-no-lettering fallback, still
+      available if neither holds up) Anthony prefers; does "SOLD OUT" actually
       read at real schedule-row size (34×21 px, `.ticket-icon` in app.css) —
-      the desktop close-up reads clearly, but generated `<text>` may render
+      the desktop close-ups read clearly, but generated `<text>` may render
       differently across phone browsers/font-rendering than the vector
-      letterforms the other two icons use, and a plain grey ticket with no
-      lettering is still a pre-approved fallback if it does not; and does the
-      linked ticket text on the event detail page
+      letterforms the other two icons use; and does variant B's dashed outline
+      actually read as dashed (not a blurred solid line) at that size, and
+      stay visually distinct from the ticket's own internal perforation dots.
+      Separately: does the linked ticket text on the event detail page
       (`[data-testid="ticket-link"]`, underlined in `--color-primary`) read
       clearly as tappable next to the plain-text venue name and age badge on
       the same page.

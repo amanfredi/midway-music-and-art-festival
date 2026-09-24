@@ -1875,11 +1875,14 @@ a:focus-visible, button:focus-visible {
    `tickets`; General Admission and its limited-capacity variant get no icon).
    Brand artwork, defined once as a <symbol> in index.html and referenced with
    <use>; colors are baked into the symbol (brand red ticket body with
-   knocked-out white lettering for Free/Paid; a lighter grey ticket body with
-   "SOLD OUT" in brand red, stacked two lines, for Sold Out — see
-   tools/make-ticket-icons.mjs, which generates the Sold Out lettering as
+   knocked-out white lettering for Free/Paid; a light grey ticket body with a
+   thin darker outline — the fill alone is too pale to read against the
+   lightest kind tints — and "SOLD OUT" in brand red, stacked two lines, for
+   Sold Out). This is variant A of two Anthony is comparing (BACKLOG.md); variant
+   B is the `ticket-icon-variant-b` branch, a white body with a dashed outline
+   instead. tools/make-ticket-icons.mjs generates the Sold Out lettering as
    plain SVG text rather than vector letterforms, there being no brand
-   artwork to draw those from). Labelled via role="img" + aria-label on
+   artwork to draw those from. Labelled via role="img" + aria-label on
    the <svg> itself, so this is deliberately not aria-hidden. Source aspect
    ratio is 624:384 for all three. -- */
 .ticket-icon {

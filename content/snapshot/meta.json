@@ -7,9 +7,9 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1159361423&single=true&output=csv",
       "file": "sources/events.csv",
       "contentType": "text/csv",
-      "sha256": "a8547474567599e4ebec0436bc296de4240a352f5d5cc6f7e9b80bf01031511b",
-      "bytes": 43514,
-      "lastChanged": "2026-09-23"
+      "sha256": "2914de8c16c4d0d620fda1624ca47d2646daecfe3b16c47c92a596edd796c3f7",
+      "bytes": 43407,
+      "lastChanged": "2026-09-24"
     },
     {
       "id": "source:sponsors",

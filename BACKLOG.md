@@ -464,7 +464,19 @@ None of these can be checked from the screenshot harness or the test suite.
 
 - [ ] iPhone airplane-mode pass after any service-worker or caching change
       (procedure in README; standing gate, last passed 2026-08-10 — **owed
-      again**: the 2026-08-11 pass narrowed the worker's revalidation catch).
+      again**: the 2026-08-11 pass narrowed the worker's revalidation catch,
+      and 2026-09-24 added the reload onto a new worker version).
+- [ ] **Reload onto a new version on a real iPhone** (added 2026-09-24).
+      Deploy while the installed app is open and in use. It should *not*
+      reload in front of you. Switch away and back: it should now be the new
+      version, possibly after a brief flash. iOS may freeze a hidden page
+      before its reload runs, in which case the reload happens on return;
+      that flash is expected, but ending up stuck on the old version is a
+      bug. Also: open the app fresh after a deploy and leave it untouched. It
+      should switch to the new version once that version has downloaded
+      (about 4 MB, so it can take minutes on a weak signal). Test on the
+      second deploy after 2026-09-24's: pages opened before that deploy run
+      the old registration code and won't self-reload.
 - [ ] **Sold Out ticket icon and ticket link on a real phone** (added
       2026-09-23, `definitions/ticket-links-and-sold-out.md`; design history in
       PROGRESS.md). Does "SOLD OUT" read at schedule-row size (34×21 px) —

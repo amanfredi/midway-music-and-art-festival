@@ -1152,6 +1152,9 @@ CDNs, no analytics.
   nothing when `donation_url` is empty.
 - Starred event ids: `localStorage` key `mfc:starred`, JSON string array.
 - Banner dismissal: `localStorage` key `mfc:dismissed-banner` = the dismissed `banner_id`.
+- Last reload onto a new worker version: `sessionStorage` key
+  `mfc:update-reloaded-at` = `Date.now()` of the reload (Service worker
+  contract below).
 - Clock: all "now" logic reads `time.js#now()`, which returns the real time
   unless the page URL has `?t=YYYY-MM-DDTHH:MM` (demo override, festival-local).
 - Map view: construct a MapLibre map over `assets/map-vector.geojson` and add
@@ -1505,6 +1508,15 @@ under the venues name: what it proves is the dispatch, not the copy.
 cache name from the content hash, cache-first serving, stale-while-revalidate
 for `data/content.json`, navigations answered with cached `index.html`.
 UI code never needs to know about it beyond `js/sw-register.js`.
+
+When a new worker version takes control of an already-controlled page,
+`js/sw-register.js` reloads the page onto it — immediately if the page is
+hidden or has had no pointerdown, keydown, wheel, touchstart or click since
+it loaded, otherwise at its next `visibilitychange`. An immediate reload is
+also deferred that way if the page reloaded itself for an update within the
+last 60 s, which bounds a reload loop. A first install never reloads.
+`tests/sw-update.spec.mjs` covers the untouched-page reload and both ways of
+deferring it; the hidden-page and first-install cases are untested.
 
 ## Accessibility contract (binding)
 

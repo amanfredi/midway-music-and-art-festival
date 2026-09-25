@@ -73,7 +73,13 @@ async function deploy(siteDir, config) {
 
 const cacheNames = (page) => page.evaluate(() => caches.keys());
 
-test('a second version installs over the first, drops its cache, and serves the new content', async ({ page, context }) => {
+/**
+ * Serves a throwaway site tree, deploys a first version into it and gets `page`
+ * onto that version's worker, then runs `body`. `publish(bannerText)` deploys a
+ * second version over the first — a banner change, the way a day-of notice
+ * would go out — and returns its worker version.
+ */
+async function withDeployedSite(page, body) {
   const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'mmaf-sw-update-'));
   const siteDir = path.join(tmpRoot, 'site');
   // The static half of the site (app shell, map, icons) isn't generated, so it
@@ -83,29 +89,61 @@ test('a second version installs over the first, drops its cache, and serves the 
 
   try {
     const v1 = await deploy(siteDir, GOOD_CONFIG);
-
-    // --- first visit: install, precache, and prove the cache is real offline
     await page.goto(origin + '/?t=2026-10-03T15:00');
     await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, { timeout: 30_000 });
     await expect(page.locator('[data-testid="now-view"]')).toBeVisible();
-    const bannerV1 = await page.locator('[data-testid="notice-banner"]').textContent();
 
+    const publish = async (bannerText) => {
+      const v2Config = makeFixtureSet(tmpRoot, 'v2-sources', [
+        setCell('settings.csv', (f) => f.key === 'banner_id', 'value', 'update-path'),
+        setCell('settings.csv', (f) => f.key === 'banner_text', 'value', bannerText),
+      ]);
+      const v2 = await deploy(siteDir, v2Config);
+      expect(v2, 'a content change must produce a new worker version').not.toBe(v1);
+      return v2;
+    };
+    await body({ v1, publish });
+  } finally {
+    await stopServer(server);
+    rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * From the next load on, the page counts as touched as soon as it is parsed, so
+ * sw-register.js's reload-on-update rule treats it as in use. That script is
+ * deferred, so its listener exists by DOMContentLoaded.
+ */
+const touchOnLoad = (page) =>
+  page.addInitScript(() => {
+    addEventListener('DOMContentLoaded', () => dispatchEvent(new Event('pointerdown')));
+  });
+
+/** Counts every load of the page's main frame from now on. */
+function countLoads(page) {
+  const counter = { loads: 0 };
+  page.on('load', () => counter.loads++);
+  return counter;
+}
+
+const bannerText = 'Main stage running 30 min late';
+
+test('a second version installs over the first, drops its cache, and serves the new content', async ({ page, context }) => {
+  await withDeployedSite(page, async ({ v1, publish }) => {
+    // --- first visit: prove the cache is real offline
+    const bannerV1 = await page.locator('[data-testid="notice-banner"]').textContent();
     await context.setOffline(true);
     await page.reload();
     await expect(page.locator('[data-testid="now-view"]')).toBeVisible();
     expect(await cacheNames(page)).toEqual([`circuit-map-${v1}`]);
     await context.setOffline(false);
 
-    // --- publish a change, the way a day-of notice would go out
-    const bannerText = 'Main stage running 30 min late';
-    const v2Config = makeFixtureSet(tmpRoot, 'v2-sources', [
-      setCell('settings.csv', (f) => f.key === 'banner_id', 'value', 'update-path'),
-      setCell('settings.csv', (f) => f.key === 'banner_text', 'value', bannerText),
-    ]);
-    const v2 = await deploy(siteDir, v2Config);
-    expect(v2, 'a content change must produce a new worker version').not.toBe(v1);
+    const v2 = await publish(bannerText);
 
-    // --- the returning phone: reload onto the new worker
+    // --- the returning phone, in use: reload onto the new worker. Touched, so
+    // the new worker taking over doesn't reload it (the next test covers the
+    // untouched page, which does).
+    await touchOnLoad(page);
     await page.reload();
 
     // This load is answered from the cache it already had, so the new text can
@@ -134,8 +172,63 @@ test('a second version installs over the first, drops its cache, and serves the 
     await expect(page.locator('[data-testid="now-view"]')).toBeVisible();
     await expect(page.locator('[data-testid="notice-banner"]')).toContainText(bannerText);
     await context.setOffline(false);
-  } finally {
-    await stopServer(server);
-    rmSync(tmpRoot, { recursive: true, force: true });
-  }
+  });
 });
+
+test('an untouched page reloads itself onto a new version', async ({ page }) => {
+  await withDeployedSite(page, async ({ publish }) => {
+    const v2 = await publish(bannerText);
+    const counter = countLoads(page);
+
+    // The old worker still answers this load; the second one is the page
+    // reloading itself once the new worker claims it — otherwise the new code
+    // would only run on the visit after next.
+    await page.reload();
+    await expect.poll(() => counter.loads, { timeout: 30_000 }).toBe(2);
+    expect(await cacheNames(page)).toEqual([`circuit-map-${v2}`]);
+    await expect(page.locator('[data-testid="notice-banner"]')).toContainText(bannerText);
+  });
+});
+
+// Both ways an immediate reload is deferred to the next visibility change: the
+// page is in use, or it already reloaded itself for an update under a minute ago.
+const deferrals = [
+  { name: 'a page in use', setup: (page) => touchOnLoad(page) },
+  {
+    name: 'a page that reloaded itself under a minute ago',
+    setup: (page) =>
+      page.addInitScript(() => sessionStorage.setItem('mfc:update-reloaded-at', String(Date.now()))),
+  },
+];
+
+for (const { name, setup } of deferrals) {
+  test(`${name} waits to reload onto a new version until it is next hidden`, async ({ page }) => {
+    await withDeployedSite(page, async ({ publish }) => {
+      await publish(bannerText);
+      await setup(page);
+      // Registered before any page script, so when this count moves,
+      // sw-register.js's own controllerchange listener has already run.
+      await page.addInitScript(() => {
+        window.__controllerChanges = 0;
+        navigator.serviceWorker?.addEventListener('controllerchange', () => window.__controllerChanges++);
+      });
+      const counter = countLoads(page);
+
+      await page.reload();
+      await expect
+        .poll(() => page.evaluate(() => window.__controllerChanges), { timeout: 30_000 })
+        .toBe(1);
+      // A reload, had one been started, would have landed by now.
+      await page.waitForTimeout(1000);
+      expect(counter.loads).toBe(1);
+
+      // Headless Chromium never hides a page on its own, so stand in for leaving the tab.
+      await page.evaluate(() => {
+        Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+        Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await expect.poll(() => counter.loads, { timeout: 15_000 }).toBe(2);
+    });
+  });
+}

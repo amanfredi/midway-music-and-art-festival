@@ -54,6 +54,46 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-24 — a new version reloads the page onto itself
+
+A deploy stayed invisible until a hard reload. The new worker activated and
+claimed the page (skipWaiting + clients.claim), but the page kept running the
+code it had loaded with, and nothing reacted to the switch. A normal reload
+showed the new version only on the second visit after a deploy, and a tab left
+open never got it. `sw-register.js` now reloads on `controllerchange`.
+
+**It reloads only at moments chosen to cost the user little**, which was
+Anthony's choice over an unconditional reload and over a tap-to-reload prompt. Content is precached, so
+every sheet edit bumps the worker version. During the festival, an
+unconditional reload would jerk every open phone, losing map position and
+scroll, for changes the content-updated message already delivers in place. So
+the page reloads at once only if it is hidden or untouched since load, and
+otherwise at its next visibility change. `sw-update.spec.mjs` gained a test for
+each branch, and its original test now marks the page touched so that it still
+proves the in-place message path rather than passing via the reload.
+
+An inversion review (Fable, same day) added `click` to the input signals,
+because a screen-reader user reading and activating by gesture may produce no
+pointer or touch events. It also left two known gaps, both accepted. **First,
+the deploy that ships this does not self-reload anyone:** open pages are
+running the old registration code, so the first self-reload comes on the
+*next* deploy. **Second, the new worker can claim a page before the deferred
+`sw-register.js` runs.** That happens if an update was already mid-install
+when the page loaded. The script then sees a controller, no
+`controllerchange` fires, and that one visit stays stale (old code running
+under the new worker) until the next navigation. Closing it would need a
+version marker in `index.html` and a round trip to the worker; unreproduced
+locally, and not worth that before the festival.
+
+The review also found that nothing bounded self-reloads. `sw.js` is cached
+at the CDN for up to 10 minutes, so if edges disagree about its bytes just
+after a deploy, an untouched page could bounce between versions and download
+the 3.8 MB precache on every turn. GitHub purges the CDN on deploy, so this is
+unlikely, but it is expensive on festival signal. Anthony chose to bound it: a
+page that reloaded itself for an update within the last minute defers the
+next reload to its next visibility change (`mfc:update-reloaded-at` in
+sessionStorage, the same shape as index.html's boot-retry guard).
+
 ### 2026-09-23 — ticket links and Sold Out
 
 Event detail's ticket text ("Paid Ticket Required" etc.) was information with

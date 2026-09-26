@@ -102,7 +102,7 @@ still writes it, and a later `--use-snapshot` build of those bytes leaves the
 same rows out and reports them again. Nothing a validator has not approved ever
 reaches `content.json` on either path. The alternative — freezing the snapshot
 whenever any row was bad — would break the two jobs it does: the cron detects
-change by diffing this directory, so every 6-hourly rebuild would see a
+change by diffing this directory, so every half-hourly rebuild would see a
 difference, republish and re-notify, and the outage fallback would go stale
 exactly while several people are editing the sheet.
 
@@ -271,10 +271,10 @@ neither is a build error.
 - `type`: one of `food|art|retail`. All required except `description`.
   `location` format as in venues.csv.
 
-**sponsors.csv** — `id, name, tier, blurb, url, location`
+**sponsors.csv** — `id, name, tier, blurb, url, location` (+ optional `tier_order`)
 - `tier`: fixed slug enum — `emerald | ruby | sapphire | topaz | quartz`.
   Display label and intrinsic rank are derived from the slug in `build.mjs`
-  (not stored in the CSV); there is no `tier_order` column. A cell may hold the
+  (not stored in the CSV). A cell may hold the
   slug **or** the display label, in any capitalization, because which one a
   coordinator sees depends only on which dropdown they picked from. Two label
   spellings are accepted per tier: the one in the table below, and the same
@@ -289,6 +289,13 @@ neither is a build error.
   | `topaz` | Topaz Tier (Community Partner) | 4 | — |
   | `quartz` | Quartz Tier (Neighborhood Supporter) | 5 | — |
 
+- `tier_order`: optional, and despite the name it orders sponsors **within**
+  their tier (the tier's own rank comes from the table above). A number sorts
+  ascending; a blank or non-numeric cell is unranked and follows every
+  numbered sponsor in its tier, by name. Never an error. The number itself is
+  not published: it only fixes the order of content.json's `sponsors` array,
+  whose `tier_order` field remains the tier's rank, and the sponsors page keeps
+  that order within each tier.
 - **Logos are not a column.** A sponsor's logo is the file
   `content/logos/<id>.<ext>`, named for the same slugified `id` everything else
   keys on, with `<ext>` one of `svg`, `png`, `jpg`, `jpeg`, `webp`. Exactly one
@@ -387,7 +394,7 @@ errors, then print all and exit — never stop at the first.
 A row that fails validation is left out of the published output and reported;
 the rows that validate are published. Several people enter data into the sheet
 and mistakes are constant, so one bad cell holding the whole site — and every
-6-hourly rebuild after it — costs more than shipping the guide without that row.
+half-hourly rebuild after it — costs more than shipping the guide without that row.
 `build.mjs --strict` is the opposite bargain: any validation error stops the
 build, exit 1, nothing written. It is what a local check before the festival
 runs, not something CI passes.
@@ -503,7 +510,7 @@ curl/SMTP path.
   (`droppedRows` is non-empty **or** `warnings` is non-empty) **and**
   `snapshot.changed` is non-empty — a source changed since the last publish.
   Otherwise it says why and exits 0: without that gate every code push and
-  every 6-hourly cron would re-mail the same unfixed rows (or the same unfixed
+  every half-hourly cron would re-mail the same unfixed rows (or the same unfixed
   warnings). A snapshot commit that failed to push can cost one repeat, which
   is the accepted price. The step is `continue-on-error: true`, so an unsent
   email exits 1 **and** prints an `::error` annotation rather than reddening a
@@ -530,7 +537,8 @@ curl/SMTP path.
 bytes, in `sources` key order — a source configured as `null` contributes a
 fixed marker instead of file bytes, so the hash (and therefore `version`)
 still only depends on config.json, never on a timestamp or the run. Events
-sorted by `start` then `title`; sponsors by `tier_order` then `name`.
+sorted by `start` then `title`; sponsors by `tier_order` (the tier's rank), then
+the sheet's within-tier `tier_order` column, then `name`.
 `start`/`end` are always `YYYY-MM-DDTHH:MM`, with `end`'s date rolled forward
 one day when the source `end_time` was earlier than `start_time`, or when a
 blank `end_time`'s one-hour default crosses midnight.

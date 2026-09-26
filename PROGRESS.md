@@ -54,6 +54,26 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-26 — content rebuilds every 30 minutes
+
+The rebuild cron went from every 6 hours to every 30 minutes (`23,53 * * * *`)
+for the run-up to the festival, at Anthony's request. The repo is public, so
+Actions minutes cost nothing. The organizer email already sends only when a
+source changed, so the faster schedule does not repeat it. The job summaries
+and emails that tell organizers when a fix goes live now say 30 minutes.
+
+### 2026-09-26 — sponsors follow the sheet's order within a tier
+
+The sheet's sponsors tab carries a `tier_order` column, meaning order within
+the tier, and nothing read it: the build sorted by tier rank then name, and
+the sponsors page re-sorted the same way. CONTRACTS.md even said there was no
+such column. The build now sorts by tier rank, then that column, then name. A
+blank or non-numeric cell is unranked and goes last in its tier, never an
+error. The page keeps the build's order within each tier. The number is not
+published: content.json's `tier_order` already means the tier's rank, and the
+array's order carries the within-tier ranking without a second, confusingly
+named field.
+
 ### 2026-09-24 — a new version reloads the page onto itself
 
 A deploy stayed invisible until a hard reload. The new worker activated and

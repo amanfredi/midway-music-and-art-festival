@@ -152,7 +152,7 @@ A source that answers *wrongly* — a 404, or a sign-in page where CSV should be
 fails the build even with this flag. The snapshot covers outages, not link rot.
 
 Nothing pins the site to those bytes afterwards. Once the sheet answers again,
-the next 6-hour rebuild fetches it live and publishes whatever changed.
+the next half-hourly rebuild fetches it live and publishes whatever changed.
 
 ### npm is unreachable
 
@@ -187,7 +187,7 @@ Collaborative"): missing required field "location".` The same list goes by email
 to `DEPLOY_NOTIFICATION_EMAIL` and `CONTENT_NOTIFICATION_EMAIL`, so the
 organizers hear about their own rows without watching Actions. That mail goes
 out only when a content source changed since the last publish: otherwise every
-code push and every 6-hour rebuild would re-send the same unfixed rows, and an
+code push and every half-hourly rebuild would re-send the same unfixed rows, and an
 edit to the sheet is the one signal that somebody is working on them.
 
 What goes with the row: any event whose venue was dropped, so nothing ships
@@ -202,7 +202,7 @@ source, a renamed or double-named header column, a tab with no data rows, a tab
 where *every* row is bad — which would empty that guide — and a bad config.
 Those email as failures, and the live site stays on its last good version.
 
-Fixing the cells is the whole fix. The next 6-hour rebuild publishes them, or
+Fixing the cells is the whole fix. The next half-hourly rebuild publishes them, or
 run one now:
 
 ```sh
@@ -252,7 +252,7 @@ identically, so the swap is config-only:
 3. Replace the paths in `content/config.json` with those URLs; commit.
 
 After that, a coordinator edits the sheet and the site rebuilds either on
-the 6-hour schedule in `.github/workflows/rebuild-content.yml` or on demand
+the 30-minute schedule in `.github/workflows/rebuild-content.yml` or on demand
 (`gh workflow run rebuild-content.yml`, or Actions tab → "Rebuild content" →
 Run workflow). Validation errors —
 misspelled venue ids, bad dates, missing fields — fail the build with a
@@ -301,7 +301,10 @@ them; they are the ones a phone will confirm.
 
 ### During the festival
 
-Tighten the rebuild cron in `rebuild-content.yml` so sheet edits land fast.
+The rebuild cron in `rebuild-content.yml` runs every 30 minutes, so a sheet
+edit reaches the site within about half an hour. GitHub runs schedules late
+under load, so for something urgent run "Rebuild content" by hand from the
+Actions tab.
 The notice banner ("Main stage running 30 min late") is the `banner_text` /
 `banner_id` pair in the settings tab: set the text, change the id, rebuild.
 Attendees see it next time their device gets signal; dismissing it sticks
@@ -320,7 +323,7 @@ anyone re-typing either. Two scripts deploy with this site, read the same
 
 They are the same file under two names, and each renders the list its filename
 asks for. A sheet edit reaches both pages exactly as it reaches the app: on the
-6-hour rebuild, or immediately with `gh workflow run rebuild-content.yml`.
+half-hourly rebuild, or immediately with `gh workflow run rebuild-content.yml`.
 Squarespace itself is edited once per page, to set this up, and never again for
 content.
 
@@ -448,7 +451,7 @@ https://go.midwaymusicandart.org/?embed=map
 
 — the app's Map view with its own header and tab bar suppressed. It changes
 nothing for anyone who visits go.midwaymusicandart.org directly, and content
-reaches it exactly as it reaches the app: on the 6-hour rebuild, or immediately
+reaches it exactly as it reaches the app: on the half-hourly rebuild, or immediately
 with `gh workflow run rebuild-content.yml`. Squarespace is edited once, to set
 this up, and never again for content.
 

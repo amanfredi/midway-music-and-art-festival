@@ -277,7 +277,7 @@ describe("skipped-rows notification", () => {
     assert.match(body, /sponsors\.csv row 4: no logo file\. \(published without its logo\)/);
     assert.match(body, /https:\/\/github\.com\/amanfredi\/mmaf\/actions\/runs\/42/);
     assert.match(body, /Everything else in the spreadsheet is live/);
-    assert.match(body, /next scheduled rebuild \(every 6 hours\)/);
+    assert.match(body, /next scheduled rebuild \(every 30 minutes\)/);
   });
 
   test("a fallback publish says which sources were stale as well", () => {
@@ -301,7 +301,7 @@ describe("skipped-rows notification", () => {
   });
 
   test("rows nobody has fixed are not mailed again until the sheet changes", () => {
-    // A code push or a 6-hourly cron rebuilds the same bad sheet. The snapshot
+    // A code push or a half-hourly cron rebuilds the same bad sheet. The snapshot
     // is unchanged exactly when no source has changed since the last publish,
     // which is the one signal available without keeping state between runs.
     const result = runNotify("skipped-rows", report({ snapshot: { used: [], written: false, changed: [] } }));

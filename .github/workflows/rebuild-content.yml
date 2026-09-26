@@ -1,7 +1,9 @@
 # Rebuilds the site from the content sources without a code change, so a
 # coordinator edit to the Google Sheet reaches production on its own.
 # Manual: Actions tab -> "Rebuild content" -> Run workflow.
-# Scheduled: every 6 hours; tighten the cron during festival weekend.
+# Scheduled: every 30 minutes (was 6-hourly until 2026-09-26, tightened for
+# the run-up to the festival). Minutes are off the hour because GitHub delays
+# or drops scheduled runs most at :00.
 #
 # This job invokes no npm, and that absence is the feature: a content update has
 # to reach phones while the registry, the Playwright CDN, or apt is down. It
@@ -23,7 +25,7 @@ name: Rebuild content
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 */6 * * *'
+    - cron: '23,53 * * * *'
 
 permissions:
   contents: read
@@ -112,7 +114,7 @@ jobs:
               // newline must not forge extra log lines.
               const lines = dropped.map((d) => String(d.message).replace(/\s+/g, " ").trim() + (d.logoOnly ? " (published without its logo)" : ""));
               console.log("::warning title=Published without " + dropped.length + " invalid row(s)::" + lines.join("; "));
-              appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out; everything else in the sheet is live. The snapshot holds the bytes this build published from, so an emergency build would leave the same rows out and say so again. An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 6 hours, or run by hand) publishes them.", ""].join("\n"));
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published without " + dropped.length + " invalid row(s)", "", "These rows failed validation and were left out; everything else in the sheet is live. The snapshot holds the bytes this build published from, so an emergency build would leave the same rows out and say so again. An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 30 minutes, or run by hand) publishes them.", ""].join("\n"));
             }
             if (warnings.length > 0) {
               // Non-blocking (definitions/ticket-links-and-sold-out.md): every
@@ -120,7 +122,7 @@ jobs:
               // to (never instead of) the one above, not a replacement for it.
               const lines = warnings.map((w) => String(w.message).replace(/\s+/g, " ").trim());
               console.log("::warning title=Published with " + warnings.length + " ticket-link warning(s)::" + lines.join("; "));
-              appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published with " + warnings.length + " ticket-link warning(s)", "", "These rows published, but a ticket link problem means the ticket text has no link (or a ticketURL was ignored). An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 6 hours, or run by hand) clears the warning.", ""].join("\n"));
+              appendFileSync(process.env.GITHUB_STEP_SUMMARY, ["## Published with " + warnings.length + " ticket-link warning(s)", "", "These rows published, but a ticket link problem means the ticket text has no link (or a ticketURL was ignored). An email went to the deploy and content lists if a source changed since the last publish:", "", ...lines.map((l) => "- " + l), "", "Fix these cells in the spreadsheet; the next rebuild (scheduled every 30 minutes, or run by hand) clears the warning.", ""].join("\n"));
             }
           '
       - name: Commit the refreshed snapshot

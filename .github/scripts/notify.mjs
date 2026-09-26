@@ -25,7 +25,7 @@
 //
 // skipped-rows runs after a successful publish and mails the rows the build
 // left out — but only when a source changed since the last publish, which is
-// what keeps a code push or a 6-hourly cron from re-mailing rows nobody has
+// what keeps a code push or a half-hourly cron from re-mailing rows nobody has
 // fixed yet. It runs under continue-on-error, so an unsent one also prints an
 // ::error annotation: see the workflow comment for why a red step there would
 // cost more than it buys.
@@ -235,14 +235,14 @@ export function summarizeSkippedRows({ report, context }) {
     lines.push(
       "",
       "Everything else in the spreadsheet is live on the site right now.",
-      "Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 6 hours)",
+      "Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 30 minutes)",
       "or a manual one publishes them. Until then those rows are not on the site."
     );
   } else {
     lines.push(
       "",
       "Everything in the spreadsheet is live on the site right now — the warnings above did not stop anything",
-      "from publishing. Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 6 hours)",
+      "from publishing. Fix the cells named above in the spreadsheet; the next scheduled rebuild (every 30 minutes)",
       "or a manual one clears the warning."
     );
   }
@@ -443,7 +443,7 @@ function notifySkippedRows() {
     return;
   }
   // The gate on re-mailing: the snapshot changed exactly when a source's bytes
-  // differ from the last publish. Without it every code push and every 6-hourly
+  // differ from the last publish. Without it every code push and every half-hourly
   // cron would mail the same unfixed rows (or the same unfixed warnings) again.
   // A snapshot commit that failed to push can cost one repeat, which is
   // cheaper than the alternative. One gate for both droppedRows and warnings —

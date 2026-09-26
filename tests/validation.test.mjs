@@ -234,7 +234,8 @@ describe("good fixtures", () => {
     assert.ok(content.events.some((e) => e.url !== ""), "fixtures should cover at least one event with a url");
     assert.ok(content.events.some((e) => e.url === ""), "fixtures should cover at least one event with a blank url");
 
-    // sponsors: sorted by tier_order then name; logo rewritten + bundled file exists
+    // sponsors: sorted by tier_order then name (these fixtures have no within-tier
+    // tier_order column); logo rewritten + bundled file exists
     for (let i = 1; i < content.sponsors.length; i++) {
       const prev = content.sponsors[i - 1];
       const cur = content.sponsors[i];
@@ -982,6 +983,31 @@ describe("source shape and headers", () => {
     const result = runBuild(config);
     assert.notEqual(result.status, 0, "an http:// source should fail the build");
     assert.match(result.stderr, /https:\/\//);
+  });
+});
+
+describe("sponsor order within a tier", () => {
+  const byId = (id) => (fields) => fields.id === id;
+
+  test("the sheet's tier_order column orders a tier; blank or non-numeric cells follow, by name", () => {
+    const config = makeFixtureSet(TMP_ROOT, "sponsor-tier-order", [
+      addColumn("sponsors.csv", "tier_order", ""),
+      setCell("sponsors.csv", byId("safeharbor-insurance-group"), "tier_order", "1"),
+      setCell("sponsors.csv", byId("daily-trim-barbershop"), "tier_order", "2"),
+      setCell("sponsors.csv", byId("north-side-family-clinic"), "tier_order", "3"),
+      setCell("sponsors.csv", byId("riverside-bike-cooperative"), "tier_order", "first"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, `expected a published build\n${result.stderr}`);
+    const content = JSON.parse(readFileSync(result.contentPath, "utf8"));
+    const idsIn = (slug) => content.sponsors.filter((s) => s.tier_slug === slug).map((s) => s.id);
+
+    assert.deepEqual(idsIn("topaz"), ["safeharbor-insurance-group", "daily-trim-barbershop", "printworks-studio"]);
+    assert.deepEqual(idsIn("sapphire"), ["north-side-family-clinic", "midway-spur-brewing", "riverside-bike-cooperative"]);
+    // Tiers still come out in rank order, and the JSON tier_order is the tier's rank, not the sheet's number.
+    const ranks = content.sponsors.map((s) => s.tier_order);
+    assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b));
+    assert.equal(content.sponsors.find((s) => s.id === "safeharbor-insurance-group").tier_order, 4);
   });
 });
 

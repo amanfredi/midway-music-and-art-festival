@@ -50,7 +50,9 @@ function quartzListHtml(sponsors) {
 }
 
 export function renderSponsors(container, content) {
-  const sponsors = [...content.sponsors].sort((a, b) => a.tier_order - b.tier_order || a.name.localeCompare(b.name));
+  // Grouped by tier only: within a tier, content.json's order is the sheet's
+  // ordering and must survive, so no tiebreak here (Array sort is stable).
+  const sponsors = [...content.sponsors].sort((a, b) => a.tier_order - b.tier_order);
   const donateHref = safeHref(content.settings.donation_url);
   const donationLabel = content.settings.donation_label;
 

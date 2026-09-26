@@ -611,6 +611,16 @@ function validateDuplicateIds(fileLabel, records, identifierField, idField = "id
   return errors;
 }
 
+// The sheet's optional sponsors `tier_order` column orders sponsors within
+// their tier (not across tiers: that is the tier's own rank). A blank or
+// non-numeric cell is unranked and sorts after every numbered sponsor in its
+// tier. Never an error: a bad number costs a sponsor its place in the list,
+// not its place on the site.
+function sponsorRankInTier(raw) {
+  const text = String(raw ?? "").trim();
+  return /^\d+(\.\d+)?$/.test(text) ? Number(text) : Infinity;
+}
+
 /**
  * Ids are machine keys that volunteers type by hand into a spreadsheet, so the
  * build normalizes them rather than rejecting them: an apostrophe or an
@@ -2204,7 +2214,7 @@ async function main() {
   // + intrinsic rank).
   const sponsorsClean = sponsorRecords.map((rec) => {
     const tierDef = resolveSponsorTier(rec.fields.tier);
-    return {
+    const sponsor = {
       id: rec.fields.id ?? "",
       name: rec.fields.name ?? "",
       tier: tierDef ? tierDef.label : rec.fields.tier ?? "",
@@ -2220,16 +2230,23 @@ async function main() {
       lat: rec.coords ? rec.coords.lat : null,
       lng: rec.coords ? rec.coords.lng : null,
     };
+    return { sponsor, rankInTier: sponsorRankInTier(rec.fields.tier_order) };
   });
 
   const events = [...eventsResult.clean].sort((a, b) => {
     if (a.start !== b.start) return a.start < b.start ? -1 : 1;
     return a.title.localeCompare(b.title);
   });
-  const sponsors = [...sponsorsClean].sort((a, b) => {
-    if (a.tier_order !== b.tier_order) return a.tier_order - b.tier_order;
-    return a.name.localeCompare(b.name);
-  });
+  // Tier rank, then the sheet's own ordering within the tier, then name. The
+  // within-tier number orders the array and is not itself published: the
+  // JSON's tier_order is already the tier's rank.
+  const sponsors = sponsorsClean
+    .sort((a, b) => {
+      if (a.sponsor.tier_order !== b.sponsor.tier_order) return a.sponsor.tier_order - b.sponsor.tier_order;
+      if (a.rankInTier !== b.rankInTier) return a.rankInTier < b.rankInTier ? -1 : 1;
+      return a.sponsor.name.localeCompare(b.sponsor.name);
+    })
+    .map(({ sponsor }) => sponsor);
 
   // version = first 12 hex chars of sha256 over the concatenated raw source
   // CSV bytes, in the fixed order: venues, events, vendors, sponsors, settings.

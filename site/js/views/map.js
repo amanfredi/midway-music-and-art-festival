@@ -252,6 +252,13 @@ const CORNER_CLEAR_PX = VENUE_R / 2 + NAME_CLEAR_PX;
 const NAME_ANCHOR_ORDER = ['above', 'below', 'east', 'west', 'upRight', 'upLeft', 'downRight', 'downLeft'];
 // The tap-highlight halo extends this far beyond the pin it rings.
 const HALO_PAD = 6;
+// Except around the featured square, whose halo hugs it instead: a circle just
+// through its corners, with the ring's 2 px keyline clearing them by half a
+// pixel. Corner radius + HALO_PAD (25 px) reached past the square's name, which
+// stands off the square's side rather than its corner (Anthony, 2026-09-26).
+// No circle can both enclose the corners and clear a name at the old 21.5 px,
+// so the name moves out to clear this ring instead -- see sponsor-name-label.
+const FEATURED_HALO_R = FEATURED_SIDE / Math.SQRT2 + 1.5;
 // Displaced-pin geometry. Members of a coincident group sit in lanes a pin wide
 // plus a leader run either side, which is what makes adjacent diamonds clear
 // each other AND leaves each line long enough to be seen: at the minimum
@@ -2153,11 +2160,11 @@ function addPins(
   map.addLayer({ id: 'transit-highlight', type: 'circle', source: 'transit', filter: plainTransit, paint: haloPaint(SMALL_R) });
   // One halo layer for both sponsor shapes, with the radius switched per
   // feature: a ring has to enclose the pin it rings, and the featured square's
-  // furthest ink is its CORNER, at side/sqrt(2) from the centre. That lands on
-  // VENUE_R but for the rounding (19.09 against 19) -- the square and the venue
-  // diamond are the same shape rotated, so they share a circumradius -- and the
-  // two halos therefore match, which is what "same weight in the hierarchy"
-  // looks like when a pin is lit.
+  // furthest ink is its CORNER, at side/sqrt(2) from the centre. It used to
+  // match the venue halo on that account (the square and the venue diamond
+  // share a circumradius), but a venue's name starts outside its halo and the
+  // square's did not, so the featured halo now hugs the square instead -- see
+  // FEATURED_HALO_R.
   map.addLayer({
     id: 'sponsor-highlight',
     type: 'circle',
@@ -2167,7 +2174,7 @@ function addPins(
       'circle-radius': [
         'case',
         ['boolean', ['get', 'featured'], false],
-        FEATURED_SIDE / Math.SQRT2 + HALO_PAD,
+        FEATURED_HALO_R,
         SMALL_R + HALO_PAD,
       ],
     },
@@ -2486,10 +2493,15 @@ function addPins(
         // to (side/2, side/2), so `cornerClear` stays equal to `clear` — which
         // is nameCandidates' default, stated here because it looks like an
         // omission next to the venue layer.
+        //
+        // It also clears the square's lit halo: outside the ring's outer edge
+        // (FEATURED_HALO_R plus half its 2 px keyline) by the same 2 px
+        // visible gap NAME_CLEAR_PX leaves, which stands the name 2 px further
+        // out than the square alone needed.
         'text-variable-anchor-offset': [
           'literal',
           nameCandidates({
-            clear: FEATURED_SIDE / 2 + NAME_CLEAR_PX,
+            clear: Math.max(FEATURED_SIDE / 2 + NAME_CLEAR_PX, FEATURED_HALO_R + 1 + 2),
             textPx: SPONSOR_NAME_TEXT_PX,
             order: NAME_ANCHOR_ORDER,
           }),

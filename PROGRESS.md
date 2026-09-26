@@ -54,6 +54,16 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-26 — a lit featured pin no longer covers its name
+
+The featured square's tap-highlight ring matched the venue halo (corner radius
++ 6 px, reaching ~26 px out), but the square's name started 21.5 px out, so a
+lit pin covered the top of a name set below it (Wellington Management, seen by
+Anthony). No circle can enclose the square's corners (19.1 px) and also clear a
+name at 21.5 px. So the ring now hugs the square, passing half a pixel outside
+its corners (radius 20.6 px), and sponsor names stand 2 px further out (23.6 px)
+to clear it. Venue halos are unchanged.
+
 ### 2026-09-26 — content rebuilds every 30 minutes
 
 The rebuild cron went from every 6 hours to every 30 minutes (`23,53 * * * *`)

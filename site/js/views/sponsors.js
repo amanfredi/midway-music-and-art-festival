@@ -1,4 +1,5 @@
 import { esc, groupBy, safeHref, NEW_TAB_HINT } from '../util.js';
+import { appCreditHtml } from '../app-credit.js';
 
 // Tier-specific card layout (logo size, whether a logo/blurb renders at all).
 // Emerald gets its own spotlight markup below rather than a size class.
@@ -89,5 +90,6 @@ export function renderSponsors(container, content) {
         </div>`;
         })
         .join('')}
+      ${appCreditHtml()}
     </section>`;
 }

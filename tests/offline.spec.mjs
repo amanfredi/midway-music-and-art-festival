@@ -123,6 +123,13 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   await expectFirstSponsorLogoLoaded(page);
   await expectLogosNamedForSponsorIds(page);
 
+  // the app's credit closes the view; its mark is inline, so nothing to fetch
+  const credit = page.locator('[data-testid="app-credit"]');
+  await expect(credit).toBeVisible();
+  await expect(credit.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+  const creditHref = await credit.locator('a').getAttribute('href');
+  expect(creditHref).toMatch(/^mailto:[^@\s]+@[^@\s]+$/);
+
   // the star persisted through the offline reload
   await page.goto('/' + T + '#/starred');
   await expect(page.locator('[data-testid="starred-list"]')).toBeVisible();

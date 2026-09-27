@@ -1848,6 +1848,35 @@ a:focus-visible, button:focus-visible {
   cursor: default;
 }
 
+/* -- the app's own credit, closing the Support view (app-credit.js) -- */
+
+.app-credit {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.app-credit__mark {
+  flex: none;
+  width: 2rem;
+  height: auto;
+}
+
+.app-credit__text {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The address wraps as a unit: it moves to its own line rather than splitting. */
+.app-credit__text a {
+  display: inline-block;
+}
+
 /* ============================================================
    Schedule UX: kind badges for the newer kinds, ticket icons, and
    "by category" grouping. See event-row.js / schedule.js / starred.js.

@@ -66,7 +66,8 @@ volunteer's gift rather than an ad. The credit is app code rather than a sheet
 row, since it describes the app, not the festival. The address,
 hello@amanfredi.com, is on his own domain, so it survives a change of mail
 provider. The offline test checks that the credit renders offline with a mailto
-link.
+link. At Anthony's call it was then tightened to about two-thirds of its first
+height: a 1.75rem lockup with no gap around it and 0.8rem text.
 
 ### 2026-09-26 — venue pins lose their numbers
 

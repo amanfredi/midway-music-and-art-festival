@@ -56,14 +56,16 @@ Newest first.
 
 ### 2026-09-26 — the Support view credits the app's builder
 
-With the organizers' OK, the Support view now ends with a one-line credit:
-built and donated by Anthony Manfredi, with a `mailto:` link and his cairn mark.
-The mark is inline SVG in `site/js/app-credit.js` (from his brand files), so it
-needs no request and no cache entry, and it is `aria-hidden` because the
-sentence already names him. The credit is app code rather than a sheet row,
-since it describes the app, not the festival. The address is a Fastmail alias
-for now; it may move to a domain of his later. The offline test checks that the
-credit renders offline with a mailto link.
+With the organizers' OK, the Support view now ends with a centred sign-off: "App
+built and donated by", Anthony's name lockup (cairn mark and name), and a
+`mailto:` link. The lockup is inline SVG in `site/js/app-credit.js` (from his
+brand files), so it needs no request and no cache entry. His name is drawn as
+outlines rather than text, so the SVG is `role="img"` with his name as its
+label. "Donated" is deliberate: among paying sponsors, it marks the credit as a
+volunteer's gift rather than an ad. The credit is app code rather than a sheet
+row, since it describes the app, not the festival. The address is a Fastmail
+alias for now; it may move to a domain of his later. The offline test checks
+that the credit renders offline with a mailto link.
 
 ### 2026-09-26 — venue pins lose their numbers
 

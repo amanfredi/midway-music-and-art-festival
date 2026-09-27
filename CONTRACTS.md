@@ -1148,9 +1148,10 @@ CDNs, no analytics.
 - `#/sponsors` ("Support" in the nav): a donate button/link at the top of the
   view, driven by `settings.donation_url`/`settings.donation_label`; renders
   nothing when `donation_url` is empty.
-  The view closes with the app's own credit (`site/js/app-credit.js`): who
-  built the app and a `mailto:` link, beside his cairn mark as inline,
-  decorative SVG. It is app code, not sheet content.
+  The view closes with the app's own credit (`site/js/app-credit.js`): "App
+  built and donated by", his name lockup as inline SVG labelled "Anthony
+  Manfredi" (the name is drawn, not text), and a `mailto:` link. It is app
+  code, not sheet content.
 - Starred event ids: `localStorage` key `mfc:starred`, JSON string array.
 - Banner dismissal: `localStorage` key `mfc:dismissed-banner` = the dismissed `banner_id`.
 - Last reload onto a new worker version: `sessionStorage` key

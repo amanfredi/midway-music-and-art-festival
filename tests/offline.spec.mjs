@@ -123,10 +123,11 @@ test('full offline reload: schedule, map, and stars survive airplane mode', asyn
   await expectFirstSponsorLogoLoaded(page);
   await expectLogosNamedForSponsorIds(page);
 
-  // the app's credit closes the view; its mark is inline, so nothing to fetch
+  // the app's credit closes the view; its lockup is inline, so nothing to
+  // fetch, and it names Anthony because the name is drawn rather than text
   const credit = page.locator('[data-testid="app-credit"]');
   await expect(credit).toBeVisible();
-  await expect(credit.locator('svg')).toHaveAttribute('aria-hidden', 'true');
+  await expect(credit.getByRole('img', { name: 'Anthony Manfredi' })).toBeVisible();
   const creditHref = await credit.locator('a').getAttribute('href');
   expect(creditHref).toMatch(/^mailto:[^@\s]+@[^@\s]+$/);
 

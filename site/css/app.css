@@ -1852,17 +1852,20 @@ a:focus-visible, button:focus-visible {
 
 .app-credit {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.4rem;
   margin-top: 2rem;
   padding-top: 1rem;
   border-top: 1px solid var(--color-border);
+  text-align: center;
 }
 
-.app-credit__mark {
-  flex: none;
-  width: 2rem;
-  height: auto;
+.app-credit__lockup {
+  display: block;
+  height: 2.25rem;
+  width: auto;
+  max-width: 100%;
 }
 
 .app-credit__text {
@@ -1870,11 +1873,6 @@ a:focus-visible, button:focus-visible {
   font-size: 0.85rem;
   color: var(--color-text-muted);
   overflow-wrap: anywhere;
-}
-
-/* The address wraps as a unit: it moves to its own line rather than splitting. */
-.app-credit__text a {
-  display: inline-block;
 }
 
 /* ============================================================

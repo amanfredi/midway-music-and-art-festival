@@ -2,7 +2,7 @@
 // to reach him. It's about the app, not the festival, so it lives here rather
 // than in the organizers' sheet.
 
-export const CREDIT_EMAIL = 'amanfredi_dev@fastmail.com';
+export const CREDIT_EMAIL = 'hello@amanfredi.com';
 
 // Anthony's name lockup (am-lockup-bare.svg from his brand files): the cairn
 // mark beside his name. Inline, so it costs no request and no cache entry. The

@@ -255,8 +255,8 @@ test('an iframe of the embed scrolls the host page and never scrolls inside itse
 
   // And the venue sheet still opens, which is the other half of "the same
   // interactive experience".
-  // The button's own text is the diamond's number, a visually-hidden
-  // "Venue N:" and then the name; the name is the trailing text node.
+  // The button holds the diamond's SVG and then the name; the name is the
+  // trailing text node.
   const key = frame.locator('.venue-key-btn').first();
   const name = await key.evaluate((el) => el.lastChild.textContent.trim());
   await key.click();

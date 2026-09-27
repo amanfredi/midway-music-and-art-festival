@@ -296,35 +296,20 @@ test('the legend lists venue, featured sponsor and sponsor before transit', asyn
   await expect(items.nth(3)).toHaveText(/Transit/);
 });
 
-// A count on a cluster reads as a venue number — venue pins carry exactly that,
-// from the key list (Anthony, 2026-08-10). The members' own numbers are the one
-// sanctioned exception (2026-08-23): those digits ARE the pin vocabulary. So the
-// only digits a stack may carry are its members', and only while two of them
-// still fit — the branch past that has to be no text at all, which is what keeps
-// a count off the glyph however the expression is later edited.
-test('a venue stack shows its members numbers and never a count', async ({ page }) => {
+// Venue pins are plain diamonds (Anthony, 2026-09-26): the numbers they used to
+// carry were sheet order, which meant nothing to a visitor. A count on a
+// cluster was already ruled out (2026-08-10) because it read as a venue number.
+// So no venue glyph — single, displaced, or stacked — carries any text.
+test('venue pins and venue stacks carry no text', async ({ page }) => {
   await gotoMap(page);
 
-  const textField = await mapEval(page, (map) => map.getLayoutProperty('venue-cluster', 'text-field'));
-  expect(textField, 'the venue-cluster layer is missing its label').toBeTruthy();
-  expect(textField[0]).toBe('case');
-  expect(textField[1], 'the labelled branch must be the two-member case').toEqual([
-    '==',
-    ['get', 'point_count'],
-    2,
-  ]);
-  expect(textField[2], 'a labelled stack must read its members numbers, nothing else').toEqual([
-    'concat',
-    ['to-string', ['get', 'labelMin']],
-    '\n',
-    ['to-string', ['get', 'labelMax']],
-  ]);
-  expect(textField[textField.length - 1], 'a stack of three or more must carry no text').toBe('');
-
-  // And the venue pins that are not clusters still carry their key-list number.
-  const pin = await findPin(page, 'venue-pin');
-  expect(pin).not.toBeNull();
-  expect(pin.properties.label).toMatch(/^\d+$/);
+  const textFields = await mapEval(page, (map) =>
+    ['venue-pin', 'venue-leader-pin', 'venue-cluster'].map((id) => [id, map.getLayoutProperty(id, 'text-field')]),
+  );
+  for (const [id, textField] of textFields) {
+    expect(textField, `${id} draws text on the pin`).toBeUndefined();
+  }
+  expect(await findPin(page, 'venue-pin'), 'no venue pin drawn; this test has lost its subject').not.toBeNull();
 });
 
 // Every venue must be reachable even when zoom cannot separate its pin from a

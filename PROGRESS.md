@@ -54,6 +54,19 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-26 — venue pins lose their numbers
+
+Venue pins, two-venue stacks and the key list's diamonds no longer carry a
+number, at Anthony's call: the number was the venue's sheet row, which meant
+nothing to a visitor. So pins are plain blue diamonds and stacks are the bare
+fanned glyph. The key list is a `<ul>`, and each card's accessible name is just
+the venue's name, without the "Venue N:" prefix. The `labelMin`/`labelMax`
+cluster properties, the pin text sizes and the CSS for the key-list digits are
+gone. Features keep a `label` property that nothing draws, because tests
+address pins by it. The test proving a two-digit number fit inside the pin's
+collision box went too. With no text size to read, it had been passing
+vacuously.
+
 ### 2026-09-26 — a lit featured pin no longer covers its name
 
 The featured square's tap-highlight ring matched the venue halo (corner radius

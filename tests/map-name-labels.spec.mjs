@@ -156,24 +156,6 @@ test('every pin reserves a box, venue pins through a smaller blocker; halos and 
   );
 });
 
-// The tips may be grazed; the number may not. It sits at the centre, so the
-// blocker has to be wider than the number it is protecting — at two digits,
-// which is the widest the key list produces for this sheet.
-test("a venue pin's number stays inside what the pin reserves", async ({ page }) => {
-  await gotoMap(page);
-  const fit = await mapEval(page, (map) => {
-    const img = map.style.getImage('pin-venue-block');
-    const size = map.getLayoutProperty('venue-pin', 'text-size');
-    const ctx = document.createElement('canvas').getContext('2d');
-    ctx.font = `700 ${size}px system-ui, Helvetica Neue, Helvetica, Arial`;
-    return {
-      blockHalf: img.data.width / img.pixelRatio / 2 + 2,
-      numberHalf: ctx.measureText('88').width / 2 + 2,
-    };
-  });
-  expect(fit.numberHalf, 'a two-digit pin number reaches outside the box that protects it').toBeLessThan(fit.blockHalf);
-});
-
 test('a venue is named at close zoom and nothing is named below the leader zoom', async ({ page }) => {
   await gotoMap(page);
   const state = await mapEval(

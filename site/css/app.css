@@ -1535,14 +1535,6 @@ body.is-embed .venue-key-list {
   fill: var(--pin-venue);
 }
 
-.venue-key-btn__pin text {
-  fill: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  text-anchor: middle;
-  dominant-baseline: central;
-}
-
 /* Sponsor cards, in the Featured Sponsors and Sponsors sections of the key.
    Same card as a venue's, different thing in the slot the numbered diamond
    occupies: the sponsor's own mark, or the small red diamond its pin draws. */

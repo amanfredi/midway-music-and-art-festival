@@ -166,9 +166,11 @@ test('the key list is three headed sections, in map order, holding only pinned s
   // for one pin is two stops for a screen reader.
   await expect(page.locator('.pin-alt-btn[data-kind="sponsor"]')).toHaveCount(0);
 
-  // Venue cards and their numbering are untouched by the sections around them.
-  await expect(page.locator('#venue-key-list')).toHaveJSProperty('tagName', 'OL');
-  await expect(page.locator('#venue-key-list .venue-key-btn').first()).toHaveAccessibleName(/^Venue 1: /);
+  // Venue cards are untouched by the sections around them: an unordered list
+  // (the pins carry no numbers to order it by), each named by its venue.
+  await expect(page.locator('#venue-key-list')).toHaveJSProperty('tagName', 'UL');
+  const firstVenue = page.locator('#venue-key-list .venue-key-btn').first();
+  await expect(firstVenue).toHaveAccessibleName((await firstVenue.textContent()).trim());
 
   // Every featured card shows the mark its pin carries.
   const marks = await page.locator('#featured-key-list .sponsor-key-btn__mark').evaluateAll((els) =>

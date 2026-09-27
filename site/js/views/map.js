@@ -31,7 +31,7 @@ import { openVenueSheet, openSponsorSheet, openTransitSheet, openPickerSheet } f
 const HOME_VIEW_M = 3000;
 const MIN_VIEW_M = 120;
 // Where the two treatments for venues that share a location meet: wider than
-// this they stack as one cluster glyph carrying their key-list numbers, from
+// this they stack as one cluster glyph, from
 // here inward each draws as its own displaced diamond tethered to the point it
 // really occupies. Group membership is decided at this view; the displaced
 // treatment itself starts one whole zoom level wider when it provably fits
@@ -129,7 +129,7 @@ function resolveMapColors(host) {
 //
 // A bare "Bold" or "Semibold" is not that. WebKit/CoreText matches bare style
 // words against face names, so on Safari/macOS `Bold` resolved to a real face
-// (measured: 277.4 units/digit against system-ui's 299.5) and pin numbers came
+// (measured: 277.4 units/digit against system-ui's 299.5) and pin labels came
 // out in a font nothing else on the page uses -- the whole stack behind it dead
 // code. Blink skips those words, which is why it only ever showed up in Safari.
 // Prefixing the project's initialism kills the match on both engines while
@@ -141,7 +141,7 @@ function resolveMapColors(host) {
 // Everything after the weight word is a family that really resolves inside a
 // canvas: `system-ui` is the standard generic for the platform UI font, which
 // is what `app.css` asks for and therefore what the venue key list draws its
-// numbers in. The vendor aliases these stacks used to lead with
+// names in. The vendor aliases these stacks used to lead with
 // (`-apple-system`, `BlinkMacSystemFont`) are each understood by exactly one
 // engine, so on any other engine the first family that could match was
 // Helvetica; they are gone rather than reordered, because a stack whose early
@@ -184,9 +184,7 @@ const VENUE_R = 19;
 // area, R * sqrt(2), so the box gives up the four tips and keeps the body.
 //
 // The tips are allowed to be grazed. What may not be covered is the diamond's
-// body or the number inside it, and the number is central: at VENUE_TEXT_PX a
-// two-digit label reaches ~12 px from the centre against this box's 13.4, so it
-// stays inside. A test pins that rather than trusting the arithmetic.
+// body.
 const PIN_BLOCK_HALF = VENUE_R / Math.SQRT2;
 const SMALL_R = 11;
 const CLUSTER_R = 17;
@@ -207,15 +205,6 @@ const FEATURED_SIDE = Math.round(VENUE_R * Math.SQRT2);
 // for the mark is 27 - 2*2 - 2*1 = 21 px.
 const FEATURED_STROKE = 2;
 const FEATURED_MARK_INSET = 1;
-// The number inside the venue diamond, sized so a two-digit label still clears
-// the diamond's sloping sides: at the label's cap height the diamond is about
-// 2 * (VENUE_R - 6) = 26 px wide, and "11" sets to ~20 px here.
-const VENUE_TEXT_PX = 16;
-// Two member numbers stacked inside a CLUSTER_R diamond. Two lines at this size
-// reach ~8.5 px either side of the centre, where the diamond is still ~17 px
-// wide, and a two-digit number sets to ~12 px (measured in the engine's own
-// font stack, 2026-08-23).
-const CLUSTER_TEXT_PX = 10;
 // Name labels beside venue and sponsor pins, from the leader zoom inward.
 // NAME_CLEAR_PX is how far past the pin's radius the label starts, and it is
 // measured to the pin's COLLISION BOX, not its drawn diamond: a symbol's box
@@ -369,7 +358,7 @@ function metersPerPixel(zoom, lat) {
  * Two diamonds with half-diagonal R overlap when their centres are closer than
  * 2R measured |dx| + |dy| -- the measure VENUE_R itself was sized against.
  * Anything failing that test at the split zoom, the widest view where
- * individual numbered pins draw, is grouped by single linkage; zooming further
+ * individual pins draw, is grouped by single linkage; zooming further
  * in only spreads true positions apart, so one static offset per venue holds
  * for the whole range. Membership comes from the coordinates alone: the sheet's
  * coincident venues are a fact about the addresses, not a list of ids.
@@ -907,12 +896,10 @@ function blockerImage(halfSide, dpr) {
  * The cluster symbol: three diamonds fanned behind each other. The front one is
  * centred on the anchor, so a label placed on the feature lands on it.
  *
- * A *count* here is actively misleading. Venue pins carry a venue's number from
- * the key list, so a cluster reading "3" is indistinguishable from venue 3 --
- * on the phone it was read as exactly that (Anthony, 2026-08-10). The member
- * venues' own numbers are the sanctioned exception (2026-08-23): those digits
- * are the pin vocabulary rather than a competing one. Past two members they
- * stop fitting and the glyph goes back to saying only "more than one venue".
+ * It carries no text. A *count* was ruled out when venue pins were numbered,
+ * because a cluster reading "3" was read as venue 3 on the phone (Anthony,
+ * 2026-08-10); the pins have been plain since 2026-09-26, and the glyph alone
+ * says "more than one venue".
  */
 function clusterImage(radius, { fill, stroke }, dpr) {
   const offset = Math.round(radius * 0.34);
@@ -954,7 +941,7 @@ function clusterImage(radius, { fill, stroke }, dpr) {
  *
  * The line is the one part that reserves nothing (`icon-ignore-placement` on its
  * layer), and that is the whole of what was given up: **a label may be drawn
- * across a leader line. It may not be drawn across a diamond, its number, or a
+ * across a leader line. It may not be drawn across a diamond or a
  * location dot.**
  */
 function leaderLineImage({ x, y }, { line }, dpr) {
@@ -1665,12 +1652,13 @@ function pinnedSponsorsOf(sponsors) {
  * heading is a claim that there are sponsors on the map.
  *
  * The headings are visible text rather than `aria-label`s because the list is
- * read by sighted people too, and because the three card shapes (numbered
+ * read by sighted people too, and because the three card shapes (blue
  * diamond, mark thumbnail, red diamond) are the same argument as the legend:
  * shape and word together, never colour alone.
  *
- * `#venue-key-list` keeps its id and its `<ol>`: the numbering is the venue
- * pins' own vocabulary, the embed styles it by that id, and tests address it.
+ * `#venue-key-list` keeps its id: tests address it by that. It is a `<ul>`
+ * since the venue numbers went (2026-09-26) -- its order is sheet order, which
+ * means nothing to a reader.
  */
 function renderMapKeyList(container, venues, sponsors, { onVenue, onSponsor }) {
   const host = container.querySelector('#map-key');
@@ -1678,15 +1666,11 @@ function renderMapKeyList(container, venues, sponsors, { onVenue, onSponsor }) {
   const featured = sponsors.filter((s) => FEATURED_SPONSOR_TIERS.has(s.tier_slug));
   const generic = sponsors.filter((s) => !FEATURED_SPONSOR_TIERS.has(s.tier_slug));
 
-  // "Venue N" is in the accessible name, not only in the aria-hidden SVG: a
-  // screen-reader user has to be able to cross-reference the number a sighted
-  // companion reads off the map.
-  const venueCard = (v, i) =>
+  const venueCard = (v) =>
     `<li class="venue-key-item"><button type="button" class="venue-key-btn" data-venue-id="${esc(v.id)}">
         <svg class="venue-key-btn__pin" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
           <polygon points="16,1 31,16 16,31 1,16"></polygon>
-          <text x="16" y="16">${i + 1}</text>
-        </svg><span class="sr-only">Venue ${i + 1}: </span>${esc(v.name)}</button></li>`;
+        </svg>${esc(v.name)}</button></li>`;
 
   // The mark is the pin's own picture at a size that can actually be read, and
   // it is decorative here: the sponsor's name is right beside it in text.
@@ -1712,7 +1696,7 @@ function renderMapKeyList(container, venues, sponsors, { onVenue, onSponsor }) {
 
   host.innerHTML = [
     section('Featured Sponsors', 'ul', 'featured-key-list', featured.map(featuredCard)),
-    section('Venues', 'ol', 'venue-key-list', venues.map(venueCard)),
+    section('Venues', 'ul', 'venue-key-list', venues.map(venueCard)),
     section('Sponsors', 'ul', 'sponsor-key-list', generic.map(sponsorCard)),
   ].join('');
 
@@ -1773,8 +1757,8 @@ function renderPinAltList(container, stops) {
  * order the features arrive in, which here is the order the organizers happened
  * to type rows into the sheet -- so the venue whose name survived was an
  * accident of the spreadsheet. Event count is the closest thing the content has
- * to "how much of the festival happens here", and a venue's number is a sheet
- * artifact rather than curation (ruled 2026-09-04), so it serves only as the
+ * to "how much of the festival happens here", and a venue's sheet order is a
+ * sheet artifact rather than curation (ruled 2026-09-04), so it serves only as the
  * deterministic tiebreak, applied through the venue's own id.
  *
  * Which name survives therefore moves when the organizers edit the lineup. That
@@ -2025,11 +2009,6 @@ function addPins(
     // filtered out of the individual-pin layers, where their own source draws
     // them instead.
     clusterProperties: {
-      // The member numbers a two-venue stack labels itself with. min/max rather
-      // than a joined list because supercluster promises nothing about the order
-      // it reduces leaves in, and these two digits have to come out stable.
-      labelMin: ['min', ['get', 'labelNum']],
-      labelMax: ['max', ['get', 'labelNum']],
       // A stack of nothing but displaced venues is drawn by those pins from the
       // split zoom inward, so it drops out of this layer there.
       groupedCount: ['+', ['case', ['get', 'grouped'], 1, 0]],
@@ -2041,8 +2020,9 @@ function addPins(
         id: i,
         properties: {
           id: v.id,
+          // Never drawn: venue pins are plain diamonds (Anthony, 2026-09-26).
+          // A stable 1-based handle the tests address pins by.
           label: String(i + 1),
-          labelNum: i + 1,
           name: v.name,
           grouped: displacedIds.has(v.id),
           // Collision priority for this venue's name label; see venueNameRanks.
@@ -2368,21 +2348,11 @@ function addPins(
     ],
     layout: {
       ...pinLayout,
-      ...labelLayout,
+      // No text, ever: not a count, which would read as a venue's name being
+      // hidden behind a number, and not member numbers either, since venue pins
+      // carry none (2026-09-26). The stacked glyph is the whole signal.
       'icon-image': 'pin-cluster',
-      // Member venue numbers, stacked the way transit pins stack line letters.
-      // Two fit; past that the fallback is no text at all, which is what keeps
-      // a count off the glyph -- see clusterImage().
-      'text-field': [
-        'case',
-        ['==', ['get', 'point_count'], 2],
-        ['concat', ['to-string', ['get', 'labelMin']], '\n', ['to-string', ['get', 'labelMax']]],
-        '',
-      ],
-      'text-size': CLUSTER_TEXT_PX,
-      'text-line-height': 0.95,
     },
-    paint: { 'text-color': '#ffffff' },
   });
   // The venue pins draw but no longer reserve: the blocker layers below do that,
   // with a box the size of the diamond's own area rather than of its bounding
@@ -2396,13 +2366,9 @@ function addPins(
     filter: plainVenue,
     layout: {
       ...pinLayout,
-      ...labelLayout,
       'icon-ignore-placement': true,
       'icon-image': 'pin-venue',
-      'text-field': ['get', 'label'],
-      'text-size': VENUE_TEXT_PX,
     },
-    paint: { 'text-color': '#ffffff' },
   });
   map.addLayer({
     id: 'venue-pin-block',
@@ -2418,30 +2384,12 @@ function addPins(
     minzoom: leaderZoom,
     layout: {
       ...pinLayout,
-      ...labelLayout,
       // The ordinary venue diamond, moved into its lane. What it reserves is the
       // blocker layer's business, not this one's.
       'icon-ignore-placement': true,
       'icon-image': 'pin-venue',
       'icon-offset': laneIconOffset(laneOffsets),
-      'text-field': ['get', 'label'],
-      'text-size': VENUE_TEXT_PX,
-      // The number rides the diamond, so it is displaced by as much as the icon
-      // draws it -- in ems here, unlike every other measure in this file. Built
-      // as a match over the lane rather than read from the feature because the
-      // GeoJSON-to-tile conversion stringifies any property that isn't a scalar,
-      // and an array offset comes back as "[-2,0]" and silently falls back to 0.
-      'text-offset': [
-        'match',
-        ['get', 'lane'],
-        ...laneOffsets.flatMap((offset) => [
-          laneKey(offset),
-          ['literal', [offset.x / VENUE_TEXT_PX, offset.y / VENUE_TEXT_PX]],
-        ]),
-        ['literal', [0, 0]],
-      ],
     },
-    paint: { 'text-color': '#ffffff' },
   });
   map.addLayer({
     id: 'venue-leader-block',
@@ -2458,8 +2406,8 @@ function addPins(
   // They are inserted BELOW every pin layer (before transit-highlight, the
   // first layer this function added) and above the street labels: placement
   // runs from the top of the stack down, so the pins are in the collision
-  // index before any name looks for room -- no name lands across a diamond, a
-  // number or a leader line -- and the names in turn outrank street names.
+  // index before any name looks for room -- no name lands across a diamond
+  // or a leader line -- and the names in turn outrank street names.
   // Among themselves, venue names place before sponsor names. Transit stops
   // get no name: their pins already say what they are, and a stop name is a
   // sheet-tap away.
@@ -2593,8 +2541,8 @@ function addPins(
         'text-field': ['get', 'name'],
         'text-font': FONT_SEMIBOLD,
         'text-size': NAME_TEXT_PX,
-        // A match over the lanes for the same stringification reason as the
-        // number layer above.
+        // A match over the lanes: the GeoJSON-to-tile conversion stringifies
+        // an array property, so the offset cannot ride on the feature.
         // Keyed on the venue rather than on the lane, because the order now
         // depends on what is around that particular pin as well as on which way
         // its tether points -- see nameOrders.
@@ -2730,7 +2678,7 @@ function pinIsDrawn(map, venueId) {
  * Centring alone is not enough, which is what a key-list tap used to do. A
  * venue in a stack has no pin of its own to centre on: below the leader zoom
  * its coincident group draws as a single symbol, and below that supercluster
- * has whole neighbourhoods rolled into one numbered bubble. Measured
+ * has whole neighbourhoods rolled into one cluster glyph. Measured
  * 2026-09-05 on a phone at the home view: 17 of 21 venues had nothing to show
  * for the tap. Never zooms out — a visitor already looking closely stays there.
  *

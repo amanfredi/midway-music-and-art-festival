@@ -506,7 +506,7 @@ None of these can be checked from the screenshot harness or the test suite.
       the stacks below the leader zoom, the displaced leader pins from the
       leader zoom inward, and the two displaced transit stops (beside Ginkgo
       and Black Garnet) — do the dot and line read as "this pin belongs
-      there", and do the 10 px digits on a stack stay legible?
+      there"?
       Note the tightest venue-pin clearance is ~1 px (39.07 px between centres
       against 38 px pins at the leader zoom, limiting pair venues 1 and 4, a
       property of the current venue set and now the same on every frame
@@ -517,11 +517,13 @@ None of these can be checked from the screenshot harness or the test suite.
       evaluate to 0 given `apple-mobile-web-app-status-bar-style: default`.
       Unverified; if it does tuck under, the fix is an opaque fixed filler of
       height `var(--safe-top)`.
-- [ ] Venue-pin digits on the iPhone: still serifs after the font-stack fix?
+- [ ] Map labels on the iPhone: still serifs after the font-stack fix?
+      (Asked of the venue-pin digits originally; those are gone since
+      2026-09-26, so look at the transit letters and the venue names.)
       The map's stack now leads with `system-ui` (2026-08-11; the old one
       resolved to Helvetica off Apple engines), but the serif rendering was
       never reproduced off-device, so this is a diagnosis, not a confirmed
-      fix. If the digits still read serif, run the canvas probe in the
+      fix. If the labels still read serif, run the canvas probe in the
       2026-08-11 PROGRESS entry and report what it prints.
 - [ ] Judge the venue sheet's scroll cue on a phone, in the embed (added
       2026-09-05, the surface the report came from). The content now dissolves

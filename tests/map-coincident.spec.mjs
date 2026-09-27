@@ -1,9 +1,8 @@
 // Venues that share a location (Mosaic on a Stick inside Hamline Park, and Vig
 // Guitars ~14 m from Fluid Ink — valid data, see CLAUDE.md). From the split
-// zoom inward each draws as its own numbered diamond, displaced east or west of
+// zoom inward each draws as its own diamond, displaced east or west of
 // the coordinate it shares, with a dot at that coordinate and a line joining
-// the two. Below the split they stay a cluster glyph, which now carries the two
-// member numbers.
+// the two. Below the split they stay a cluster glyph.
 //
 // Everything here goes through `window.__mmafMap` (CONTRACTS.md, Test hooks):
 // pins are canvas symbols, so the engine is the only witness. The composite
@@ -133,7 +132,7 @@ async function centreOnCoincidentPair(page) {
   );
 }
 
-test('coincident venues draw as separate numbered pins tethered to their true point', async ({ page }) => {
+test('coincident venues draw as separate pins tethered to their true point', async ({ page }) => {
   await gotoMap(page);
   const pair = await centreOnCoincidentPair(page);
   expect(pair, 'no two venues share a coordinate; this test has lost its subject').not.toBeNull();
@@ -142,11 +141,9 @@ test('coincident venues draw as separate numbered pins tethered to their true po
   const drawn = await mapEval(page, (map) =>
     map.queryRenderedFeatures({ layers: ['venue-leader-pin'] }).map((f) => f.properties),
   );
-  // Both members on the map, each carrying its own key-list number, and neither
-  // still hiding inside a stack.
+  // Both members on the map, and neither still hiding inside a stack.
   for (const member of pair.members) {
     expect(drawn.find((p) => p.id === member.id), `${member.name} is not drawn`).toBeTruthy();
-    expect(member.label).toMatch(/^\d+$/);
     expect(Math.abs(member.offsetX) + Math.abs(member.offsetY), `${member.name} is not displaced`).toBeGreaterThan(0);
   }
   expect(new Set(pair.members.map((m) => m.lane)).size).toBe(2);
@@ -300,12 +297,11 @@ test.describe('on a phone-width frame', () => {
 });
 
 // The band just outside the leader zoom is where the pairs used to render as
-// their own numbered two-stacks; the leader treatment now starts a level
+// their own two-stacks; the leader treatment now starts a level
 // earlier and covers it (ruled 2026-08-23), so below the leader zoom the pair
-// is inside SOME stack — with the current venue set, the merged anonymous one,
-// since the two groups sit within clusterRadius of each other there. Any
-// two-venue stack that does render still carries its members' numbers.
-test('below the leader zoom the pair stacks, never as its own numbered pair', async ({ page }) => {
+// is inside SOME stack — with the current venue set, the merged one, since the
+// two groups sit within clusterRadius of each other there.
+test('below the leader zoom the pair stacks, never as its own pair', async ({ page }) => {
   await gotoMap(page);
 
   const state = await mapEval(
@@ -330,15 +326,12 @@ test('below the leader zoom the pair stacks, never as its own numbered pair', as
         if (seen.has(f.properties.cluster_id)) continue;
         seen.add(f.properties.cluster_id);
         const leaves = await source.getClusterLeaves(f.properties.cluster_id, Infinity, 0);
-        const cluster = { properties: f.properties, leafLabels: leaves.map((l) => Number(l.properties.label)) };
-        clusters.push(cluster);
+        const cluster = { properties: f.properties };
         if (ids.every((id) => leaves.some((l) => l.properties.id === id))) holder = cluster;
       }
       return {
-        labels: members.map((f) => Number(f.properties.label)).sort((a, b) => a - b),
         leaders: map.queryRenderedFeatures({ layers: ['venue-leader-pin'] }).length,
         holder,
-        clusters,
       };
     },
     SOURCE_FEATURES_FN,
@@ -353,14 +346,8 @@ test('below the leader zoom the pair stacks, never as its own numbered pair', as
   // below the leader zoom — not a law for every dataset.
   expect(
     state.holder.properties.point_count,
-    'the pair still draws as its own numbered stack outside the leader zoom',
+    'the pair still draws as its own stack outside the leader zoom',
   ).toBeGreaterThan(2);
-  // Whatever two-venue stacks do render carry their members' own key-list
-  // numbers, in a fixed order: supercluster promises nothing about leaf order.
-  for (const cluster of state.clusters.filter((c) => c.properties.point_count === 2)) {
-    const numbers = cluster.leafLabels.slice().sort((a, b) => a - b);
-    expect([cluster.properties.labelMin, cluster.properties.labelMax]).toEqual(numbers);
-  }
 });
 
 // Cross-type companion to the venue treatment: a transit stop whose pin cannot

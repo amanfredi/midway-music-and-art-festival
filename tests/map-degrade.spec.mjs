@@ -58,7 +58,7 @@ test.describe('without WebGL2', () => {
     await expect(buttons).toHaveCount(venues.length);
 
     // Matched by id, not by the button's text: the button also contains its
-    // numbered pin glyph, so its textContent is "1Midway Saloon".
+    // pin glyph's markup and whitespace.
     const first = buttons.first();
     const id = await first.getAttribute('data-venue-id');
     const name = venues.find((v) => v.id === id).name;

@@ -386,9 +386,9 @@ test('a denied location request points at the Safari setting that fixes it', asy
   await expect(toast).toContainText(/Safari Websites/);
 });
 
-// --- Item: venue number in the key-list accessible name ---------------------
+// --- Item: the key-list accessible name is the venue's name ------------------
 
-test('every key-list button carries "Venue N" in its accessible name', async ({ page }) => {
+test('every key-list button is named by its venue alone', async ({ page }) => {
   await page.goto('/' + T + '#/map');
   const buttons = page.locator('.venue-key-btn');
   await expect(buttons.first()).toBeVisible();
@@ -396,14 +396,14 @@ test('every key-list button carries "Venue N" in its accessible name', async ({ 
   const count = await buttons.count();
   expect(count).toBeGreaterThan(0);
   for (let i = 0; i < count; i++) {
-    // The number was previously only inside an aria-hidden SVG, so a
-    // screen-reader user couldn't cross-reference "venue 3" from a sighted
-    // companion. The name still ends with the venue's own name.
-    await expect(buttons.nth(i)).toHaveAccessibleName(new RegExp(`^Venue ${i + 1}: .+`));
+    // The diamond is aria-hidden, and the "Venue N:" prefix went with the pin
+    // numbers (2026-09-26): nothing on the map says N any more.
+    const name = (await buttons.nth(i).textContent()).trim();
+    await expect(buttons.nth(i)).toHaveAccessibleName(name);
   }
 });
 
-// --- Item: pin digits in the app's UI font -----------------------------------
+// --- Item: map labels in the app's UI font -----------------------------------
 
 test('map labels resolve to the platform UI font, not the platform serif', async ({ page }) => {
   await gotoMap(page);
@@ -414,8 +414,10 @@ test('map labels resolve to the platform UI font, not the platform serif', async
   // way the engine does rather than comparing the declarations.
   const { stack, widths, weightWords } = await page.evaluate(() => {
     const map = window.__mmafMap;
-    const stack = map.getLayoutProperty('venue-pin', 'text-font').join(',');
-    const uiFamily = getComputedStyle(document.querySelector('.venue-key-btn__pin text')).fontFamily;
+    // The transit letters: the bold stack, and the one pin layer still drawing
+    // text since venue pins went plain.
+    const stack = map.getLayoutProperty('transit-pin', 'text-font').join(',');
+    const uiFamily = getComputedStyle(document.querySelector('.venue-key-btn')).fontFamily;
     const ctx = new OffscreenCanvas(64, 64).getContext('2d');
     const width = (family) => {
       ctx.font = `normal 700 48px ${family}`;
@@ -472,8 +474,8 @@ test('map labels resolve to the platform UI font, not the platform serif', async
   expect(widths.map, 'map labels must not land on the platform serif').not.toBeCloseTo(widths.serif, 1);
   expect(widths.map, 'map labels must be the platform UI font').toBeCloseTo(widths.systemUi, 1);
 
-  // Same face as the key-list numbers — the property that matters, since the
-  // pin's number is how a venue is cross-referenced to the list — but only
+  // Same face as the key list's venue names — the property that matters, since
+  // a name on the map is how a venue is cross-referenced to the list — but only
   // provable where the key list reaches the platform UI font too. It gets
   // there through `app.css`, whose stack predates `system-ui` and leads with
   // `-apple-system`/`BlinkMacSystemFont`; Blink honours the latter on macOS
@@ -484,6 +486,6 @@ test('map labels resolve to the platform UI font, not the platform serif', async
   // gap, but that changes type across the whole site, not just this view.
   const keyListReachesUiFont = Math.abs(widths.ui - widths.systemUi) < 0.05;
   if (keyListReachesUiFont) {
-    expect(widths.map, 'pin labels and key-list numbers must be the same face').toBeCloseTo(widths.ui, 1);
+    expect(widths.map, 'map labels and the key list must be the same face').toBeCloseTo(widths.ui, 1);
   }
 });

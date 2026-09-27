@@ -675,7 +675,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 
   | type | color | shape detail |
   |---|---|---|
-  | Venue | blue `#10577b` | diamond with the venue's number inside |
+  | Venue | blue `#10577b` | plain diamond, no text (numbers removed 2026-09-26: they were sheet order and meant nothing to a visitor) |
   | Transit | green `#298d4e` | diamond with the line letter inside (`G`/`A`/`B`) |
   | Featured Sponsor | red `#a11f22` | axis-aligned **square**, paper-filled with a 2 px red keyline, carrying the sponsor's mark |
   | Sponsor (generic) | red `#a11f22` | small solid diamond |
@@ -715,8 +715,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   symbol); the rail swatches are line strokes, exempt. The featured swatch is a
   27 px square with **no mark** — one sponsor's mark in a legend would read as
   that sponsor rather than as the category. The venue key list
-  below the map repeats the venue pin's diamond (not a circle), and the
-  legend's venue swatch carries no number. The legend lists festival content
+  below the map repeats the venue pin's diamond (not a circle). The legend lists festival content
   first — venue, featured sponsor, sponsor — and the transit entries after.
 
   Map labels are rasterised by the engine itself: the styles carry no `glyphs`
@@ -737,7 +736,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 
   Every family after the weight word must be one that really resolves inside a
   canvas: engine-specific aliases (`-apple-system`, `BlinkMacSystemFont`)
-  resolve on one engine each, which is how pin numbers end up in a face the
+  resolve on one engine each, which is how map labels end up in a face the
   venue key list beside them is not using. The stack asks for `system-ui` — the
   standard name for the platform UI font — and falls back through real
   installed faces.
@@ -778,8 +777,9 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   this order: Featured Sponsors, Venues, Sponsors. It is a map *key*, so it
   holds exactly what the map draws — only sponsors that get a pin appear, and a
   section with nothing in it renders **nothing, heading included**, because an
-  empty heading is a claim that there is something under it. Venue cards and
-  their numbering are unchanged, in an `<ol id="venue-key-list">`. A featured
+  empty heading is a claim that there is something under it. Venue cards are
+  in a `<ul id="venue-key-list">`, each a plain blue diamond and the venue's
+  name (the name alone is the button's accessible name). A featured
   card shows the sponsor's mark (contain-fit, `alt=""` — the name is beside it
   in text) and its name; a generic sponsor card shows the small red diamond and
   the name. Tapping a sponsor card runs the same path as tapping its pin:
@@ -820,15 +820,9 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
 
   **Venue pins cluster** (`clusterRadius` 26 px) so that pins too close to tap
   apart combine as the view widens. A cluster shows a stacked-diamond glyph and
-  **never a count**: venue pins carry the venue's number from the key list, so a
-  count on a cluster reads as a venue number. Its **members' own key-list
-  numbers** are the one sanctioned exception (ruled 2026-08-23) — those digits
-  are the pin vocabulary rather than a competing one — and only while two of them
-  fit, stacked the way transit pins stack their line letters. At three or more
-  the glyph carries no text at all, which is the overflow form. The two numbers
-  arrive as `labelMin`/`labelMax` cluster properties: supercluster promises
-  nothing about the order it reduces leaves in, so min/max is what makes them
-  come out stable. `clusterMaxZoom` must stay strictly below the GeoJSON source's
+  **no text**: never a count (a count read as a venue number when pins were
+  numbered, 2026-08-10), and no member numbers since the pins lost theirs
+  (2026-09-26). `clusterMaxZoom` must stay strictly below the GeoJSON source's
   own `maxzoom` (18), or clusters bake into the last real tile and never break
   apart however far you zoom.
 
@@ -848,7 +842,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   sheet rejects it, so the leader zoom equals the split). Both are the same on
   every device. Wider than the leader zoom, venues whose diamonds would overlap
   stack as one cluster glyph. From it inward, each of them draws its own
-  numbered diamond, displaced into a lane a pin wide plus a leader run either
+  diamond, displaced into a lane a pin wide plus a leader run either
   side (2 × (`VENUE_R` + 13) px), with a dot at the coordinate it really
   occupies and a line joining dot to diamond. Every member carries **its own
   dot**, so an exactly coincident pair draws two dots at one point. Membership
@@ -918,11 +912,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   box, so its collision box overhangs its ink by only the 2 px of canvas bleed.
 
   So, in full: **a label may cross a leader line and may graze a diamond's tips.
-  It may not cover a diamond's body, its number, or a location dot.** The number
-  is safe by construction rather than by luck — it is central, and at
-  `VENUE_TEXT_PX` a two-digit label reaches ~12 px from the centre against the
-  blocker's 15.4 — and a test pins that, because it is the one part of this the
-  arithmetic could quietly stop being true about.
+  It may not cover a diamond's body or a location dot.**
 
   The displaced pins come from their own
   unclustered `venue-groups` source, because the clustered one hides them inside
@@ -1036,7 +1026,7 @@ why. WebGL2 is a hard requirement of the engine, and therefore of the map tab.
   The visible pin layers register their collision boxes
   (`icon-ignore-placement` off; the invisible-until-selected halo layers and the
   two tether layers stay out of the index), so no label — name or street — can
-  be placed across a diamond or a number, though one may now cross a leader
+  be placed across a diamond, though one may now cross a leader
   line; label offsets are therefore measured
   to the pin's collision box (image rect + the engine's default 2 px icon-
   and text-padding), not its drawn shape, or the pin's own box rejects its
@@ -1592,14 +1582,14 @@ deferring it; the hidden-page and first-install cases are untested.
   cannot see either the gap or the fix — a canvas has nothing for it to flag,
   so these paths are covered by explicit tests instead.
 - **Color is never the only means** of conveying information. Pins carry a
-  number, a line letter, or a fill-vs-outline difference as well as a color;
+  shape, a line letter, or a fill-vs-outline difference as well as a color;
   kind badges carry the kind word; and every symbol the map draws is named in
   the legend below it — including the two rail lines, which are drawn at
   identical weight and would otherwise be told apart by hue alone.
 - **Contrast, stated in full.** Text needs 4.5:1, or 3:1 for large text —
   ≥24px, or ≥18.66px bold, **as rendered on screen**. Map type is sized in
-  screen pixels by `map.js` and currently tops out at 16px (the venue pin's
-  number), so it is never large text and the 4.5:1 threshold always applies. Non-text needs 3:1: UI
+  screen pixels by `map.js` and currently tops out at 15px (street names at
+  close zoom), so it is never large text and the 4.5:1 threshold always applies. Non-text needs 3:1: UI
   component boundaries and states, and graphical objects needed to understand
   the content. In scope: the six kind tints, every pin and legend color,
   the star button's pressed state, and every label the map draws — all of

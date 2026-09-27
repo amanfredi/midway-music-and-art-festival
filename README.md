@@ -521,8 +521,8 @@ and only for that fallback. Step 3 below is the check either way.
 
 Load the published page in an ordinary tab, not the Squarespace editor.
 
-1. The map draws, with numbered venue pins on it, a legend under it and the
-   numbered venue list under that. No Midway header bar, no row of app tabs, and
+1. The map draws, with blue diamond venue pins on it, a legend under it and the
+   venue list under that. No Midway header bar, no row of app tabs, and
    no notice bar above the map — the app's banner is deliberately left out of
    the embed, so anything the organizers need to announce here belongs in the
    Squarespace page itself.

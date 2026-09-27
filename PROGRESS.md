@@ -54,6 +54,17 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-26 — the Support view credits the app's builder
+
+With the organizers' OK, the Support view now ends with a one-line credit:
+built and donated by Anthony Manfredi, with a `mailto:` link and his cairn mark.
+The mark is inline SVG in `site/js/app-credit.js` (from his brand files), so it
+needs no request and no cache entry, and it is `aria-hidden` because the
+sentence already names him. The credit is app code rather than a sheet row,
+since it describes the app, not the festival. The address is a Fastmail alias
+for now; it may move to a domain of his later. The offline test checks that the
+credit renders offline with a mailto link.
+
 ### 2026-09-26 — venue pins lose their numbers
 
 Venue pins, two-venue stacks and the key list's diamonds no longer carry a

@@ -1148,6 +1148,9 @@ CDNs, no analytics.
 - `#/sponsors` ("Support" in the nav): a donate button/link at the top of the
   view, driven by `settings.donation_url`/`settings.donation_label`; renders
   nothing when `donation_url` is empty.
+  The view closes with the app's own credit (`site/js/app-credit.js`): who
+  built the app and a `mailto:` link, beside his cairn mark as inline,
+  decorative SVG. It is app code, not sheet content.
 - Starred event ids: `localStorage` key `mfc:starred`, JSON string array.
 - Banner dismissal: `localStorage` key `mfc:dismissed-banner` = the dismissed `banner_id`.
 - Last reload onto a new worker version: `sessionStorage` key
@@ -1648,6 +1651,7 @@ deferring it; the hidden-page and first-install cases are untested.
 - `[data-testid="vendor-list"]` on the vendors view container
 - `[data-testid="sponsor-list"]` on the sponsors ("Support") view container
 - `[data-testid="donate-link"]` on the donate button/link in the Support view
+- `[data-testid="app-credit"]` on the app credit closing the Support view
 - `[data-testid="notice-banner"]` and `[data-testid="banner-dismiss"]`
 - `[data-testid="map-canvas"]` on the map's container element, and
   `window.__mmafMap` — the live MapLibre `Map` for the current `#/map` view,

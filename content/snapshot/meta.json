@@ -7,8 +7,8 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1159361423&single=true&output=csv",
       "file": "sources/events.csv",
       "contentType": "text/csv",
-      "sha256": "0a74151a8199b15f4930613dd2012613af09d9e33925ad84464aa596e2df9373",
-      "bytes": 58001,
+      "sha256": "16705b06976c8e663f3b3a9016604311fa54ae9fefcac41526d796a2725cb591",
+      "bytes": 58117,
       "lastChanged": "2026-09-29"
     },
     {

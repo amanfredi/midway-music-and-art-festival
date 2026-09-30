@@ -26,6 +26,18 @@ export function ticketIconHtml(tickets) {
   return `<svg class="ticket-icon" role="img" aria-label="${esc(info.label)}" focusable="false"><use href="#${info.id}"></use></svg>`;
 }
 
+// The other two `tickets` values — both General Admission, no ticket needed —
+// get a "Free" chip instead (user feedback, 2026-09-30: with no label at all,
+// people couldn't tell whether the ~80% of events without a ticket icon cost
+// money). A plain word chip rather than a ticket shape, so it reads as a
+// different kind of label from the red Free Ticket Required ticket; the
+// detail view spells out the difference ("no ticket needed").
+const FREE_ADMISSION = new Set(['General Admission', 'General Admission (limited capacity)']);
+
+export function freeBadgeHtml(tickets) {
+  return FREE_ADMISSION.has(tickets) ? '<span class="badge badge--free">Free</span>' : '';
+}
+
 // events.csv `age_limit` is blank for the overwhelming majority of events;
 // only "18+"/"21+" render. Announced as a phrase rather than leaving a screen
 // reader to interpret "21+".
@@ -68,6 +80,7 @@ export function eventRowHtml(event, { venue, showVenue = true, showKind = true, 
         <span class="event-row__meta">
           ${showKind ? `<span class="badge badge--${esc(kind)}">${esc(kind)}</span>` : ''}
           ${ticketIconHtml(event.tickets)}
+          ${freeBadgeHtml(event.tickets)}
           ${ageBadgeHtml(event.age_limit)}
         </span>
       </a>

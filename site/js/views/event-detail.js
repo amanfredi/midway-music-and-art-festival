@@ -20,9 +20,18 @@ const AGE_LIMIT_TEXT = {
  * link (a GA row, a missing/malformed URL), so there is nothing left to check
  * here beyond safeHref — same pattern as the sponsor link in sponsors.js.
  */
+// General Admission reads as plain text with no chip: the row's "Free" chip
+// is already a word, so repeating it beside "Free" here would only stutter.
+// "No ticket needed" is the part the chip can't say — it is what separates
+// these from Free Ticket Required.
+const FREE_ADMISSION_TEXT = {
+  'General Admission': 'Free, no ticket needed',
+  'General Admission (limited capacity)': 'Free, no ticket needed · limited capacity',
+};
+
 function ticketFactTextHtml(event) {
   const href = safeHref(event.ticket_url);
-  const text = esc(event.tickets);
+  const text = esc(FREE_ADMISSION_TEXT[event.tickets] ?? event.tickets);
   return href
     ? `<a data-testid="ticket-link" href="${esc(href)}" target="_blank" rel="noopener">${text}${NEW_TAB_HINT}</a>`
     : `<span>${text}</span>`;

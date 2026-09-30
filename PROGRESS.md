@@ -54,6 +54,23 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-09-30 — General Admission events say "Free"
+
+Visitors couldn't tell whether an event with no ticket icon cost money, and
+that's 83 of the 103 live events. Both General Admission values now carry an
+outlined "Free" pill in the row's label column, like the kind chips, in
+body-text ink rather than brand red, so it stays quiet on most rows and
+doesn't read as a relative of the red Free Ticket Required ticket. The pill
+does alternate in shape with the ticket icon down the column; a version sized
+to the ticket's footprint (a small outlined "FREE" rectangle) was tried to fix
+that, and Anthony chose the pill anyway. On the detail page the ticket fact is
+plain text with no chip: "Free, no ticket needed", plus "· limited capacity"
+for that variant. The chip is already a word, and "no ticket needed" is the
+one thing that separates these events from Free Ticket Required. Sold Out
+keeps its own icon and gets no Free label, since a sold-out event is a
+ticketed one. The Squarespace embeds don't show tickets, so they didn't
+change. `tests/tickets.spec.mjs` covers the rows and all five detail texts.
+
 ### 2026-09-26 — the Support view credits the app's builder
 
 With the organizers' OK, the Support view now ends with a centred sign-off: "App

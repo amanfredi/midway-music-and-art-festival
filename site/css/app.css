@@ -1891,7 +1891,8 @@ a:focus-visible, button:focus-visible {
 .badge--other { color: #4a3b2c; } /* warm taupe, parchment-adjacent — 8.53:1 worst case */
 
 /* -- ticket icons: Free/Paid Ticket Required and Sold Out only (events.csv
-   `tickets`; General Admission and its limited-capacity variant get no icon).
+   `tickets`; General Admission and its limited-capacity variant get the
+   .badge--free chip instead, below).
    Brand artwork, defined once as a <symbol> in index.html and referenced with
    <use>; colors are baked into the symbol (brand red ticket body with
    knocked-out white lettering for Free/Paid; a white ticket body with a thin
@@ -1925,4 +1926,14 @@ a:focus-visible, button:focus-visible {
 .badge--age {
   color: #8f1b1e;
   font-variant-numeric: tabular-nums;
+}
+
+/* -- "Free" (General Admission, no ticket needed — event-row.js): body-text
+   ink, not brand red, so it stays quiet on the ~80% of rows that carry it and
+   doesn't read as a sibling of the red Free Ticket Required ticket. 11.64:1
+   at its worst across the kind tints. A version sized to the ticket icon's
+   footprint was tried and rejected in favor of the pill (Anthony,
+   2026-09-30). -- */
+.badge--free {
+  color: var(--color-text);
 }

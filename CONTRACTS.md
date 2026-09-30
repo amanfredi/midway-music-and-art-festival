@@ -1145,6 +1145,13 @@ CDNs, no analytics.
 - Event detail repeats the row's own symbols next to plain-language text —
   ticket icon + `tickets` value, age badge + "Must be age N or older" — so the
   glyph learned in the schedule is explained on the detail page.
+- The two General Admission `tickets` values (no ticket needed) are labelled
+  free explicitly: a text chip reading "Free" in the row's label column, and
+  on the detail page plain text with no chip — "Free, no ticket needed", plus
+  "· limited capacity" for the limited-capacity variant. The chip is already a
+  word, so the detail page doesn't repeat it; the text carries what the chip
+  can't, the difference from `Free Ticket Required`. `Sold Out` keeps its own
+  icon and gets no Free label.
 - `#/sponsors` ("Support" in the nav): a donate button/link at the top of the
   view, driven by `settings.donation_url`/`settings.donation_label`; renders
   nothing when `donation_url` is empty.

@@ -65,7 +65,6 @@ const MAP_FRAME_BBOX = (() => {
   };
 })();
 const VALID_KINDS = new Set(["music", "art", "performance", "literary", "vendor", "other"]);
-const VALID_VENDOR_TYPES = new Set(["food", "art", "retail"]);
 const VALID_TICKETS = new Set([
   "General Admission",
   "General Admission (limited capacity)",
@@ -168,7 +167,8 @@ const SOURCE_LABEL = {
 const EXPECTED_COLUMNS = {
   venues: ["id", "name", "address", "location", "description", "url"],
   events: ["id", "title", "venue_id", "date", "start_time", "end_time", "kind", "tickets", "age_limit", "description", "url"],
-  vendors: ["id", "name", "type", "description", "location"],
+  // vendors.csv is positional, not named — see validateVendorHeader.
+  vendors: [],
   sponsors: ["id", "name", "tier", "blurb", "url", "location"],
   settings: ["key", "value"],
 };
@@ -255,7 +255,9 @@ function rowsToRecords(rows) {
     header.forEach((h, i) => {
       fields[h] = r[i] ?? "";
     });
-    return { rowNum: idx + 2, fields };
+    // `cells` keeps the row positional: vendors.csv's name column has a blank
+    // header, and two blank headers would share one `fields` key.
+    return { rowNum: idx + 2, fields, cells: r };
   });
   return { header, records };
 }
@@ -495,6 +497,26 @@ function applyColumnAliases(parsed) {
 }
 
 /**
+ * vendors.csv is laid out the way the organizers' sheet already is: the first
+ * column holds the vendor name whatever its header says (blank in the live
+ * sheet), and every other column with a header is a location — its header text
+ * is the label the vendor's pill shows. A column with no header is ignored.
+ */
+function vendorLocationColumns(header) {
+  return header
+    .map((cell, index) => ({ index, label: String(cell).trim() }))
+    .filter((col) => col.index > 0 && col.label !== "");
+}
+
+function validateVendorHeader(header) {
+  if (vendorLocationColumns(header).length > 0) return [];
+  return [
+    `vendors.csv: no location columns found (header: ${header.join(", ")}). The first column is the vendor name; ` +
+      `each column after it needs a location as its header, with an x in the rows of vendors at that location.`,
+  ];
+}
+
+/**
  * `sources.<key>: null` in config.json is the one config value that means
  * "this section has no content on purpose" rather than "path or URL to load
  * it from". It is deliberately distinct from a source that loads and comes
@@ -529,7 +551,7 @@ function validateSourceShape(key, sourceValue, parsed) {
   if (parsed.header.length === 0) {
     return [`${fileLabel} (${sourceValue}) is empty — no header row, no rows.`];
   }
-  const errors = validateHeader(key, parsed.header);
+  const errors = key === "vendors" ? validateVendorHeader(parsed.header) : validateHeader(key, parsed.header);
   if (parsed.records.length === 0) {
     errors.push(
       `${fileLabel} (${sourceValue}) has a header row but no data rows. ` +
@@ -680,7 +702,6 @@ function normalizeIds(parsed) {
     }
   };
   rewrite("venues.csv", parsed.venues.records, "id", "name");
-  rewrite("vendors.csv", parsed.vendors.records, "id", "name");
   rewrite("sponsors.csv", parsed.sponsors.records, "id", "name");
   rewrite("events.csv", parsed.events.records, "id", "title");
   rewrite("events.csv", parsed.events.records, "venue_id", "title");
@@ -928,34 +949,23 @@ function validateVenues(records) {
   return { errors, clean };
 }
 
-function validateVendors(records) {
+// Any non-blank cell marks the vendor present at that column's location, so
+// "x", "X" and "yes" all count. A row with no name is reported and left out;
+// a fully blank row is spreadsheet padding and skipped silently.
+function validateVendors(records, header) {
   const fileLabel = "vendors.csv";
-  const errors = [
-    ...validateRequiredFields(fileLabel, records, ["id", "name", "type", "location"], "name"),
-    ...validateDuplicateIds(fileLabel, records, "name"),
-    ...validateIdFormat(fileLabel, records, "name"),
-    ...validateLocation(fileLabel, records, "name"),
-  ];
-  for (const rec of records) {
-    const type = rec.fields.type;
-    if (type && !VALID_VENDOR_TYPES.has(type)) {
-      errors.push(
-        errorMsg(
-          fileLabel,
-          rec.rowNum,
-          identifierFor(rec, "name"),
-          `unknown type "${type}" (expected one of: ${[...VALID_VENDOR_TYPES].join("|")}).`
-        )
-      );
+  const columns = vendorLocationColumns(header);
+  const cell = (rec, index) => String(rec.cells[index] ?? "").trim();
+  const rows = records.filter((rec) => rec.cells.some((value) => String(value).trim() !== ""));
+  const errors = [];
+  for (const rec of rows) {
+    if (cell(rec, 0) === "") {
+      errors.push(errorMsg(fileLabel, rec.rowNum, `row ${rec.rowNum}`, "missing the vendor name in the first column."));
     }
   }
-  const clean = records.map((rec) => ({
-    id: rec.fields.id ?? "",
-    name: rec.fields.name ?? "",
-    type: rec.fields.type ?? "",
-    description: rec.fields.description ?? "",
-    lat: rec.coords?.lat ?? 0,
-    lng: rec.coords?.lng ?? 0,
+  const clean = rows.map((rec) => ({
+    name: cell(rec, 0),
+    locations: columns.filter((col) => cell(rec, col.index) !== "").map((col) => col.label),
   }));
   return { errors, clean };
 }
@@ -2101,7 +2111,9 @@ async function main() {
   };
 
   const venuesResult = runValidator("venues", parsed.venues.records, validateVenues);
-  const vendorsResult = runValidator("vendors", parsed.vendors.records, validateVendors);
+  const vendorsResult = runValidator("vendors", parsed.vendors.records, (records) =>
+    validateVendors(records, parsed.vendors.header)
+  );
   const settingsResult = runValidator("settings", parsed.settings.records, validateSettings);
   const sponsorsResult = runValidator("sponsors", parsed.sponsors.records, (records) => ({
     errors: validateSponsorFields(records),

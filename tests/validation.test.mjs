@@ -154,10 +154,12 @@ describe("good fixtures", () => {
     assert.equal(typeof venue.lat, "number");
     assert.equal(typeof venue.lng, "number");
 
-    // spot-check a vendor
-    const vendor = content.vendors.find((v) => v.id === "sour-dough-seltzer");
-    assert.ok(vendor);
-    assert.equal(vendor.type, "food");
+    // spot-check vendors: name from the first column (trimmed), one location
+    // per marked column, labelled with that column's header
+    const vendor = content.vendors.find((v) => v.name === "Sass By Cass LLC");
+    assert.ok(vendor, "expected vendor Sass By Cass LLC");
+    assert.deepEqual(vendor.locations, ["Saturday Hamline Park", "Saturday Black Hart", "Sunday Hamline Park"]);
+    assert.deepEqual(content.vendors.find((v) => v.name === "Shelf Indulgence").locations, ["Sunday Hamline Park"]);
 
     // events: start/end use the "T" wall-clock format, sorted by start then title
     assert.match(content.events[0].start, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
@@ -813,11 +815,11 @@ describe("source shape and headers", () => {
   });
 
   test("a known column missing from the header fails the build", () => {
-    const config = makeFixtureSet(TMP_ROOT, "header-missing", [dropColumn("vendors.csv", "type")]);
+    const config = makeFixtureSet(TMP_ROOT, "header-missing", [dropColumn("sponsors.csv", "tier")]);
     const result = runBuild(config);
     assert.notEqual(result.status, 0, "a missing column should fail the build");
-    assert.match(result.stderr, /vendors\.csv/);
-    assert.ok(result.stderr.includes('"type"'), `stderr should name the missing column\n${result.stderr}`);
+    assert.match(result.stderr, /sponsors\.csv/);
+    assert.ok(result.stderr.includes('"tier"'), `stderr should name the missing column\n${result.stderr}`);
   });
 
   test("events.csv missing its url column fails the build", () => {
@@ -983,6 +985,53 @@ describe("source shape and headers", () => {
     const result = runBuild(config);
     assert.notEqual(result.status, 0, "an http:// source should fail the build");
     assert.match(result.stderr, /https:\/\//);
+  });
+});
+
+describe("vendors", () => {
+  const VENDORS = () => readFileSync(path.join(REPO_ROOT, "content/fixtures/vendors.csv"), "utf8");
+  const vendorNamed = (result, name) =>
+    JSON.parse(readFileSync(result.contentPath, "utf8")).vendors.find((v) => v.name === name);
+
+  test("any non-blank cell marks a location, and pills follow the header text", () => {
+    const config = makeFixtureSet(TMP_ROOT, "vendor-marks", [
+      setCell("vendors.csv", 2, "Saturday Black Hart", "yes"),
+      setCell("vendors.csv", 2, "Sunday Hamline Park", "X"),
+      renameHeader("vendors.csv", "Saturday Hamline Park", "Sat @ the Park"),
+    ]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(vendorNamed(result, "North Star Health Collective").locations, [
+      "Sat @ the Park",
+      "Saturday Black Hart",
+      "Sunday Hamline Park",
+    ]);
+  });
+
+  test("a row with no name is left out and reported", () => {
+    const config = makeFixtureSet(TMP_ROOT, "vendor-no-name", [setCell("vendors.csv", 2, "", "")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!vendorNamed(result, "North Star Health Collective"));
+    assert.ok(result.stdout.includes("vendors.csv row 2"), `the run must say what it left out\n${result.stdout}`);
+  });
+
+  test("a fully blank row is skipped without a report", () => {
+    const config = makeFixtureSet(TMP_ROOT, "vendor-blank-row", [replaceBody("vendors.csv", VENDORS() + ",,,\n")]);
+    const result = runBuild(config);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!result.stdout.includes("LEFT OUT"), `a padding row is not a dropped vendor\n${result.stdout}`);
+  });
+
+  test("a header with no location columns fails the build", () => {
+    const config = makeFixtureSet(TMP_ROOT, "vendor-no-locations", [
+      dropColumn("vendors.csv", "Saturday Hamline Park"),
+      dropColumn("vendors.csv", "Saturday Black Hart"),
+      dropColumn("vendors.csv", "Sunday Hamline Park"),
+    ]);
+    const result = runBuild(config);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /vendors\.csv: no location columns/);
   });
 });
 
@@ -1597,8 +1646,8 @@ describe("invalid rows are left out by default", () => {
 
   test("still refuses to publish a source whose rows all failed", () => {
     const rows = parseCSV(readFileSync(path.join(REPO_ROOT, "content/fixtures/vendors.csv"), "utf8"));
-    const emptyEveryLocation = rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "location", ""));
-    const config = makeFixtureSet(TMP_ROOT, "skip-every-row-bad", emptyEveryLocation);
+    const emptyEveryName = rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "", ""));
+    const config = makeFixtureSet(TMP_ROOT, "skip-every-row-bad", emptyEveryName);
 
     const result = runBuild(config);
     assert.notEqual(result.status, 0, "emptying a tab one bad row at a time must fail like an emptied tab");
@@ -1611,7 +1660,7 @@ describe("invalid rows are left out by default", () => {
     // place of a working one.
     const rows = parseCSV(readFileSync(path.join(REPO_ROOT, "content/fixtures/vendors.csv"), "utf8"));
     const config = makeFixtureSet(TMP_ROOT, "skip-one-source-emptied", [
-      ...rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "location", "")),
+      ...rows.slice(1).map((_, i) => setCell("vendors.csv", i + 2, "", "")),
       setCell("events.csv", 2, "kind", "dance"),
     ]);
     const result = runBuild(config);

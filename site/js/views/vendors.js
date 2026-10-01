@@ -1,20 +1,19 @@
-import { esc, groupBy } from '../util.js';
+import { esc } from '../util.js';
 
-// Grouped by type (food/art/retail) rather than a flat list: festival-goers
-// browsing vendors are usually looking for "something to eat" or "art to
-// buy", not a specific name, so type is the more useful first cut. Vendors
-// have no map pins or map-legend entry -- see CONTRACTS.md Map + geo contract.
-const TYPE_LABELS = { food: 'Food', art: 'Art & Craft', retail: 'Retail' };
-const TYPE_ORDER = ['food', 'art', 'retail'];
-
-// No type badge on the card: the cards are already grouped under a heading
-// that names the type, so the badge only repeated it (QA, 2026-08-09).
-function vendorCardHtml(v) {
+// One flat alphabetical list, no filters: the vendors sheet records only a
+// name and where each vendor will be. Each location is a pill in the row's
+// label column, the way Free and 21+ sit on event rows, tinted the vendor
+// kind's purple. Rows aren't links (vendors have no detail page) and carry no
+// star (vendors aren't events). No map pins -- see CONTRACTS.md Map + geo
+// contract.
+function vendorRowHtml(v) {
   return `
-    <div class="vendor-card">
-      <h3 class="vendor-card__name">${esc(v.name)}</h3>
-      ${v.description ? `<p class="vendor-card__description">${esc(v.description)}</p>` : ''}
-    </div>`;
+    <li class="vendor-row kind-tint--vendor">
+      <span class="vendor-row__name">${esc(v.name)}</span>
+      <span class="vendor-row__locations">
+        ${v.locations.map((loc) => `<span class="badge badge--location">${esc(loc)}</span>`).join('')}
+      </span>
+    </li>`;
 }
 
 export function renderVendors(container, content) {
@@ -29,26 +28,10 @@ export function renderVendors(container, content) {
     return;
   }
 
-  // Defensive "Other" bucket for any type outside the known enum, so a future
-  // content change degrades gracefully instead of silently dropping vendors
-  // (build.mjs already validates the enum, so this should stay empty today).
-  const byType = groupBy(vendors, (v) => (TYPE_ORDER.includes(v.type) ? v.type : 'other'));
-  const orderedKeys = [...TYPE_ORDER, 'other'].filter((key) => byType.has(key));
-
+  const sorted = [...vendors].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   container.innerHTML = `
     <section data-testid="vendor-list" class="view vendors-view">
       <h1 class="view-title">Vendors</h1>
-      ${orderedKeys
-        .map((key) => {
-          const group = [...byType.get(key)].sort((a, b) => a.name.localeCompare(b.name));
-          return `
-        <div class="vendor-group">
-          <h2 class="vendor-group__title">${esc(TYPE_LABELS[key] || 'Other')}</h2>
-          <div class="vendor-cards">
-            ${group.map(vendorCardHtml).join('')}
-          </div>
-        </div>`;
-        })
-        .join('')}
+      <ul class="vendor-list">${sorted.map(vendorRowHtml).join('')}</ul>
     </section>`;
 }

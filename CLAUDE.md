@@ -33,7 +33,7 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
 
 ## Content
 
-- The venues, events and sponsors tabs are LIVE from the organizers' Google
+- The venues, events, vendors and sponsors tabs are LIVE from the organizers' Google
   Sheet (URLs in `content/config.json`). Content fixes belong in the sheet —
   never in either committed copy of it. Two copies exist per live source, with
   distinct jobs: `content/fixtures/<key>.csv` is hand-committed and feeds the
@@ -53,9 +53,7 @@ Offline-capable map/schedule PWA for the Midway Music & Arts Fest
   2026-08-10) — don't flag it or propose validation against it. Overlapping
   pins are a map-rendering concern, addressed by the MapLibre migration.
 - `settings` is the last placeholder fixture; swapping it to the sheet is a
-  one-line change in `content/config.json`. Vendors is deliberately empty
-  (`"vendors": null`) until the organizers name vendors — a decision recorded
-  in config, not an oversight.
+  one-line change in `content/config.json`.
 - Tests build from local fixtures only — keep them off the network. `npm test`
   builds `site/` from `tests/fixtures-good/config.json`; the broken cases are
   generated from the good fixtures by `tests/fixture-sets.mjs` into temp dirs.

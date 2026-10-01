@@ -160,6 +160,7 @@ describe("good fixtures", () => {
     assert.ok(vendor, "expected vendor Sass By Cass LLC");
     assert.deepEqual(vendor.locations, ["Saturday Hamline Park", "Saturday Black Hart", "Sunday Hamline Park"]);
     assert.deepEqual(content.vendors.find((v) => v.name === "Shelf Indulgence").locations, ["Sunday Hamline Park"]);
+    assert.deepEqual(content.vendor_locations, ["Saturday Hamline Park", "Saturday Black Hart", "Sunday Hamline Park"]);
 
     // events: start/end use the "T" wall-clock format, sorted by start then title
     assert.match(content.events[0].start, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);

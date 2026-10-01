@@ -70,6 +70,13 @@ location, stacked on the right where event rows put Free and 21+. The
 type-grouped cards, the type enum, and vendor ids and coordinates are gone.
 `content/fixtures/vendors.csv` is now a copy of the live tab.
 
+Anthony found the first version busy, so the same day the pills and the
+filter buttons shorten the day ("Sat. Hamline Park"), and a row of filters
+(All plus one per location) sits above the list. The filter order is the
+sheet's column order, which the build now publishes as `vendor_locations`;
+the selection lives in the URL (`#/vendors?at=…`) like the schedule's day.
+`tests/vendors.spec.mjs` covers order, abbreviation and filtering.
+
 ### 2026-09-30 — General Admission events say "Free"
 
 Visitors couldn't tell whether an event with no ticket icon cost money, and

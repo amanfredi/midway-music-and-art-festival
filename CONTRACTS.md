@@ -534,6 +534,7 @@ curl/SMTP path.
   "venues":   [ { "id": "…", "name": "…", "address": "…", "lat": 44.9557, "lng": -93.1668, "description": "…", "url": "…" } ],
   "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "ticket_url": "", "age_limit": "", "description": "…", "url": "…" } ],
   "vendors":  [ { "name": "…", "locations": ["Saturday Hamline Park", "…"] } ],
+  "vendor_locations": ["Saturday Hamline Park", "Saturday Black Hart", "Sunday Hamline Park"],
   "sponsors": [ { "id": "…", "name": "…", "tier": "Emerald Tier (Presenting Partner)", "tier_slug": "emerald", "tier_order": 1, "blurb": "…", "logo": "assets/sponsors/….svg", "mark": "assets/sponsors/…-pin.svg", "url": "…", "lat": 44.9557, "lng": -93.1668 } ]
 }
 ```
@@ -1140,11 +1141,16 @@ CDNs, no analytics.
   "Support" is the existing `#/sponsors` route relabeled in the nav only —
   the route itself is unchanged. Verify the 6-tab bar still fits and reads at
   320px width.
-- `#/vendors`: one flat list, alphabetical by name, no filters. Each row is a
-  card in the vendor kind's tint (`kind-tint--vendor`) with the name on the
-  left and one outlined pill per location, stacked in a right-hand label
-  column the way event rows stack Free/21+. Rows aren't links; no map pins,
-  no starring (vendors aren't events).
+- `#/vendors`: one list, alphabetical by name. Each row is a card in the
+  vendor kind's tint (`kind-tint--vendor`) with the name on the left and one
+  outlined pill per location, stacked in a right-hand label column the way
+  event rows stack Free/21+. Above it, a wrapping `.toggle-btn` group
+  (`aria-pressed`): "All", then one button per `vendor_locations` entry that
+  some vendor is marked at, in that order. A selected location is
+  `#/vendors?at=<location label>`; an unknown or absent `at` means All. Pills
+  and buttons shorten a leading day name ("Saturday" → "Sat."); content.json
+  keeps the header text. Rows aren't links; no map pins, no starring (vendors
+  aren't events).
 - Event rows are two columns: a text column (time, title, venue) beside a label
   column (kind badge, ticket icon, age limit). The labels are a *sibling* of
   the text, not a line above it — as a top line, a two-label stack pushed the

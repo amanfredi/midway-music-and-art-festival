@@ -1707,6 +1707,15 @@ a:focus-visible, button:focus-visible {
    right-aligned stack of location pills where an event row stacks its
    labels. -- */
 
+/* Buttons are the schedule's .toggle-btn; the group wraps instead of
+   scrolling sideways like .group-toggle, so every location stays visible. */
+.vendor-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
 .vendor-list {
   list-style: none;
   margin: 0 0 1rem;

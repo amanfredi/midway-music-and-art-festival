@@ -2275,6 +2275,9 @@ async function main() {
     venues: venuesResult.clean,
     events,
     vendors: vendorsResult.clean,
+    // The location columns in sheet order, for the vendors page's filters; a
+    // vendor's own list can't supply the order of a column it isn't in.
+    vendor_locations: vendorLocationColumns(parsed.vendors.header).map((col) => col.label),
     sponsors,
   };
 

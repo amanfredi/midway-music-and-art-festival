@@ -555,6 +555,117 @@ If the map block is blank, the code block never ran — the same Business-plan
 question the performers page settles, and the same check: look in the Network
 tab for a request to `go.midwaymusicandart.org`.
 
+## The festival Google Calendar
+
+The shared festival Google Calendar is filled from the sheet's calendar tab
+(gid `1089653622`). The calendar tab mirrors the events tab row for row, so
+schedule edits go in the events tab as usual. A row with a title gets one
+event, kept in step with the row and deleted when the row goes away. An Apps
+Script project inside the organizers' spreadsheet does this every 10 minutes,
+under Lisa Nelson's Google account. It never touches events someone added to
+the calendar by hand. The script's own events should be changed in the events
+tab, not in the calendar: an edit made in the calendar lasts only until that row
+next changes, and an event deleted there is re-created within 10 minutes.
+
+The script is `calendar-sync/CalendarSync.gs`. It doesn't go through this
+site's build or `content.json`: a sheet edit reaches the calendar within about
+10 minutes whether or not the site has rebuilt. People subscribed from another
+calendar app see the change when that app next refreshes, which we expect can
+take hours (not measured).
+
+Each event takes its title from `Performer/event`, its location from
+`location`, and its times from `date`, `Start time` and `end time`. Times follow
+the same rules as the events tab: a blank end time means one hour, and an end
+earlier than the start means past midnight. The description is the row's
+`description`, followed by a `More Information:` line with `URL` and a
+`Tickets:` line with `Ticket URL` when those are filled in. The links are
+plain URLs rather than HTML. Google Calendar would render an HTML link, but
+some subscribers' apps, Apple Calendar among them, are believed to show the
+raw tags (unconfirmed).
+
+The script matches rows to calendar events by the tab's `id` column, which
+carries the events tab's id, so sorting or inserting rows changes nothing.
+Changing a row's `id`, which renaming a performer may do, replaces its event
+with a new one. Removing a row deletes its event, but at most 10 in one run:
+more than that usually means the tab broke rather than 11 or more acts
+cancelling, so the script deletes nothing and reports it instead.
+
+### When an edit doesn't show up, or a problem email arrives
+
+If an edit hasn't reached the calendar after 10 minutes, check, in order:
+
+1. Was the edit made in the events tab, and not to the event in the calendar?
+2. Does the event have a venue the venues tab knows? The calendar tab leaves
+   the title blank for an event without one, and the script skips untitled
+   rows without reporting them.
+3. In the Apps Script project, open Executions. Each run of `syncCalendar` logs
+   a line like `{"created":0,"updated":1,"unchanged":108,"deleted":0}`. A run
+   with problems then fails with the same list the email carries, and a run
+   that stopped at once shows only its error. Whether another editor of the
+   project sees the runs of Lisa Nelson's trigger here is unchecked; if not,
+   this step is Lisa Nelson's.
+4. Has a problem email reached Lisa Nelson's account? It comes from
+   `noreply-apps-scripts-notifications@google.com` with the subject "Summary
+   of failures for Apps Script". Its message starts "Calendar sync finished
+   with problems:", or, for a run that stopped at once, with the error itself
+   (the last two rows of the table below).
+
+A missing calendar, tab or column stops a run at once. Any other problem is
+noted while the run finishes the remaining rows, and the run then fails, which
+is what makes Apps Script send the email, one line per problem. The Triggers
+page of the Apps Script project sets how often those emails arrive; we haven't
+checked which choices it offers or which is the default. A problem nobody fixes
+is reported by every run until it's fixed.
+
+| The email says | What happened | What to do |
+|---|---|---|
+| `Row N (…): date …`, `time …` or `end time equals start time` | The row's date or time didn't parse, so it was skipped and its calendar event, if it has one, was left as it was | Fix the row in the events tab |
+| `Row N (…): no id`, or `id … is used by an earlier row too` | The row can't be matched to an event, so it was skipped, and the event it had under its previous `id`, if any, is deleted | Fix the `id` in the events tab |
+| `… falls outside 2026-09-01..2026-11-01` | The date is outside the window the script manages | Fix the date (usually the year) |
+| Any other `Row N (…): …` line | Google Calendar refused that row's change | Usually nothing; the next run retries. If it repeats, check the account can still edit the calendar |
+| `N calendar events no longer match a sheet row` | More than 10 events would have been deleted, so none were. Rows whose `id` changed already have their new events, so the calendar may show duplicates | Check the calendar tab. If it's broken, fix it. If the removals are real, delete the stale events by hand, or set `maxDeletesPerRun` higher in the deployed copy for one run and then put it back |
+| `Ran out of time before the last row` | A run hit its 5-minute budget | Nothing; the next run starts over and gets further, since unchanged rows cost no writes |
+| `Calendar … not found` | The calendar ID in the deployed copy is wrong (often the placeholder, pasted back in), or the calendar was unshared from the account | Put the real ID back, or restore the sharing |
+| `No tab with gid …` or `Column … is missing` | The calendar tab was deleted and re-created (a new tab gets a new gid), or a header was renamed | Set `sheetGid` in the deployed copy to the new tab's gid, or restore the header name |
+
+### Setting it up
+
+This has been done once and needs repeating only if the project is lost or
+moves to another account. The account that does it must be able to edit the
+spreadsheet and make changes to events on the calendar, and it receives the
+problem emails.
+
+1. Check the calendar tab has an `id` column filled from the events tab's `id`.
+2. In the spreadsheet, open Extensions → Apps Script and paste
+   `calendar-sync/CalendarSync.gs` over the project's script file.
+3. Replace the `calendarId` placeholder in `CONFIG` with the ID from the
+   calendar's Settings and sharing → Integrate calendar.
+4. Run `syncCalendar` once from the editor, approve the permissions it asks
+   for, and check that the execution log ends with the counts line and the
+   calendar shows the events.
+5. Run `installTrigger` once. It schedules `syncCalendar` every 10 minutes and
+   replaces any schedule the same account set up before.
+6. When moving to another account, have the old account delete its trigger
+   from the project's Triggers page. `installTrigger` can't see another
+   account's trigger, so otherwise both keep running and the old account keeps
+   getting the emails.
+
+### Changing the script
+
+The repository copy is canonical. The deployed copy differs from it only in
+`CONFIG.calendarId`, which stays a placeholder here. To change the script:
+
+1. Edit `calendar-sync/CalendarSync.gs`.
+2. Copy the real calendar ID out of the deployed `CONFIG`.
+3. Paste the new script over the project's script file and put the ID back.
+4. Run `syncCalendar` once from the editor and check the execution log ends
+   with the counts line.
+
+The trigger is attached to the function name, so it survives a paste as long
+as `syncCalendar` keeps its name. Nothing in `npm test` covers this script; its
+behavior is set out in the calendar sync contract in CONTRACTS.md. For another
+year's festival, move `windowStart` and `windowEnd`.
+
 ## Swapping in the real map artwork (maybe)
 
 The map today is drawn by MapLibre from OpenStreetMap street centerlines
@@ -625,4 +736,5 @@ matters and needs a hands-on check after any caching change:
 | `.github/scripts/` | Zero-dependency helpers the workflows run: the content-publish gate and the notification emails (failures, and publishes that left rows out) |
 | `tools/` | One-off generators (map GeoJSON and calibration from OSM data, transit stops, PWA icons, ticket-icon sprite), `vendor-maplibre.mjs`, and `shoot.mjs`, which renders routes to PNGs in `.screenshots/` for visual review |
 | `tests/` | Unit tests (validation, georeferencing) + Playwright offline test |
+| `calendar-sync/` | The Apps Script that fills the festival Google Calendar from the sheet's calendar tab; pasted into the spreadsheet, never deployed by CI (see "The festival Google Calendar") |
 | `.github/workflows/` | Deploy on push; scheduled/manual content rebuild (which invokes no npm, by design) |

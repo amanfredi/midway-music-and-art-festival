@@ -47,12 +47,47 @@ chrome, in an iframe that sizes itself from a height the embed posts to it (Map
 embed contract in CONTRACTS.md; iframe snippet and verification walk-through in
 README).
 
+The **festival Google Calendar** is filled from the sheet's calendar tab by an
+Apps Script in the organizers' spreadsheet, every 10 minutes under Lisa
+Nelson's account, live since 2026-10-01 (`calendar-sync/CalendarSync.gs`;
+Calendar sync contract in CONTRACTS.md; operator procedure in README).
+
 The POC is complete — content pipeline, UI, OSM-derived map, PWA shell,
 service worker and CI all landed and were audited in earlier rounds.
 
 ## Log
 
 Newest first.
+
+### 2026-10-01 — the sheet fills the festival Google Calendar
+
+The organizers added a calendar tab to the sheet so the shared festival Google
+Calendar could carry the schedule. `calendar-sync/CalendarSync.gs`, an Apps
+Script bound to the spreadsheet, now keeps one calendar event per titled row,
+creating, updating and deleting events every 10 minutes. Unlike the site, it
+is deployed by hand, by pasting it into the spreadsheet, and nothing in the
+build or the tests touches it.
+
+The first design kept each event's calendar ID in the tab's `calendar_id`
+column, written back by the script. The tab turned out to mirror the events
+tab row for row, presumably by formula, so an ID the script wrote stayed in
+its cell while the formula cells beside it moved to another event: deleting
+one events row near the top made a test sync rewrite 105 events to line them
+up again, and a link to one performer's event could come to show another. Rows
+are matched by the events tab's `id` instead, stored as a tag on each event,
+so the script never writes to the sheet and the `calendar_id` column was taken
+out of the tab. Two guards came out of testing against a mock calendar: a run
+deletes nothing if more than 10 events would go, since a broken tab would
+otherwise empty the calendar, and a row with a bad date or time keeps its
+existing event rather than losing it. An earlier guard that rejected events
+longer than 12 hours was dropped, because the real Deviant Crop Art Exhibit
+runs 11 AM to midnight.
+
+After the first live run, two fixes. The tab blanks the title of the two
+events with no venue but keeps their `id`, and the script reported them as
+unparseable on every run; untitled rows are now ignored. A date that doesn't
+exist, such as `9/31/2026`, rolled forward to October 1 instead of being
+reported, unlike the build; it is now reported.
 
 ### 2026-09-30 — General Admission events say "Free"
 

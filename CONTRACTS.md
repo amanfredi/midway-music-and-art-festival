@@ -1510,6 +1510,75 @@ that same page with the script tag rewritten, and serves the canonical file
 under the venues name: what it proves is the dispatch, not the copy.
 `tests/embed-twins.test.mjs` is what proves the copy.
 
+## Calendar sync contract (the organizers' Google Calendar, not the app)
+
+`calendar-sync/CalendarSync.gs` is a Google Apps Script bound to the
+organizers' spreadsheet. It makes the shared festival Google Calendar hold one
+event per titled row of the sheet's calendar tab. Nothing in the build, the
+tests or `site/` reads it or is read by it: it reads the sheet directly and
+writes only to the calendar. It is deployed by pasting it into the
+spreadsheet's Apps Script project, and the repository copy is canonical except
+`CONFIG.calendarId`, which is a placeholder here and the real calendar ID in
+the deployed copy. README has the operator procedure. It has no automated
+tests.
+
+**Input.** The tab whose gid is `CONFIG.sheetGid` (`1089653622`), read as
+display values, header row first. Columns are found by exact header name,
+ignoring surrounding spaces: `id`, `Performer/event`, `date`, `Start time`,
+`end time`, `description`, `location`, `URL`, `Ticket URL`. A missing one fails
+the run before anything is written. Other columns, such as `Venue`, are
+ignored. `id` is the events tab's `id`, carried into the calendar tab. A row
+with no title is ignored whatever else it holds: the tab blanks the title of
+some events, at least those without a venue (on 2026-10-01, two rows, with
+location "Not Found"). A titled row with no `id`,
+or with an `id` an earlier row already used, is skipped and reported.
+
+**Identity.** Every event the script creates carries the row's `id` in the
+event tag `mmafId`. An event without that tag was added by hand and is never
+updated or deleted. Rows are matched to events only through the tag, never by
+row position, so the tab may be sorted, or have rows inserted, freely.
+
+**Event fields.** Title is `Performer/event`; location is the trimmed
+`location`. Times follow the events `date`/`start_time`/`end_time` rules above,
+read as America/Chicago wall time. The description is the trimmed `description`
+and then `More Information: <URL>` and `Tickets: <Ticket URL>` lines for
+whichever are filled in, separated by a blank line when both parts are present,
+each URL prefixed with `https://` unless it starts with `http://` or
+`https://`. The script adds no HTML. Google Calendar is not the only app that
+shows the description: subscribers' apps receive the same text, and some, Apple
+Calendar among them, are believed to show HTML tags raw (unconfirmed).
+
+**Updates.** The event tag `mmafHash` holds an MD5 of title, start, end,
+description and location. A row whose hash matches its event's tag is not
+written, so an unchanged sheet costs no calendar writes. The hash is compared
+with the tag, never with the event's current fields, so a hand edit to a
+synced event survives until its row next changes. Any difference rewrites all
+five fields.
+
+**Window.** Only events between `CONFIG.windowStart` and `CONFIG.windowEnd`
+(2026-09-01 to 2026-11-01, Chicago time) are listed, created or deleted. A
+row that falls outside it is reported, not synced, because an event created
+there would never be found again and would be duplicated every run.
+
+**Deletion.** After a complete pass over the rows, a tagged event whose `id`
+no row carries is deleted, as is every event after the first that carries the
+same `id`. A row skipped for any reason after its `id` was read (a bad date or
+time, a date outside the window, a calendar error) still counts as carrying
+its `id`, so the existing event is left as it was rather than deleted. More
+than `CONFIG.maxDeletesPerRun` (10) deletions in one run deletes nothing and
+is reported, because a blank or broken tab would otherwise empty the calendar.
+A run that stops at its 5-minute budget (`CONFIG.runBudgetMs`) deletes
+nothing, since the rows it never reached would look removed.
+
+**Runs and reporting.** `installTrigger` deletes the running account's own
+`syncCalendar` triggers and creates one that runs every
+`CONFIG.triggerMinutes` (10). Another account's trigger is invisible to it and
+keeps running. `syncCalendar` takes the script lock without waiting and
+returns at once if another run holds it. A missing calendar, tab or column
+throws at once. Any other problem is collected while the run continues, and at
+the end the run throws an error listing them, which is how Apps Script emails
+the trigger's owner (named in README).
+
 ## Service worker contract (owner: orchestrator)
 
 `scripts/build-sw.mjs` scans `site/` and generates `site/sw.js` from

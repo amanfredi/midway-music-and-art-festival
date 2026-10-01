@@ -7,8 +7,8 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1159361423&single=true&output=csv",
       "file": "sources/events.csv",
       "contentType": "text/csv",
-      "sha256": "6767d56449af99e709ae1755e3193f8d38ae49965811d487dae61aa21fbd50fb",
-      "bytes": 62204,
+      "sha256": "7bb71ea949112df2106788a5c37992fcb33076dfb12424bad056214eaa4c9b81",
+      "bytes": 62235,
       "lastChanged": "2026-10-01"
     },
     {
@@ -17,9 +17,9 @@
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1566910329&single=true&output=csv",
       "file": "sources/sponsors.csv",
       "contentType": "text/csv",
-      "sha256": "7a844a97af422c9acece0643592656aa4ef43243c7b969150aecd9df44164ade",
-      "bytes": 1702,
-      "lastChanged": "2026-09-29"
+      "sha256": "af464cf1439fc24f41d96aebe47dee53045029f2ec45b526529b2ec76779c787",
+      "bytes": 1822,
+      "lastChanged": "2026-10-01"
     },
     {
       "id": "source:venues",

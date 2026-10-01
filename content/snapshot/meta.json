@@ -22,6 +22,16 @@
       "lastChanged": "2026-10-01"
     },
     {
+      "id": "source:vendors",
+      "kind": "source",
+      "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=573989739&single=true&output=csv",
+      "file": "sources/vendors.csv",
+      "contentType": "text/csv",
+      "sha256": "a1f96ab39eaff45442b5e46441b40ac62150a01900838877f3bd0ed70982a669",
+      "bytes": 1157,
+      "lastChanged": "2026-10-01"
+    },
+    {
       "id": "source:venues",
       "kind": "source",
       "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSkDn1sdq49d7wov2SfK6QxDHjpvqLkX6Cp8SZFc2iYFkxhU08Csfwdp6shhOxBN8n2JsRUXKOk-AzU/pub?gid=1306919477&single=true&output=csv",

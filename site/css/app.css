@@ -1702,44 +1702,60 @@ a:focus-visible, button:focus-visible {
   font-size: 1.05rem;
 }
 
-/* -- vendors view: grouped by type (food/art/retail) -- */
+/* -- vendors view: one flat list (vendors.js). Each row is a card in the
+   vendor kind's tint, drawn like an event card: text on the left, a
+   right-aligned stack of location pills where an event row stacks its
+   labels. -- */
 
-.vendor-group {
-  margin-bottom: 1.5rem;
+/* Buttons are the schedule's .toggle-btn; the group wraps instead of
+   scrolling sideways like .group-toggle, so every location stays visible. */
+.vendor-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
 }
 
-.vendor-group__title {
-  font-size: 1rem;
-  color: var(--color-primary-dark);
-  border-bottom: 2px solid var(--color-accent);
-  padding-bottom: 0.3rem;
-}
-
-.vendor-cards {
+.vendor-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
 }
 
-.vendor-card {
-  background: var(--color-surface);
+.vendor-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: var(--kind-tint, var(--color-surface));
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  padding: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  min-height: 44px;
+}
+
+.vendor-row__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+
+.vendor-row__locations {
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  align-items: flex-end;
+  gap: 0.25rem;
 }
 
-.vendor-card__name {
-  font-size: 0.95rem;
-  margin: 0;
-}
-
-.vendor-card__description {
-  font-size: 0.88rem;
-  color: var(--color-text-muted);
-  margin: 0.15rem 0 0;
+/* Plum, the .badge--vendor ink (9.18:1 on the vendor tint). The text is the
+   sheet's column header verbatim, so no capitalize. */
+.badge--location {
+  color: #4a2a66;
+  text-transform: none;
 }
 
 /* -- tiered sponsors: emerald gets a dedicated spotlight, not a card grid -- */

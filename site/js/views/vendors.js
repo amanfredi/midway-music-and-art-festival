@@ -1,23 +1,31 @@
-import { esc, groupBy } from '../util.js';
+import { esc } from '../util.js';
+import { navigate } from '../router.js';
 
-// Grouped by type (food/art/retail) rather than a flat list: festival-goers
-// browsing vendors are usually looking for "something to eat" or "art to
-// buy", not a specific name, so type is the more useful first cut. Vendors
-// have no map pins or map-legend entry -- see CONTRACTS.md Map + geo contract.
-const TYPE_LABELS = { food: 'Food', art: 'Art & Craft', retail: 'Retail' };
-const TYPE_ORDER = ['food', 'art', 'retail'];
+// One alphabetical list, filterable by location. Each location is a pill in
+// the row's label column, the way Free and 21+ sit on event rows, tinted the
+// vendor kind's purple. Rows aren't links (vendors have no detail page) and
+// carry no star (vendors aren't events). No map pins -- see CONTRACTS.md Map +
+// geo contract.
 
-// No type badge on the card: the cards are already grouped under a heading
-// that names the type, so the badge only repeated it (QA, 2026-08-09).
-function vendorCardHtml(v) {
-  return `
-    <div class="vendor-card">
-      <h3 class="vendor-card__name">${esc(v.name)}</h3>
-      ${v.description ? `<p class="vendor-card__description">${esc(v.description)}</p>` : ''}
-    </div>`;
+// Labels are the sheet's column headers ("Saturday Hamline Park"); spelled-out
+// days made every row's pill stack wide, so screens show "Sat. Hamline Park".
+// content.json keeps the header verbatim.
+const DAY_RE = /^(mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
+export function shortLocationLabel(label) {
+  return label.replace(DAY_RE, (day) => `${day.slice(0, 3)}.`);
 }
 
-export function renderVendors(container, content) {
+function vendorRowHtml(v) {
+  return `
+    <li class="vendor-row kind-tint--vendor">
+      <span class="vendor-row__name">${esc(v.name)}</span>
+      <span class="vendor-row__locations">
+        ${v.locations.map((loc) => `<span class="badge badge--location">${esc(shortLocationLabel(loc))}</span>`).join('')}
+      </span>
+    </li>`;
+}
+
+export function renderVendors(container, content, route) {
   const vendors = content.vendors;
 
   if (!vendors.length) {
@@ -29,26 +37,38 @@ export function renderVendors(container, content) {
     return;
   }
 
-  // Defensive "Other" bucket for any type outside the known enum, so a future
-  // content change degrades gracefully instead of silently dropping vendors
-  // (build.mjs already validates the enum, so this should stay empty today).
-  const byType = groupBy(vendors, (v) => (TYPE_ORDER.includes(v.type) ? v.type : 'other'));
-  const orderedKeys = [...TYPE_ORDER, 'other'].filter((key) => byType.has(key));
+  // Sheet column order; a column nobody is marked in gets no filter. A
+  // content.json cached from before vendor_locations existed falls back to
+  // the order locations first appear.
+  const marked = new Set(vendors.flatMap((v) => v.locations));
+  const locations = (content.vendor_locations ?? [...marked]).filter((loc) => marked.has(loc));
+  const requested = route?.params.get('at');
+  const active = locations.includes(requested) ? requested : null;
+
+  const shown = vendors
+    .filter((v) => !active || v.locations.includes(active))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  // Same pressed-button group as the schedule's day switcher (not tabs: the
+  // buttons filter one list rather than switching panels), but wrapping rather
+  // than scrolling sideways, so no location hides off-screen.
+  const filterButton = (loc, label) =>
+    `<button type="button" class="toggle-btn ${loc === active ? 'is-active' : ''}" aria-pressed="${loc === active}" data-at="${esc(loc ?? '')}">${esc(label)}</button>`;
 
   container.innerHTML = `
     <section data-testid="vendor-list" class="view vendors-view">
       <h1 class="view-title">Vendors</h1>
-      ${orderedKeys
-        .map((key) => {
-          const group = [...byType.get(key)].sort((a, b) => a.name.localeCompare(b.name));
-          return `
-        <div class="vendor-group">
-          <h2 class="vendor-group__title">${esc(TYPE_LABELS[key] || 'Other')}</h2>
-          <div class="vendor-cards">
-            ${group.map(vendorCardHtml).join('')}
-          </div>
-        </div>`;
-        })
-        .join('')}
+      ${locations.length > 1 ? `
+      <div class="vendor-filters" role="group" aria-label="Location">
+        ${filterButton(null, 'All')}
+        ${locations.map((loc) => filterButton(loc, shortLocationLabel(loc))).join('')}
+      </div>` : ''}
+      <ul class="vendor-list">${shown.map(vendorRowHtml).join('')}</ul>
     </section>`;
+
+  container.querySelectorAll('.vendor-filters .toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () =>
+      navigate(btn.dataset.at ? `#/vendors?at=${encodeURIComponent(btn.dataset.at)}` : '#/vendors')
+    );
+  });
 }

@@ -267,9 +267,14 @@ neither is a build error.
   section) matters to it. Full behavior, including the three warning cases:
   `definitions/ticket-links-and-sold-out.md`.
 
-**vendors.csv** — `id, name, type, description, location`
-- `type`: one of `food|art|retail`. All required except `description`.
-  `location` format as in venues.csv.
+**vendors.csv** — positional, matching the organizers' sheet: the first
+column is the vendor `name` whatever its header says (blank in the live
+sheet), and every later column with a non-blank header is a location. A
+vendor is at a location when its cell in that column is non-blank (`x`, `X`,
+anything); the header text, trimmed, is published verbatim as the location
+label. Columns with a blank header are ignored. A header with no location
+columns fails the build; a row with no name is left out like any invalid
+row; a fully blank row is skipped silently.
 
 **sponsors.csv** — `id, name, tier, blurb, url, location` (+ optional `tier_order`)
 - `tier`: fixed slug enum — `emerald | ruby | sapphire | topaz | quartz`.
@@ -379,10 +384,10 @@ A row-level violation costs its row rather than the build; see the section
 below. Row checks: required fields, duplicate ids, unknown venue_id references,
 date/time format and calendar validity, `end_time` equal to `start_time`,
 `location` parseable (decimal pair or plus code) and resolving inside the
-source's bbox — venues/vendors: the festival box [44.94..44.98,
+source's bbox — venues: the festival box [44.94..44.98,
 -93.20..-93.13]; sponsors: the map calibration frame (see sponsors.csv above)
 — either way catching swapped lat/lng, unknown
-`kind`/`type`/`tickets`/`tier` values, unknown sponsor tier slug, tier caps
+`kind`/`tickets`/`tier` values, unknown sponsor tier slug, tier caps
 (at most 1 emerald, at most 5 ruby), a missing or ambiguous logo file for a
 sponsor whose tier requires one, a missing or ambiguous pin mark for a sponsor
 that draws a featured pin (including an SVG mark with no explicit
@@ -528,7 +533,8 @@ curl/SMTP path.
   "settings": { "festival_name": "…", "banner_id": "…", "banner_text": "…", "you_are_here_enabled": "false", "donation_url": "…", "donation_label": "Donate", "…": "…" },
   "venues":   [ { "id": "…", "name": "…", "address": "…", "lat": 44.9557, "lng": -93.1668, "description": "…", "url": "…" } ],
   "events":   [ { "id": "…", "title": "…", "venue_id": "…", "start": "2026-10-02T17:00", "end": "2026-10-02T18:00", "kind": "music", "tickets": "General Admission", "ticket_url": "", "age_limit": "", "description": "…", "url": "…" } ],
-  "vendors":  [ { "id": "…", "name": "…", "type": "food", "description": "…", "lat": 44.9557, "lng": -93.1668 } ],
+  "vendors":  [ { "name": "…", "locations": ["Saturday Hamline Park", "…"] } ],
+  "vendor_locations": ["Saturday Hamline Park", "Saturday Black Hart", "Sunday Hamline Park"],
   "sponsors": [ { "id": "…", "name": "…", "tier": "Emerald Tier (Presenting Partner)", "tier_slug": "emerald", "tier_order": 1, "blurb": "…", "logo": "assets/sponsors/….svg", "mark": "assets/sponsors/…-pin.svg", "url": "…", "lat": 44.9557, "lng": -93.1668 } ]
 }
 ```
@@ -1135,9 +1141,16 @@ CDNs, no analytics.
   "Support" is the existing `#/sponsors` route relabeled in the nav only —
   the route itself is unchanged. Verify the 6-tab bar still fits and reads at
   320px width.
-- `#/vendors`: list view of vendor name/description from the vendors sheet,
-  grouped under a heading per type (no per-card type badge — it only repeated
-  the heading), no map pins, no starring (vendors aren't events).
+- `#/vendors`: one list, alphabetical by name. Each row is a card in the
+  vendor kind's tint (`kind-tint--vendor`) with the name on the left and one
+  outlined pill per location, stacked in a right-hand label column the way
+  event rows stack Free/21+. Above it, a wrapping `.toggle-btn` group
+  (`aria-pressed`): "All", then one button per `vendor_locations` entry that
+  some vendor is marked at, in that order. A selected location is
+  `#/vendors?at=<location label>`; an unknown or absent `at` means All. Pills
+  and buttons shorten a leading day name ("Saturday" → "Sat."); content.json
+  keeps the header text. Rows aren't links; no map pins, no starring (vendors
+  aren't events).
 - Event rows are two columns: a text column (time, title, venue) beside a label
   column (kind badge, ticket icon, age limit). The labels are a *sibling* of
   the text, not a line above it — as a top line, a two-label stack pushed the

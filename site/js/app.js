@@ -138,7 +138,7 @@ async function handleRoute(route) {
       cleanup = renderStarred(viewEl, content);
       break;
     case 'vendors':
-      cleanup = renderVendors(viewEl, content);
+      cleanup = renderVendors(viewEl, content, route);
       break;
     case 'sponsors':
       cleanup = renderSponsors(viewEl, content);

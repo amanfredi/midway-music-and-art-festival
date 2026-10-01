@@ -30,8 +30,8 @@ the festival box (ruled 2026-09-04 — see the log). The three sapphire sponsors
 **Featured Sponsors** (2026-09-05; called Featured Destinations until
 2026-09-07): 27 px squares carrying a committed square mark
 (`content/logos/<id>-pin.png`), listed above the venues in the
-map key; topaz sponsors are solid red diamonds listed below them. Vendors is deliberately empty (`"vendors": null`), so that tab reads
-"Vendor list coming soon."; the organizers have not named vendors yet.
+map key; topaz sponsors are solid red diamonds listed below them. Vendors is live from
+the sheet as of 2026-10-01 (see the log).
 `content/fixtures/venues.csv` remains a hand-committed copy feeding the offline
 tests (refreshed 2026-08-09), and the emergency-build copies under
 `content/snapshot/sources/` — one per remote source, so three of them now — are
@@ -88,6 +88,29 @@ events with no venue but keeps their `id`, and the script reported them as
 unparseable on every run; untitled rows are now ignored. A date that doesn't
 exist, such as `9/31/2026`, rolled forward to October 1 instead of being
 reported, unlike the build; it is now reported.
+
+### 2026-10-01 — the vendors page goes live
+
+The organizers' vendors tab arrived as a name column with a blank header and
+three location columns ("Saturday Hamline Park", "Saturday Black Hart",
+"Sunday Hamline Park") holding an x where the vendor will be. Nothing else:
+no id, type, description or position. The old vendors.csv schema
+(`id, name, type, description, location`) fit none of it, so the build now
+reads the tab positionally (CONTRACTS.md vendors.csv) instead of asking the
+organizers to reshape it the day before the festival. Any non-blank cell
+counts as a mark, and the header text is the label, so a new location column
+needs no code change. The page is one alphabetical list with no filters: each
+vendor is a card in the vendor kind's purple with one outlined pill per
+location, stacked on the right where event rows put Free and 21+. The
+type-grouped cards, the type enum, and vendor ids and coordinates are gone.
+`content/fixtures/vendors.csv` is now a copy of the live tab.
+
+Anthony found the first version busy, so the same day the pills and the
+filter buttons shorten the day ("Sat. Hamline Park"), and a row of filters
+(All plus one per location) sits above the list. The filter order is the
+sheet's column order, which the build now publishes as `vendor_locations`;
+the selection lives in the URL (`#/vendors?at=…`) like the schedule's day.
+`tests/vendors.spec.mjs` covers order, abbreviation and filtering.
 
 ### 2026-09-30 — General Admission events say "Free"
 

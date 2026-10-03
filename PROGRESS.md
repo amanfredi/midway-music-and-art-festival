@@ -59,6 +59,25 @@ service worker and CI all landed and were audited in earlier rounds.
 
 Newest first.
 
+### 2026-10-03 — back from an event returns to your place in the list
+
+Anthony, using the app on his iPhone: scrolling the schedule, opening an event
+and going back put him at the top of the list every time. Every route change
+went through `handleRoute`, which scrolled to the top unconditionally, and the
+in-app Back button navigates to the list afresh rather than going back in
+history, so nothing could have restored the position. `handleRoute` now
+records each list view's scroll offset as it is left and restores it when the
+next route comes straight from an event or venue detail; every other arrival
+still starts at the top (CONTRACTS.md, UI contract). `history.scrollRestoration`
+is set to `manual` so Safari's own restore on browser-back doesn't land first
+and then jump.
+
+New tests in `tests/schedule.spec.mjs` cover both kinds of back and a tab
+switch. Without the fix only the Back-button test fails: Chromium already
+restored the browser-back case on its own, so that test guards against a
+regression rather than proving the fix, and the iPhone behaviour is confirmed
+on the device only (BACKLOG.md, "Needs a real device").
+
 ### 2026-10-01 — the sheet fills the festival Google Calendar
 
 The organizers added a calendar tab to the sheet so the shared festival Google

@@ -126,3 +126,38 @@ test('day and grouping compose: switching days keeps the chosen grouping', async
     'Urban Lights',
   ]);
 });
+
+// Back from an event detail returns to the place in the list, not its top —
+// by the in-app Back button (the only back an installed iPhone app has) and by
+// the browser's. Both arrive through the same route handler, which otherwise
+// starts every view at the top.
+for (const [how, goBack] of [
+  ['the Back button', (page) => page.locator('#back-btn').click()],
+  ['browser back', (page) => page.goBack()],
+]) {
+  test(`${how} from an event detail restores the list's scroll position`, async ({ page }) => {
+    await page.goto('/' + T + '#/schedule');
+    const row = page.locator('[data-testid="event-row"]').nth(20);
+    await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    const before = await page.evaluate(() => window.scrollY);
+    expect(before).toBeGreaterThan(0);
+
+    await row.locator('.event-row__link').click();
+    await expect(page.locator('#back-btn')).toBeVisible();
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+    await goBack(page);
+    await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
+    expect(await page.evaluate(() => window.scrollY)).toBe(before);
+  });
+}
+
+test('switching tabs still opens a list at the top', async ({ page }) => {
+  await page.goto('/' + T + '#/schedule');
+  await page.locator('[data-testid="event-row"]').nth(20)
+    .evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await page.locator('.tab-bar a[data-route="now"]').click();
+  await page.locator('.tab-bar a[data-route="schedule"]').click();
+  await expect(page.locator('[data-testid="schedule-list"]')).toBeVisible();
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+});

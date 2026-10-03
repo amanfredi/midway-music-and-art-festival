@@ -1141,6 +1141,15 @@ CDNs, no analytics.
   "Support" is the existing `#/sponsors` route relabeled in the nav only —
   the route itself is unchanged. Verify the 6-tab bar still fits and reads at
   320px width.
+- Scroll on route change: every view opens at the top, except a list view
+  reached straight from `#/event/<id>` or `#/venue/<id>`, by the in-app Back
+  button or the browser's, which reopens where the visitor left it. Positions
+  are kept per full hash (each schedule day and grouping has its own), in
+  memory only, and restored as a pixel offset, so a list that changed while
+  the detail was open — "Now" as time passes, Starred after an un-star — lands
+  at the same height, not necessarily on the same event. `app.js`
+  `handleRoute` owns this; `history.scrollRestoration` is `manual` so the
+  browser's own restore doesn't fight it.
 - `#/vendors`: one list, alphabetical by name. Each row is a card in the
   vendor kind's tint (`kind-tint--vendor`) with the name on the left and one
   outlined pill per location, stacked in a right-hand label column the way

@@ -23,6 +23,18 @@ const navLinks = [...document.querySelectorAll('.tab-bar a')];
 let currentCleanup = null;
 let routeGeneration = 0;
 
+// Where the visitor had scrolled each list view to when they left it, keyed by
+// the full hash so each schedule day and grouping keeps its own. Restored only
+// on the way back from an event or venue detail — by the in-app Back button or
+// the browser's — so browsing a long list and dipping into details doesn't
+// throw them back to the top each time. Every other arrival starts at the top.
+const listScroll = new Map();
+let previousHash = null;
+let previousWasDetail = false;
+// The app owns scroll on route changes; the browser's own restore on history
+// traversal would land first and then be overridden, a visible jump.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
 // Human-readable names for the route-change live-region announcement below.
 // Matches the nav labels (CONTRACTS.md: "Support" is the #/sponsors route
 // relabeled in the nav only) rather than the route/hash names themselves.
@@ -104,6 +116,16 @@ function setActiveTab(routeName) {
 
 async function handleRoute(route) {
   const generation = ++routeGeneration;
+  const hash = location.hash || '#/now';
+  const name = route.parts[0] || 'now';
+  const isDetailRoute = name === 'event' || name === 'venue';
+  // By now location.hash is already the new route, so the one being left is
+  // remembered from the previous call.
+  if (previousHash !== null && !previousWasDetail) listScroll.set(previousHash, window.scrollY);
+  const restoreScroll = previousWasDetail && !isDetailRoute ? listScroll.get(hash) : undefined;
+  previousHash = hash;
+  previousWasDetail = isDetailRoute;
+
   const content = store.getContent();
   closeSheet();
   if (currentCleanup) {
@@ -115,10 +137,8 @@ async function handleRoute(route) {
   // viewEl.scrollTop would be a no-op.
   window.scrollTo(0, 0);
 
-  const name = route.parts[0] || 'now';
-  const isDetailRoute = name === 'event' || name === 'venue';
   setActiveTab(isDetailRoute ? '' : name);
-  if (!isDetailRoute) recordListRoute(location.hash || '#/now');
+  if (!isDetailRoute) recordListRoute(hash);
 
   let cleanup;
   switch (name) {
@@ -158,6 +178,7 @@ async function handleRoute(route) {
     return;
   }
   currentCleanup = cleanup;
+  if (restoreScroll !== undefined) window.scrollTo(0, restoreScroll);
 
   setRouteTitle(name);
   announceRoute(name);

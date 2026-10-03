@@ -534,6 +534,12 @@ None of these can be checked from the screenshot harness or the test suite.
       scroller briefly reports past its own end. If the fade reads too quiet,
       the escalation already considered is an explicit chevron at the live edge;
       what will not work is a native scrollbar, which iOS hides.
+- [ ] **Back from an event keeps the list's place, on the iPhone** (added
+      2026-10-03). Scroll well down the schedule, open an event, tap Back:
+      the list should be where you left it. Repeat with Safari's swipe-back
+      in the browser (the installed app has only the Back button). The tests
+      run Chromium only, which restored the browser-back case even before
+      the fix, so WebKit's behaviour is unverified until this is checked.
 - [ ] Install button on Android Chrome (native prompt).
 - [ ] Splash screens render on iOS launch.
 - [ ] Nav fits and reads at 320 px with six tabs.
